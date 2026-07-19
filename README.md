@@ -54,3 +54,4 @@ Everything lands with `confidence`, `provenance` (which signals produced it), an
 [`spec/`](spec/) format schema + consumer contract · [`src/semlayer/`](src/semlayer/) the engine · [`fixtures/`](fixtures/) 9 eval warehouses + golds + CQ suites · [`docs/`](docs/) benchmark, cost model, spike reports · [`ARCHITECTURE.md`](ARCHITECTURE.md) how it works
 
 License: Apache-2.0.
+
