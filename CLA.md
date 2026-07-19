@@ -1,7 +1,8 @@
 # Contributor License Agreement (Individual)
 
 Thank you for contributing to semlayer ("the Project"), maintained by
-Neocatalyst Labs ("the Maintainer"). By signing (commenting as instructed by
+Neocatalyst Labs, its successors, and assigns ("the Maintainer" — including
+any entity to which the Project is transferred). By signing (commenting as instructed by
 the CLA bot on your pull request), you accept the following terms for your
 present and future contributions:
 
