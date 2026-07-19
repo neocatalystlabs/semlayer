@@ -34,6 +34,7 @@ def enrich_source(source, doc: dict, stats: dict) -> dict:
     _upgrade_enum_decodes(source, sl, stats)
     _detect_deprecation(sl, stats)
     _infer_freshness(sl, stats)
+    _classify_time_attributes(source, sl, stats)
     metrics = _metric_candidates(sl)
     if metrics:
         sl["metrics"] = metrics
@@ -122,6 +123,66 @@ def _infer_freshness(sl, stats) -> None:
             "expected_cadence": cadence,
             "inferred_from": f"{cs.n_distinct} distinct {date_cols[0]} over {span} days",
         }
+
+
+# ----------------------------------------------------------- time attrs
+_INT_TYPES = ("INT", "BIGINT", "SMALLINT", "TINYINT", "NUMBER", "NUMERIC", "DECIMAL")
+
+
+def _classify_time_attributes(source, sl, stats) -> None:
+    """Classify date-dimension attributes as calendar or FISCAL, from data.
+
+    The customer's date dim materializes their fiscal calendar as derived
+    columns; we never infer calendar rules — we verify each integer time
+    attribute against Gregorian extraction of the dim's unique date column.
+    Full agreement -> calendar_*; shape-matching divergence -> fiscal_*
+    (a Feb-start fiscal quarter disagrees with EXTRACT(QUARTER) on most rows).
+    Compilers use the tags to route/disambiguate time bucketing (SPEC 2.6).
+    """
+    qualify = getattr(source, "qualify", lambda s, n: f'"{s}"."{n}"')
+    for t in sl["tables"]:
+        date_col = next(
+            (c for c in t["columns"] if c.get("semantic_type") == "date"
+             and stats[t["name"]].columns[c["name"]].is_unique), None)
+        if date_col is None:
+            continue
+        ts = stats[t["name"]].table
+        tq = qualify(ts.schema, ts.name)
+        n = stats[t["name"]].row_count
+        if not n:
+            continue
+        for c in t["columns"]:
+            if c is date_col or not any(k in c["sql_type"].upper() for k in _INT_TYPES):
+                continue
+            tag = _time_attribute_tag(source, tq, date_col["name"], c, stats[t["name"]], n)
+            if tag is not None:
+                c["time_attribute"] = tag
+                c.setdefault("provenance", []).append({
+                    "signal": "statistic",
+                    "detail": f"{tag}: verified against {date_col['name']}"})
+
+
+def _time_attribute_tag(source, tq: str, d: str, c: dict, tstats, n: int) -> str | None:
+    cs = tstats.columns[c["name"]]
+    name = c["name"]
+    quarter_shaped = 2 <= cs.n_distinct <= 4
+    month_shaped = 12 <= cs.n_distinct <= 13
+    row = source.query(
+        f'SELECT sum(CASE WHEN "{name}" = EXTRACT(QUARTER FROM "{d}") THEN 1 ELSE 0 END),'
+        f' sum(CASE WHEN "{name}" = EXTRACT(MONTH FROM "{d}") THEN 1 ELSE 0 END),'
+        f' sum(CASE WHEN "{name}" = EXTRACT(YEAR FROM "{d}") THEN 1 ELSE 0 END),'
+        f' max(abs("{name}" - EXTRACT(YEAR FROM "{d}"))), min("{name}"), max("{name}")'
+        f" FROM {tq}")[0]
+    q_match, m_match, y_match, y_dev, lo, hi = (float(x or 0) for x in row)
+    if quarter_shaped and 1 <= lo and hi <= 4:
+        return "calendar_quarter" if q_match == n else (
+            "fiscal_quarter" if q_match < 0.9 * n else None)
+    if month_shaped and 1 <= lo and hi <= 13:
+        return "calendar_month" if m_match == n else (
+            "fiscal_period" if m_match < 0.9 * n else None)
+    if y_dev <= 1 and hi > 1900:
+        return "calendar_year" if y_match == n else "fiscal_year"
+    return None
 
 
 # ---------------------------------------------------------------- metrics

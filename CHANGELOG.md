@@ -13,6 +13,12 @@
 - **`--context` doc-promotion.** Columns explicitly named in your docs get a
   doc-prompted second look even when the heuristic was confident; corrections
   always land with a conflict recorded for review.
+- **Fiscal calendars.** Date-dimension attributes are classified against the
+  dim's own date column (`time_attribute`: calendar_* / fiscal_* — verified,
+  never assumed). When a warehouse carries a verified fiscal calendar,
+  `compile_metric` quarter/year requests require an explicit
+  `calendar='fiscal'|'calendar'` choice — never a silent Gregorian
+  assumption; fiscal bucketing groups by the customer's own fiscal columns.
 
 ## v0.3.0-beta.1 (2026-07-19)
 

@@ -44,9 +44,12 @@ class _Ctx:
 def compile_metric(doc: dict, name: str, group_by: list[str] | None = None,  # noqa: PLR0913 — flat signature mirrors the MCP tool schema
                    time_grain: str | None = None, time_start: str | None = None,
                    time_end: str | None = None, extra_filter: str | None = None,
-                   dialect: str = "duckdb") -> dict:
+                   dialect: str = "duckdb", calendar: str | None = None) -> dict:
     """Compile a metric to SQL, or refuse constructively.
 
+    `calendar`: "fiscal" | "calendar" — REQUIRED for quarter/year grains when
+    the metric's date dimension carries a verified fiscal calendar (refusing
+    to silently pick is SPEC 2.6 applied to time).
     Returns {"sql": str} on success; on refusal {"refused": True,
     "reason": str, "legal_group_by": [...], "legal_time_grains": [...]}.
     """
@@ -59,7 +62,7 @@ def compile_metric(doc: dict, name: str, group_by: list[str] | None = None,  # n
     cols = _resolve_group_by(ctx, group_by or [])
     if isinstance(cols, dict):
         return cols
-    time_expr = _resolve_time(ctx, time_grain, time_start, time_end)
+    time_expr = _resolve_time(ctx, time_grain, time_start, time_end, calendar)
     if isinstance(time_expr, dict):
         return time_expr
     where = _build_where(ctx, time_start, time_end, extra_filter)
@@ -208,9 +211,13 @@ def _why_illegal(ctx: _Ctx, qual: str) -> str:
     return "not on the base table or any N:1-reachable dimension"
 
 
-def _resolve_time(ctx: _Ctx, time_grain, time_start, time_end) -> str | dict | None:
+def _resolve_time(ctx: _Ctx, time_grain, time_start, time_end,
+                  calendar: str | None = None) -> str | list | dict | None:
     if not (time_grain or time_start or time_end):
         return None
+    err = _time_request_error(ctx, time_grain, calendar)
+    if err is not None:
+        return err
     atd = ctx.metric.get("agg_time_dimension")
     if not atd:
         return _refuse(f"metric '{ctx.metric['name']}' has no agg_time_dimension; "
@@ -223,9 +230,52 @@ def _resolve_time(ctx: _Ctx, time_grain, time_start, time_end) -> str | dict | N
     ctx.time_col = qual
     if time_grain is None:
         return None
-    if time_grain not in TIME_GRAINS:
+    return _bucket_sql(ctx, time_grain, calendar, qual)
+
+
+def _time_request_error(ctx: _Ctx, time_grain, calendar) -> dict | None:
+    if calendar not in (None, "fiscal", "calendar"):
+        return _refuse(f"unknown calendar '{calendar}' (use 'fiscal' or 'calendar')",
+                       ctx.legal)
+    if time_grain is not None and time_grain not in TIME_GRAINS:
         return _refuse(f"unknown time_grain '{time_grain}'", ctx.legal)
+    return None
+
+
+def _bucket_sql(ctx: _Ctx, time_grain: str, calendar: str | None,
+                qual: str) -> str | list | dict:
+    if time_grain in ("quarter", "year"):
+        fiscal = _fiscal_cols(ctx, qual.split(".", 1)[0])
+        if fiscal and calendar is None:
+            names = ", ".join(fiscal.values())
+            return _refuse(
+                f"this warehouse carries a verified fiscal calendar ({names}); "
+                f"pass calendar='fiscal' or calendar='calendar' — refusing to "
+                f"pick silently", ctx.legal)
+        if calendar == "fiscal":
+            if not fiscal:
+                return _refuse("no verified fiscal calendar columns on the "
+                               "metric's date dimension", ctx.legal)
+            return _fiscal_group_cols(qual.split(".", 1)[0], fiscal, time_grain)
     return _grain_sql(ctx.dialect, time_grain, qual)
+
+
+def _fiscal_cols(ctx: _Ctx, owner: str) -> dict[str, str]:
+    """{time_attribute: column_name} for verified fiscal columns on `owner`."""
+    t = ctx.tables.get(owner)
+    if t is None:
+        return {}
+    return {c["time_attribute"]: c["name"] for c in t["columns"]
+            if c.get("time_attribute", "").startswith("fiscal_")}
+
+
+def _fiscal_group_cols(owner: str, fiscal: dict[str, str], grain: str) -> list:
+    cols = []
+    if "fiscal_year" in fiscal:
+        cols.append((f"{owner}.{fiscal['fiscal_year']}", "fiscal_year"))
+    if grain == "quarter" and "fiscal_quarter" in fiscal:
+        cols.append((f"{owner}.{fiscal['fiscal_quarter']}", "fiscal_quarter"))
+    return cols
 
 
 def _grain_sql(dialect: str, grain: str, col: str) -> str:
@@ -271,10 +321,14 @@ def _unknown_identifiers(ctx: _Ctx, predicate: str) -> set[str]:
 
 # ------------------------------------------------------------- emission --
 
-def _emit(ctx: _Ctx, cols: list[str], time_expr: str | None,
+def _emit(ctx: _Ctx, cols: list[str], time_expr: str | list | None,
           where: list[str], value_sql: str) -> str:
     select, group = [], []
-    if time_expr:
+    if isinstance(time_expr, list):
+        for qual, alias in time_expr:
+            select.append(f"{qual} AS {alias}")
+            group.append(qual)
+    elif time_expr:
         select.append(f"{time_expr} AS period")
         group.append(time_expr)
     for qual in cols:

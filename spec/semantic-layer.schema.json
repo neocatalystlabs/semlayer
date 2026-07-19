@@ -230,6 +230,10 @@
         "pii": {"type": "boolean"},
         "canonical_entity": {"type": "string", "description": "Flat entity-identity tag unifying columns that identify the same real-world entity without a declared FK."},
         "temporal": {"enum": ["scd2"], "description": "Marks a dimension attribute as SCD2-versioned: traversal requires point-in-time resolution (SPEC.md)."},
+        "time_attribute": {
+          "enum": ["calendar_year", "calendar_quarter", "calendar_month", "fiscal_year", "fiscal_quarter", "fiscal_period"],
+          "description": "Date-dimension attribute classification, VERIFIED against the dim's date column. fiscal_* columns are the customer's materialized fiscal calendar; compilers MUST disambiguate fiscal vs calendar time bucketing when both exist (SPEC 2.6)."
+        },
         "paths": {"type": "array", "items": {"$ref": "#/$defs/nested_path"}}
       }
     },
