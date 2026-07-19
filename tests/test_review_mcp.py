@@ -138,3 +138,25 @@ def test_cli_infer_dry_run_end_to_end(tmp_path):
     produced = yaml.safe_load(out.read_text())
     assert validate_document(produced).ok
     assert len(produced["semantic_layer"]["tables"]) == 4
+
+
+def test_attached_catalog_bridge(tmp_path):
+    """Tables in an ATTACHed catalog (the DuckDB<->Iceberg-REST bridge shape)
+    enumerate, qualify, and infer end-to-end (deterministic tier)."""
+    import importlib
+
+    mod = importlib.import_module("generators.fan_trap")
+    db = tmp_path / "ext.duckdb"
+    con = duckdb.connect(str(db))
+    mod.build(con)
+    con.close()
+
+    host = duckdb.connect()
+    host.execute(f"ATTACH '{db}' AS ice (READ_ONLY)")
+    src = DuckDBSource(host)
+    assert {t.name for t in src.list_tables()} == {"customers", "orders", "payments", "shipments"}
+    assert src.qualify("main", "orders") == '"ice"."main"."orders"'
+    doc = infer(src, llm=None)
+    assert validate_document(doc).ok
+    assert len(doc["semantic_layer"]["tables"]) == 4
+    host.close()
