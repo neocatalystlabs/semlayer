@@ -11,7 +11,7 @@ from __future__ import annotations
 from semlayer.profile.stats import TableStats, profile_table
 from semlayer.profile.typing_rules import classify
 
-ENGINE_VERSION = "0.3.0.dev0"
+ENGINE_VERSION = "0.3.0b1"
 
 
 ESCALATE_BELOW = 0.7  # tier-1 confidence under this goes to the LLM (if provided)

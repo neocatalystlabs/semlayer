@@ -1,0 +1,30 @@
+name: release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch: {}
+
+jobs:
+  pypi:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write   # trusted publishing (OIDC) — no tokens anywhere
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Build sdist + wheel
+        run: |
+          python -m pip install --quiet build
+          python -m build
+      - name: Smoke-test the wheel standalone
+        run: |
+          python -m venv /tmp/wt && /tmp/wt/bin/pip install --quiet dist/*.whl
+          cd /tmp && /tmp/wt/bin/python -c "import semlayer, semlayer.validate"
+          /tmp/wt/bin/semlayer --help > /dev/null
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

@@ -14,7 +14,9 @@ from pathlib import Path
 import jsonschema
 import yaml
 
-_SPEC_DIR = Path(__file__).resolve().parent.parent.parent / "spec"
+# packaged copy (works in installed wheels); the repo-root spec/ is the
+# public-facing canonical source — a test asserts the two never drift
+_SPEC_DIR = Path(__file__).resolve().parent / "spec"
 
 
 @dataclass

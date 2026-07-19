@@ -110,3 +110,14 @@ def test_ratio_metric_requires_declared_parts():
 def test_deep_copy_of_valid_doc_still_valid():
     doc = copy.deepcopy(_load_fan_trap())
     assert validate_document(doc).ok
+
+
+def test_packaged_schemas_match_canonical():
+    """The wheel ships copies of the spec schemas; they must never drift
+    from the canonical repo-root spec/ files."""
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    for name in ("semantic-layer.schema.json", "cq-suite.schema.json"):
+        canonical = (root / "spec" / name).read_bytes()
+        packaged = (root / "src" / "semlayer" / "spec" / name).read_bytes()
+        assert canonical == packaged, f"{name}: run cp spec/{name} src/semlayer/spec/"

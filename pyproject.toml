@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "semlayer"
-version = "0.3.0.dev0"
+version = "0.3.0b1"
 description = "Open semantic layer format and inference engine for data warehouses"
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -35,6 +35,9 @@ semlayer = "semlayer.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+semlayer = ["spec/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

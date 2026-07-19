@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://semlayer.dev/spec/0.1/cq-suite.schema.json",
+  "title": "Competency Question Suite",
+  "description": "Gold CQ sets: fixed questions with verifiable expected answers. expected_sql is the human-reviewed truth; wrong_sql (optional) is a known-wrong formulation whose result MUST differ (canary). The CQ runner executes both against the built fixture.",
+  "type": "object",
+  "required": ["cq_suite"],
+  "additionalProperties": false,
+  "properties": {
+    "cq_suite": {
+      "type": "object",
+      "required": ["fixture", "version", "questions"],
+      "additionalProperties": false,
+      "properties": {
+        "fixture": {"type": "string"},
+        "version": {"type": "integer", "minimum": 1},
+        "questions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["id", "question", "complexity", "expected_kind"],
+            "additionalProperties": false,
+            "properties": {
+              "id": {"type": "string", "pattern": "^[A-Z]+-\\d+$"},
+              "question": {"type": "string", "minLength": 5},
+              "complexity": {"enum": ["simple", "complex"]},
+              "expected_kind": {
+                "enum": ["scalar", "rows", "refusal", "clarification"],
+                "description": "refusal: a conforming consumer must refuse (e.g. fan-out without strategy, deprecated-only path). clarification: must ask, not guess (ambiguous intent)."
+              },
+              "expected_sql": {
+                "type": "object",
+                "propertyNames": {"enum": ["duckdb", "ansi"]},
+                "additionalProperties": {"type": "string"},
+                "description": "Human-reviewed SQL producing the expected answer. Required for scalar/rows."
+              },
+              "wrong_sql": {
+                "type": "object",
+                "propertyNames": {"enum": ["duckdb", "ansi"]},
+                "additionalProperties": {"type": "string"},
+                "description": "Known-wrong formulation (naive fan-out sum, missing required filter...). Runner asserts its result differs materially from expected_sql."
+              },
+              "tolerance": {"type": "number", "minimum": 0, "description": "Absolute tolerance for scalar comparison (default 0.01)."},
+              "references": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Semantic-layer objects this CQ exercises (metric/table/hierarchy refs). Used for per-element consumer coverage."
+              },
+              "notes": {"type": "string"},
+              "trap": {"type": "string", "description": "For canary CQs: which failure mode wrong_sql embodies (fan_out, missing_required_filter, snapshot_overcount, current_row_scd_join, deprecated_table, wrong_grain_aggregate)."}
+            }
+          }
+        }
+      }
+    }
+  }
+}
