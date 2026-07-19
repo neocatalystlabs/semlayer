@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "59c0b72cdf42",
+ "response": "{\"action\": \"sql\", \"sql\": \"SELECT r.rtn_rsn_cd, d.rtn_rsn_desc, SUM(r.rtn_amt) AS total_rtn_amt FROM ord_rtn r LEFT JOIN rtn_rsn_dim d ON r.rtn_rsn_cd = d.rtn_rsn_cd GROUP BY r.rtn_rsn_cd, d.rtn_rsn_desc\", \"reason\": \"\"}",
+ "usage": {
+  "in": 3026,
+  "out": 163
+ }
+}

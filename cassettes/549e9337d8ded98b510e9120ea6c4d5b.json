@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "59c0b72cdf42",
+ "response": "{\"action\": \"sql\", \"sql\": \"SELECT COUNT(*) AS orders_with_promo FROM ord_hdr WHERE promo_id IS NOT NULL\", \"reason\": null}",
+ "usage": {
+  "in": 8658,
+  "out": 340
+ }
+}

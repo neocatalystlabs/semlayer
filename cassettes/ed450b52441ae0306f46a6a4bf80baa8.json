@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"store_nm\",\n    \"semantic_type\": \"name\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": null,\n    \"rationale\": \"Store name identifier; unique values with 'store' prefix pattern\"\n  },\n  {\n    \"column\": \"cntry_cd\",\n    \"semantic_type\": \"geo_country\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.98,\n    \"enum_decodes\": {\n      \"US\": \"United States\",\n      \"DE\": \"Germany\",\n      \"CA\": \"Canada\",\n      \"GB\": \"United Kingdom\",\n      \"FR\": \"France\"\n    },\n    \"rationale\": \"Country codes; 5 distinct ISO-standard country abbreviations\"\n  }\n]\n```",
+ "usage": {
+  "in": 678,
+  "out": 213
+ }
+}

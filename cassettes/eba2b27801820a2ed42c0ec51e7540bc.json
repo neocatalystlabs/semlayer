@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "59c0b72cdf42",
+ "response": "```json\n{\n  \"action\": \"sql\",\n  \"sql\": \"SELECT SUM(ws_ext_sales_price) AS total_web_sales_revenue FROM web_sales\",\n  \"reason\": \"Query sums extended sales price from web_sales table for total web channel revenue.\"\n}\n```",
+ "usage": {
+  "in": 24604,
+  "out": 73
+ }
+}

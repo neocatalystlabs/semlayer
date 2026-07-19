@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "59c0b72cdf42",
+ "response": "{\"action\": \"sql\", \"sql\": \"SELECT COUNT(DISTINCT cust_id) AS customer_count FROM cust_mstr;\", \"reason\": null}",
+ "usage": {
+  "in": 9439,
+  "out": 492
+ }
+}

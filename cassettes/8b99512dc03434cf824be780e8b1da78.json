@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "59c0b72cdf42",
+ "response": "{\"action\": \"clarify\", \"sql\": null, \"reason\": \"cust_mstr is SCD2; need current-record filter column to count customers accurately\"}",
+ "usage": {
+  "in": 5093,
+  "out": 230
+ }
+}

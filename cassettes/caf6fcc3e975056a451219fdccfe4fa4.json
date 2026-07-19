@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "1d25ef67b201",
+ "response": "[{\"id\": 0, \"verdict\": \"accept\", \"reason\": \"Maps directly to total_tot_sls_amt metric.\"},\n{\"id\": 1, \"verdict\": \"accept\", \"reason\": \"Maps directly to ord_hdr_count metric.\"},\n{\"id\": 2, \"verdict\": \"accept\", \"reason\": \"Maps directly to total_line_amt_completed metric.\"},\n{\"id\": 3, \"verdict\": \"accept\", \"reason\": \"Maps directly to ord_rtn_count metric.\"},\n{\"id\": 4, \"verdict\": \"accept\", \"reason\": \"Maps directly to total_mrr_amt metric.\"},\n{\"id\": 5, \"verdict\": \"accept\", \"reason\": \"Maps directly to total_rtn_amt metric.\"},\n{\"id\": 6, \"verdict\": \"reject\", \"reason\": \"No completed order count metric; status code meaning ambiguous.\"},\n{\"id\": 7, \"verdict\": \"reject\", \"reason\": \"No completed order count metric to compute average.\"},\n{\"id\": 8, \"verdict\": \"accept\", \"reason\": \"Compares total_line_amt and total_tot_amt metrics directly.\"},\n{\"id\": 9, \"verdict\": \"accept\", \"reason\": \"Compares total_tot_spend_amt and total_tot_amt metrics directly.\"},\n{\"id\": 10, \"verdict\": \"reject\", \"reason\": \"No order completion rate metric defined for comparison.\"},\n{\"id\": 11, \"verdict\": \"reject\", \"reason\": \"Vague 'correlate' request without defined analytical method.\"}]",
+ "usage": {
+  "in": 4698,
+  "out": 1434
+ }
+}

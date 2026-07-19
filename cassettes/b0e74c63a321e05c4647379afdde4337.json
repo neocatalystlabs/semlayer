@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"ss_ticket_number\",\n    \"semantic_type\": \"identifier\",\n    \"entity_role\": \"natural_key\",\n    \"confidence\": 0.85,\n    \"enum_decodes\": null,\n    \"rationale\": \"Transaction identifier; non-unique suggests multiple items per ticket\"\n  },\n  {\n    \"column\": \"ss_ext_tax\",\n    \"semantic_type\": \"monetary_value\",\n    \"entity_role\": \"measure\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": null,\n    \"rationale\": \"Extended tax amount; decimal currency format with typical tax range\"\n  },\n  {\n    \"column\": \"ss_net_profit\",\n    \"semantic_type\": \"monetary_value\",\n    \"entity_role\": \"measure\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": null,\n    \"rationale\": \"Net profit metric; signed decimal with negative/positive values typical of profit\"\n  }\n]\n```",
+ "usage": {
+  "in": 832,
+  "out": 251
+ }
+}

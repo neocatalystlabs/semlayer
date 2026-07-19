@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "59c0b72cdf42",
+ "response": "{\"action\": \"sql\", \"sql\": \"SELECT c.cust_id, COUNT(*) AS order_cnt\\nFROM ord_hdr o\\nJOIN cust_mstr c\\n  ON o.cust_id = c.cust_id\\n  AND o.ord_dt >= c.eff_start_dt\\n  AND (c.eff_end_dt IS NULL OR o.ord_dt < c.eff_end_dt)\\nWHERE c.seg_cd = 'ENT'\\nGROUP BY c.cust_id\\nORDER BY order_cnt DESC;\", \"reason\": null}",
+ "usage": {
+  "in": 3047,
+  "out": 617
+ }
+}

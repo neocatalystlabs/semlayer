@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"lifetime_orders\",\n    \"semantic_type\": \"quantity\",\n    \"entity_role\": \"measure\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": null,\n    \"rationale\": \"Integer count of orders per customer; cumulative measure, non-negative range 0\u201351.\"\n  }\n]\n```",
+ "usage": {
+  "in": 515,
+  "out": 94
+ }
+}

@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"c_salutation\",\n    \"semantic_type\": \"enum\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": {\n      \"Dr.\": \"Doctor\",\n      \"Sir\": \"Sir\",\n      \"Mr.\": \"Mister\",\n      \"Miss\": \"Miss\",\n      \"Ms.\": \"Ms.\",\n      \"Mrs.\": \"Mrs.\"\n    },\n    \"rationale\": \"Fixed set of 6 title/salutation values; clear categorical dimension.\"\n  },\n  {\n    \"column\": \"c_birth_day\",\n    \"semantic_type\": \"quantity\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.92,\n    \"enum_decodes\": null,\n    \"rationale\": \"Day of month (1-31); component of birth date dimension.\"\n  },\n  {\n    \"column\": \"c_birth_month\",\n    \"semantic_type\": \"quantity\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.93,\n    \"enum_decodes\": null,\n    \"rationale\": \"Month of year (1-12); component of birth date dimension.\"\n  },\n  {\n    \"column\": \"c_birth_year\",\n    \"semantic_type\": \"quantity\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.94,\n    \"enum_decodes\": null,\n    \"rationale\": \"Birth year (1924-1992); component of birth date dimension.\"\n  },\n  {\n    \"column\": \"c_login\",\n    \"semantic_type\": \"unknown\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.25,\n    \"enum_decodes\": null,\n    \"rationale\": \"Single empty value; likely deprecated or unused login field. Insufficient data.\"\n  }\n]\n```",
+ "usage": {
+  "in": 1130,
+  "out": 463
+ }
+}

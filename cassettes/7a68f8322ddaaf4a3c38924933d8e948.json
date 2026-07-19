@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"cp_department\",\n    \"semantic_type\": \"enum\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.7,\n    \"enum_decodes\": null,\n    \"rationale\": \"Single constant value suggests department classification; low cardinality enum dimension.\"\n  },\n  {\n    \"column\": \"cp_catalog_number\",\n    \"semantic_type\": \"identifier\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.8,\n    \"enum_decodes\": null,\n    \"rationale\": \"Catalog identifier; 109 distinct values, sequential range 1-109, non-unique.\"\n  },\n  {\n    \"column\": \"cp_catalog_page_number\",\n    \"semantic_type\": \"identifier\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.85,\n    \"enum_decodes\": null,\n    \"rationale\": \"Page number within catalog; 108 distinct values, sequential range 1-108, non-unique.\"\n  }\n]\n```",
+ "usage": {
+  "in": 790,
+  "out": 263
+ }
+}

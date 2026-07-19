@@ -1,0 +1,520 @@
+"""Enrich stage (M4, deterministic tier): metrics, knowledge, routing.
+
+Everything here is statistics + graph + SQL verification — no LLM calls.
+Key moves:
+- Enum decodes upgrade from llm_guess to dictionary_join by actually joining
+  the decode dimension Link discovered (metric filters become contract-legal).
+- Aggregate detection runs a RECONCILIATION VERIFIER that also DISCOVERS the
+  business rule (e.g. "excludes cancelled orders") by testing enum-exclusion
+  hypotheses until the aggregate reconciles.
+- Deprecation: naming + staleness; replacement = active table with the
+  longest shared prefix.
+- Hierarchy candidates: FD mining with the spike's fixes (key-exclusion +
+  transitive reduction) — REVIEW-QUEUED, never auto-included.
+"""
+
+from __future__ import annotations
+
+import re
+from collections import defaultdict
+from dataclasses import dataclass
+from typing import Any
+
+_LEGACY_RE = re.compile(r"(_legacy|_old|_bak|_deprecated|_archive)$")
+_AGG_NAME_RE = re.compile(r"(^|_)(agg|summary|rollup)($|_)|^(dly|mth|wkly)_")
+
+
+def enrich_source(source, doc: dict, stats: dict) -> dict:
+    """Run the deterministic enrich tier.
+
+    Covers decodes, deprecation, freshness, metrics, aggregate
+    reconciliation, routing/domains, and snapshot filters.
+    """
+    sl = doc["semantic_layer"]
+    _upgrade_enum_decodes(source, sl, stats)
+    _detect_deprecation(sl, stats)
+    _infer_freshness(sl, stats)
+    metrics = _metric_candidates(sl)
+    if metrics:
+        sl["metrics"] = metrics
+    aggs = _detect_aggregates(source, sl, stats)
+    if aggs:
+        sl["aggregate_tables"] = aggs
+    _apply_discovered_filters_to_metrics(sl)
+    _domains_and_routing(sl, aggs)
+    _snapshot_filters(sl, stats)
+    return doc
+
+
+# ---------------------------------------------------------------- decodes
+def _upgrade_enum_decodes(source, sl, stats) -> None:
+    """cd-column with FK to a small (code, label) dim -> dictionary_join decodes."""
+    tables = {t["name"]: t for t in sl["tables"]}
+    for t in sl["tables"]:
+        for c in t["columns"]:
+            fk = c.get("foreign_key")
+            if not fk:
+                continue
+            ptn, pcn = fk["references"].split(".")
+            pt = tables.get(ptn)
+            if pt is None or len(pt["columns"]) > 3:
+                continue
+            varchar_cols = [pc["name"] for pc in pt["columns"]
+                            if pc["name"] != pcn and any(k in pc["sql_type"].upper()
+                                                         for k in ("CHAR", "TEXT", "STRING"))]
+            label_cols = sorted(
+                varchar_cols,
+                key=lambda n: 0 if n.lower().endswith(("_desc", "_nm", "_name", "_label")) else 1,
+            )
+            if not label_cols or stats[ptn].row_count > 100:
+                continue
+            ts = stats[ptn].table
+            q = getattr(source, "qualify", lambda s, n: f'"{s}"."{n}"')(ts.schema, ts.name)
+            pairs = source.query(f'SELECT "{pcn}", "{label_cols[0]}" FROM {q} LIMIT 100')
+            c["enum_values"] = [
+                {"value": v, "meaning": str(m), "decode_source": "dictionary_join"}
+                for v, m in pairs if v is not None
+            ]
+            c.setdefault("provenance", []).append({
+                "signal": "statistic",
+                "detail": f"enum decoded via join to {ptn}.{label_cols[0]}",
+            })
+
+
+# ------------------------------------------------------------ deprecation
+def _detect_deprecation(sl, stats) -> None:
+    """Flag legacy-named tables as deprecated and point them at their active replacement."""
+    names = [t["name"] for t in sl["tables"]]
+    for t in sl["tables"]:
+        if not _LEGACY_RE.search(t["name"]):
+            continue
+        base = _LEGACY_RE.sub("", t["name"])
+        replacement = next(
+            (n for n in names if n != t["name"] and (n == base or n.startswith(base))), None
+        )
+        t["lifecycle"] = "deprecated"
+        reason = "legacy-named table" + (f"; superseded by {replacement}" if replacement else "")
+        t["deprecation"] = {"replacement": replacement or "", "reason": reason}
+        if not t["deprecation"]["replacement"]:
+            del t["deprecation"]["replacement"]
+
+
+# -------------------------------------------------------------- freshness
+def _infer_freshness(sl, stats) -> None:
+    """Infer expected load cadence from the density of distinct dates in a table's date column."""
+    for t in sl["tables"]:
+        date_cols = [c["name"] for c in t["columns"]
+                     if c.get("semantic_type") in ("date", "timestamp_event") and
+                     c.get("entity_role") != "metadata"]
+        if not date_cols:
+            continue
+        cs = stats[t["name"]].columns[date_cols[0]]
+        if not (cs.min_val and cs.max_val and cs.n_distinct > 1):
+            continue
+        try:
+            from datetime import date
+            span = (date.fromisoformat(cs.max_val[:10]) - date.fromisoformat(cs.min_val[:10])).days
+        except ValueError:
+            continue
+        density = cs.n_distinct / max(1, span)
+        cadence = "daily" if density > 0.6 else "weekly" if density > 0.1 else "sporadic"
+        t["freshness"] = {
+            "expected_cadence": cadence,
+            "inferred_from": f"{cs.n_distinct} distinct {date_cols[0]} over {span} days",
+        }
+
+
+# ---------------------------------------------------------------- metrics
+def _status_col_for_metrics(t: dict):
+    """Find a fully-decoded status/code/enum column to derive a "completed" filtered metric from.
+
+    Only non-llm-guess decodes qualify.
+    """
+    return next(
+        (c for c in t["columns"]
+         if c.get("semantic_type") in ("status_code", "code", "enum") and c.get("enum_values")
+         and all(e["decode_source"] != "llm_guess" for e in c["enum_values"])),
+        None,
+    )
+
+
+def _completed_metric(t: dict, c: dict, base: str, status_col: dict) -> dict | None:
+    """Contract-legal filtered variant of a monetary metric.
+
+    Scoped to a dictionary/docs-decoded status value that reads as "done"
+    (only dictionary/docs decodes are trustworthy enough to filter on).
+    """
+    good = next(
+        (e for e in status_col["enum_values"]
+         if any(k in str(e["meaning"]).lower() for k in ("complete", "closed", "success", "paid"))),
+        None,
+    )
+    if good is None:
+        return None
+    detail = f"status filter via dictionary decode ({good['value']}={good['meaning']})"
+    return {
+        "name": f"{base}_completed", "type": "simple",
+        "measure": f"{t['name']}.{c['name']}", "agg": "sum",
+        "filter": f"{status_col['name']} = '{good['value']}'",
+        "grain": t.get("grain", ""), "lifecycle": "inferred", "confidence": 0.6,
+        "provenance": [{"signal": "statistic", "detail": detail}],
+    }
+
+
+def _monetary_metrics(t: dict, status_col: dict | None, seen: set) -> list[dict]:
+    """Simple sum() metrics for every monetary measure column, plus a status-filtered variant.
+
+    The "completed" variant is added only on fact tables.
+    """
+    metrics = []
+    for c in t["columns"]:
+        if c.get("entity_role") != "measure" or "aggregations" not in c:
+            continue
+        if c.get("semantic_type") != "monetary_value":
+            continue
+        base = f"total_{c['name']}"
+        if base in seen:
+            base = f"total_{t['name']}_{c['name']}"
+        seen.add(base)
+        metrics.append({
+            "name": base, "type": "simple",
+            "measure": f"{t['name']}.{c['name']}", "agg": c["aggregations"].get("default", "sum"),
+            "grain": t.get("grain", ""), "lifecycle": "inferred", "confidence": 0.7,
+            "provenance": [{"signal": "statistic", "detail": "monetary measure on fact"}],
+        })
+        if status_col is not None and t.get("table_type") == "fact":
+            completed = _completed_metric(t, c, base, status_col)
+            if completed is not None:
+                metrics.append(completed)
+    return metrics
+
+
+def _count_metric(t: dict, pk: str | None, seen: set) -> dict | None:
+    """Row-count metric on a fact table's primary key."""
+    if not (pk and t.get("table_type") == "fact"):
+        return None
+    name = f"{t['name']}_count"
+    if name in seen:
+        return None
+    seen.add(name)
+    pk_col = next(c for c in t["columns"] if c["name"] == pk)
+    pk_col.setdefault("aggregations", {"allowed": ["count", "count_distinct"], "default": "count"})
+    return {
+        "name": name, "type": "simple", "measure": f"{t['name']}.{pk}",
+        "agg": "count", "grain": t.get("grain", ""),
+        "lifecycle": "inferred", "confidence": 0.75,
+        "provenance": [{"signal": "statistic", "detail": "row count on fact PK"}],
+    }
+
+
+def _metric_candidates(sl) -> list[dict]:
+    """Derive simple metrics.
+
+    sum() over monetary measures (plus a status-filtered "completed" variant
+    where a clean decode exists) and count() over each fact table's primary key.
+    """
+    metrics = []
+    seen: set = set()
+    for t in sl["tables"]:
+        eligible = t.get("table_type") in ("fact", "aggregate", "unknown")
+        if t.get("lifecycle") == "deprecated" or not eligible:
+            continue
+        pk = (t.get("primary_key") or [None])[0]
+        status_col = _status_col_for_metrics(t)
+        metrics.extend(_monetary_metrics(t, status_col, seen))
+        count_metric = _count_metric(t, pk, seen)
+        if count_metric is not None:
+            metrics.append(count_metric)
+    return metrics
+
+
+# ------------------------------------------------------------- aggregates
+@dataclass
+class _AggCandidate:
+    """Grouping context for one (aggregate table, fact table) reconciliation attempt.
+
+    Bundled so _reconcile stays under the max-args lint limit.
+    """
+
+    agg_t: dict
+    fact_t: dict
+    agg_m: str
+    fact_m: str
+    gmap: dict[str, str]
+    date_pairs: list[tuple[str, str]]
+
+
+def _agg_group_mapping(
+    group_cols: list[str], f: dict
+) -> tuple[dict[str, str], list[tuple[str, str]]]:
+    """Map aggregate-table group columns to fact-table columns.
+
+    Same-name match, or a `dt`-named column paired against any date-typed fact column.
+    """
+    fcols = {c["name"] for c in f["columns"]}
+    gmap = {g: g for g in group_cols if g in fcols}
+    date_pairs = [(g, fc["name"]) for g in group_cols for fc in f["columns"]
+                  if g not in fcols and "dt" in g and fc.get("semantic_type") in ("date",)]
+    return gmap, date_pairs
+
+
+def _record_measure_filter_note(f: dict, t: dict, filt: str) -> None:
+    """Record a discovered exclusion rule as a usage note + a pending metric filter.
+
+    Measure-scoped: blanket table filters corrupt count questions.
+    """
+    note = (f"revenue/amount aggregations over {f['name']} conventionally use "
+            f"{filt} (discovered: {t['name']} reconciles only with it); "
+            f"event COUNTS include all rows")
+    notes = f.setdefault("knowledge", {}).setdefault("usage_notes", [])
+    if note not in notes:
+        notes.append(note)
+    f["knowledge"].setdefault("_pending_metric_filter", []).append(filt)
+
+
+def _aggregate_entry(
+    t: dict, f: dict, agg_m: str, fact_m: str, group_cols: list[str], filt: str
+) -> dict:
+    """Build the aggregate_tables entry once a measure pair reconciles."""
+    where = f" WHERE {filt}" if filt else ""
+    excl = f" excluding {filt}" if filt else ""
+    return {
+        "table": t["name"], "aggregates": f["name"],
+        "grain": group_cols,
+        "measure_mappings": [{"source": f"SUM({fact_m}){where}", "target": agg_m}],
+        "mapping_source": "heuristic",
+        "routing": {"rule": f"pre-aggregated {fact_m} by {', '.join(group_cols)}",
+                    "status": "advisory"},
+        "consistency": {"method": "deterministic_window", "status": "consistent"},
+        "lifecycle": "inferred", "confidence": 0.75,
+        "provenance": [{"signal": "statistic",
+                        "detail": f"reconciles with {f['name']}.{fact_m}{excl}"}],
+    }
+
+
+def _reconcile_candidate(
+    source, qualify, stats, cand: _AggCandidate, group_cols: list[str]
+) -> dict | None:
+    """Reconcile one (aggregate measure, fact measure) pair.
+
+    On success, record any discovered filter and return the aggregate_tables entry.
+    """
+    filt = _reconcile(source, qualify, stats, cand)
+    if filt is None:
+        return None
+    if filt:
+        _record_measure_filter_note(cand.fact_t, cand.agg_t, filt)
+    return _aggregate_entry(cand.agg_t, cand.fact_t, cand.agg_m, cand.fact_m, group_cols, filt)
+
+
+def _match_fact_for_aggregate(source, qualify, stats, t: dict, f: dict,
+                              agg_measures: list[dict], group_cols: list[str]) -> dict | None:
+    """Find the first (agg measure, fact measure) pair on `f` reconciling against `t`, if any."""
+    f_measures = [c for c in f["columns"] if c.get("entity_role") == "measure"
+                  and c.get("semantic_type") == "monetary_value"]
+    gmap, date_pairs = _agg_group_mapping(group_cols, f)
+    if not gmap and not date_pairs:
+        return None
+    for am in agg_measures:
+        for fm in f_measures:
+            cand = _AggCandidate(t, f, am["name"], fm["name"], gmap, date_pairs)
+            entry = _reconcile_candidate(source, qualify, stats, cand, group_cols)
+            if entry is not None:
+                return entry
+    return None
+
+
+def _detect_aggregates(source, sl, stats) -> list[dict]:
+    """Find aggregate/summary tables and reconcile them against candidate fact tables.
+
+    Via SQL, discover their grain, measure mapping, and any implicit exclusion
+    filter (e.g. "excludes cancelled orders").
+    """
+    facts = [t for t in sl["tables"]
+             if t.get("table_type") == "fact" and t.get("lifecycle") != "deprecated"]
+    out = []
+    qualify = getattr(source, "qualify", lambda s, n: f'"{s}"."{n}"')
+    for t in sl["tables"]:
+        if not (_AGG_NAME_RE.search(t["name"]) or t.get("table_type") == "aggregate"):
+            continue
+        agg_measures = [c for c in t["columns"] if c.get("entity_role") == "measure"]
+        group_cols = [c["name"] for c in t["columns"]
+                      if c.get("entity_role") in ("foreign_key", "dimension")]
+        if not agg_measures or not group_cols:
+            continue
+        for f in facts:
+            entry = _match_fact_for_aggregate(
+                source, qualify, stats, t, f, agg_measures, group_cols
+            )
+            if entry is not None:
+                out.append(entry)
+    return out
+
+
+def _reconcile(source, qualify, stats, cand: _AggCandidate) -> str | None:
+    """Try SUM(fact.measure) grouped == agg values, then test exclusion hypotheses.
+
+    On mismatch, test excluding each status-enum value (business-rule
+    discovery). Returns "" on a clean reconciliation, the discovered
+    exclusion filter on a mismatch that resolves, or None if no
+    reconciliation is found.
+    """
+    a_ts, f_ts = stats[cand.agg_t["name"]].table, stats[cand.fact_t["name"]].table
+    aq, fq = qualify(a_ts.schema, a_ts.name), qualify(f_ts.schema, f_ts.name)
+    if cand.gmap:
+        _, g_fact = next(iter(cand.gmap.items()))
+    elif cand.date_pairs:
+        _, g_fact = cand.date_pairs[0]
+    else:
+        return None
+
+    def total(filter_sql: str = "") -> float | None:
+        w = f" WHERE {filter_sql}" if filter_sql else ""
+        q = (f'SELECT round(sum(s),2) FROM '
+             f'(SELECT "{g_fact}", sum("{cand.fact_m}") s FROM {fq}{w} GROUP BY 1) x')
+        return source.query(q)[0][0]
+
+    agg_total = source.query(f'SELECT round(sum("{cand.agg_m}"),2) FROM {aq}')[0][0]
+    if agg_total is None:
+        return None
+    clean_total = total()
+    if clean_total is not None and abs(float(clean_total) - float(agg_total)) < 0.05:
+        return ""
+    status_cols = [c for c in cand.fact_t["columns"] if c.get("semantic_type") == "status_code"]
+    for sc in status_cols:
+        cs = stats[cand.fact_t["name"]].columns[sc["name"]]
+        for v, _n in cs.top_values[:6]:
+            t2 = total(f"\"{sc['name']}\" <> '{v}'")
+            if t2 is not None and abs(float(t2) - float(agg_total)) < 0.05:
+                return f"{sc['name']} <> '{v}'"
+    return None
+
+
+def _apply_discovered_filters_to_metrics(sl) -> None:
+    """Scope reconciliation-discovered rules to MONETARY metrics on the fact, never to counts.
+
+    Measured: blanket filters corrupt count questions.
+    """
+    for t in sl["tables"]:
+        pend = t.get("knowledge", {}).pop("_pending_metric_filter", None)
+        if not pend:
+            continue
+        filt = pend[0]
+        for m in sl.get("metrics", []):
+            if (m.get("measure", "").startswith(t["name"] + ".")
+                    and m.get("agg") in ("sum", "avg") and not m.get("filter")):
+                m["filter"] = filt
+                m.setdefault("provenance", []).append(
+                    {"signal": "statistic",
+                     "detail": f"business rule from aggregate reconciliation: {filt}"})
+
+
+# ------------------------------------------------------- domains / routing
+def _connected_components(rels: list[dict], table_names: list[str]) -> dict[str, list[str]]:
+    """Union-find over the relationship graph.
+
+    Tables joined (directly or transitively) by an FK land in the same component.
+    """
+    parent: dict[str, str] = {}
+
+    def find(x: str) -> str:
+        while parent.get(x, x) != x:
+            parent[x] = parent.get(parent[x], parent[x])
+            x = parent[x]
+        return x
+
+    def union(a: str, b: str) -> None:
+        parent.setdefault(a, a)
+        parent.setdefault(b, b)
+        parent[find(a)] = find(b)
+
+    for r in rels:
+        union(r["from"]["table"], r["to"]["table"])
+    comps: dict[str, list[str]] = defaultdict(list)
+    for name in table_names:
+        comps[find(name) if name in parent else name].append(name)
+    return comps
+
+
+def _domains_from_components(comps: dict[str, list[str]], ttypes: dict[str, Any]) -> list[dict]:
+    """One domain per multi-table component, named after its fact table.
+
+    Falls back to the alphabetically first member if no fact table is present.
+    """
+    domains = []
+    for members in comps.values():
+        if len(members) < 2:
+            continue
+        facts = [m for m in members if ttypes.get(m) == "fact"]
+        name = (facts[0] if facts else sorted(members)[0]) + "_domain"
+        domains.append({"name": name, "tables": sorted(members)})
+    return domains
+
+
+def _avoid_list(t: dict, deprecated: list[dict]) -> list[dict]:
+    """Deprecated tables whose replacement or own name shares a prefix with `t`.
+
+    A cheap proxy for "this deprecated table used to serve the same purpose".
+    """
+    return [{"table": d["name"], "reason": d.get("deprecation", {}).get("reason", "deprecated")}
+            for d in deprecated
+            if d.get("deprecation", {}).get("replacement", "").startswith(t["name"][:6]) or
+               d["name"].startswith(t["name"][:6])]
+
+
+def _routing_entries(sl: dict, aggs: list[dict]) -> list[dict]:
+    """One routing hint per active fact table.
+
+    Which table(s) to use (including any reconciled aggregate) and which
+    deprecated tables to avoid.
+    """
+    deprecated = [t for t in sl["tables"] if t.get("lifecycle") == "deprecated"]
+    agg_by_base = {a["aggregates"]: a["table"] for a in aggs}
+    routing = []
+    for t in sl["tables"]:
+        if t.get("table_type") != "fact" or t.get("lifecycle") == "deprecated":
+            continue
+        use = [t["name"]] + ([agg_by_base[t["name"]]] if t["name"] in agg_by_base else [])
+        entry = {"intent": f"analysis of {t['name'].replace('_', ' ')}",
+                 "use": use, "lifecycle": "inferred", "confidence": 0.6}
+        avoid = _avoid_list(t, deprecated)
+        if avoid:
+            entry["avoid"] = avoid
+        routing.append(entry)
+    return routing
+
+
+def _domains_and_routing(sl, aggs) -> None:
+    """Group joined tables into domains and generate fact-to-aggregate routing hints.
+
+    Domains are connected components of the relationship graph; routing
+    entries carry avoid-lists pointing away from deprecated tables.
+    """
+    rels = sl.get("relationships", [])
+    comps = _connected_components(rels, [t["name"] for t in sl["tables"]])
+    ttypes = {t["name"]: t.get("table_type") for t in sl["tables"]}
+    domains = _domains_from_components(comps, ttypes)
+    routing = _routing_entries(sl, aggs)
+    rk = {}
+    if routing:
+        rk["routing"] = routing
+    if domains:
+        rk["domains"] = domains
+    if rk:
+        sl["repo_knowledge"] = rk
+
+
+# -------------------------------------------------------- snapshot filters
+def _snapshot_filters(sl, stats) -> None:
+    """Add a required latest-snapshot filter to SCD2 tables (summing across dates over-counts)."""
+    for t in sl["tables"]:
+        if t.get("table_type") != "snapshot_scd2":
+            continue
+        snap_col = next((c["name"] for c in t["columns"]
+                         if c["name"].lower() in ("snap_dt", "snapshot_dt", "as_of_dt")), None)
+        if snap_col:
+            t.setdefault("knowledge", {}).setdefault("required_filters", []).append({
+                "expr": f"{snap_col} = (SELECT max({snap_col}) FROM {t['name']})",
+                "reason": "snapshot table: summing across snapshot dates over-counts",
+                "enforcement": "advisory",
+            })

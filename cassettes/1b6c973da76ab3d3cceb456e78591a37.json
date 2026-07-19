@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"hd_buy_potential\",\n    \"semantic_type\": \"enum\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": {\n      \"0-500\": \"Purchase potential $0-500\",\n      \"501-1000\": \"Purchase potential $501-1000\",\n      \"1001-5000\": \"Purchase potential $1001-5000\",\n      \"5001-10000\": \"Purchase potential $5001-10000\",\n      \">10000\": \"Purchase potential over $10000\",\n      \"Unknown\": \"Unknown purchase potential\"\n    },\n    \"rationale\": \"Categorical ranges representing household buying capacity; 6 distinct values with clear monetary band patterns.\"\n  }\n]\n```",
+ "usage": {
+  "in": 539,
+  "out": 193
+ }
+}

@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"job_nm\",\n    \"semantic_type\": \"code\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": {\n      \"load_web_evt\": \"Load web events\",\n      \"agg_dly_sls\": \"Aggregate daily sales\",\n      \"load_cust_mstr\": \"Load customer master\",\n      \"load_ord_hdr\": \"Load order header\"\n    },\n    \"rationale\": \"Job name identifier with 4 distinct values; represents ETL job types\"\n  },\n  {\n    \"column\": \"rows_in\",\n    \"semantic_type\": \"quantity\",\n    \"entity_role\": \"measure\",\n    \"confidence\": 0.98,\n    \"enum_decodes\": null,\n    \"rationale\": \"Count of input rows processed; numeric measure of data volume\"\n  },\n  {\n    \"column\": \"rows_out\",\n    \"semantic_type\": \"quantity\",\n    \"entity_role\": \"measure\",\n    \"confidence\": 0.98,\n    \"enum_decodes\": null,\n    \"rationale\": \"Count of output rows produced; numeric measure of data volume\"\n  }\n]\n```",
+ "usage": {
+  "in": 800,
+  "out": 305
+ }
+}

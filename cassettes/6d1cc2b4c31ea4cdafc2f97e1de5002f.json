@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"rep_nm\",\n    \"semantic_type\": \"name\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.65,\n    \"enum_decodes\": null,\n    \"rationale\": \"Labeled 'nm' (name); unique values suggest identifier-like naming pattern, possibly concatenated with prefix.\"\n  }\n]\n```",
+ "usage": {
+  "in": 548,
+  "out": 98
+ }
+}

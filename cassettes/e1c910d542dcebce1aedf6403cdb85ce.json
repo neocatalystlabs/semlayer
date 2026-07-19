@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"store_id\",\n    \"semantic_type\": \"code\",\n    \"entity_role\": \"foreign_key\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": null,\n    \"rationale\": \"Store identifier; 40 distinct values suggest coded reference to store dimension.\"\n  },\n  {\n    \"column\": \"curr_cd\",\n    \"semantic_type\": \"code\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.92,\n    \"enum_decodes\": null,\n    \"rationale\": \"Currency code; 4 distinct values typical of ISO currency codes (USD, EUR, GBP, etc).\"\n  },\n  {\n    \"column\": \"src_sys_id\",\n    \"semantic_type\": \"code\",\n    \"entity_role\": \"metadata\",\n    \"confidence\": 0.90,\n    \"enum_decodes\": null,\n    \"rationale\": \"Source system identifier; 3 distinct values indicate metadata tracking origin system.\"\n  }\n]\n```",
+ "usage": {
+  "in": 628,
+  "out": 259
+ }
+}

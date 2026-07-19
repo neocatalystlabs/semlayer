@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"cs_order_number\",\n    \"semantic_type\": \"identifier\",\n    \"entity_role\": \"natural_key\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": null,\n    \"rationale\": \"Order identifier; low cardinality relative to fact table size suggests composite key\"\n  },\n  {\n    \"column\": \"cs_ext_tax\",\n    \"semantic_type\": \"monetary_value\",\n    \"entity_role\": \"measure\",\n    \"confidence\": 0.98,\n    \"enum_decodes\": null,\n    \"rationale\": \"Extended tax amount; decimal currency with typical tax range and nulls\"\n  },\n  {\n    \"column\": \"cs_net_profit\",\n    \"semantic_type\": \"monetary_value\",\n    \"entity_role\": \"measure\",\n    \"confidence\": 0.99,\n    \"enum_decodes\": null,\n    \"rationale\": \"Net profit metric; signed decimal currency with negative/positive values typical of profit\"\n  }\n]\n```",
+ "usage": {
+  "in": 969,
+  "out": 258
+ }
+}

@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "59c0b72cdf42",
+ "response": "```json\n{\n  \"action\": \"clarify\",\n  \"sql\": null,\n  \"reason\": \"Need to confirm: use ord_hdr table (inferred) or ord_hdr_legacy (deprecated)? Context shows ord_hdr referenced in metrics but not in search results.\"\n}\n```",
+ "usage": {
+  "in": 10763,
+  "out": 73
+ }
+}

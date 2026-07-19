@@ -1,0 +1,333 @@
+# Gold semantic layer for the obt (one-big-table) fixture.
+# Hand-authored (no confidence fields = human truth). Exercises: intra-table
+# semantics on a single denormalized table — hierarchies declared from
+# columns WITHIN the table (there is nothing to join, so relationships and
+# foreign keys are deliberately absent).
+semantic_layer:
+  spec_version: "0.1.0"
+  name: obt
+  description: >
+    obt fixture: a single ~124-column denormalized events_wide table
+    flattening order/customer/product/store attributes into one row per
+    purchase event. No dimension tables exist to join against; all entity
+    groupings (geography, product taxonomy) must be inferred from columns
+    inside this one table.
+  ai_context: >
+    This is a one-big-table (OBT) denormalization. There are no foreign
+    keys and no relationships to declare because every attribute already
+    lives on the fact row. Hierarchies below are declared directly against
+    events_wide columns rather than through a dimension table.
+  calendar:
+    timezone: UTC
+    week_start: monday
+  tables:
+    - name: events_wide
+      table_type: denormalized
+      grain: "one row per purchase event"
+      source: main.events_wide
+      primary_key: [event_id]
+      ai_context: >
+        Fully denormalized fact: customer, product, and store attributes are
+        repeated on every row for the entity they describe (e.g. every row
+        for cust_id=42 repeats the same cust_country/cust_state/cust_city).
+        Aggregating customer- or product-level attributes (e.g. counting
+        distinct cust_tier values) must account for this repetition; there
+        is no separate customer or product dimension to de-duplicate against.
+      columns:
+        - name: event_id
+          sql_type: INTEGER
+          semantic_type: identifier
+          entity_role: primary_key
+        - name: order_id
+          sql_type: INTEGER
+          semantic_type: identifier
+          entity_role: dimension
+        - name: event_ts
+          sql_type: TIMESTAMP
+          semantic_type: timestamp_event
+          entity_role: dimension
+        - name: event_type
+          sql_type: VARCHAR
+          semantic_type: enum
+          entity_role: dimension
+          enum_values:
+            - {value: purchase, meaning: "purchase event", decode_source: human}
+        - name: channel
+          sql_type: VARCHAR
+          semantic_type: enum
+          entity_role: dimension
+          enum_values:
+            - {value: web, meaning: "desktop web", decode_source: human}
+            - {value: mobile_app, meaning: "native mobile app", decode_source: human}
+            - {value: store, meaning: "in-store POS", decode_source: human}
+            - {value: call_center, meaning: "phone order", decode_source: human}
+        - name: cust_id
+          sql_type: INTEGER
+          semantic_type: identifier
+          entity_role: dimension
+          canonical_entity: customer
+        - name: cust_name
+          sql_type: VARCHAR
+          semantic_type: name
+          entity_role: dimension
+          pii: true
+        - name: cust_email
+          sql_type: VARCHAR
+          semantic_type: pii_email
+          entity_role: dimension
+          pii: true
+        - name: cust_signup_dt
+          sql_type: DATE
+          semantic_type: date
+          entity_role: dimension
+        - name: cust_tier
+          sql_type: VARCHAR
+          semantic_type: enum
+          entity_role: dimension
+          enum_values:
+            - {value: bronze, meaning: "bronze loyalty tier", decode_source: human}
+            - {value: silver, meaning: "silver loyalty tier", decode_source: human}
+            - {value: gold, meaning: "gold loyalty tier", decode_source: human}
+            - {value: platinum, meaning: "platinum loyalty tier", decode_source: human}
+        - name: cust_country
+          sql_type: VARCHAR
+          semantic_type: geo_country
+          entity_role: dimension
+        - name: cust_state
+          sql_type: VARCHAR
+          semantic_type: geo_region
+          entity_role: dimension
+        - name: cust_city
+          sql_type: VARCHAR
+          semantic_type: geo_city
+          entity_role: dimension
+        - name: cust_postal
+          sql_type: VARCHAR
+          semantic_type: geo_postal
+          entity_role: dimension
+        - name: cust_lifetime_orders
+          sql_type: INTEGER
+          semantic_type: quantity
+          entity_role: dimension
+        - name: prod_id
+          sql_type: INTEGER
+          semantic_type: identifier
+          entity_role: dimension
+          canonical_entity: product
+        - name: prod_name
+          sql_type: VARCHAR
+          semantic_type: name
+          entity_role: dimension
+        - name: prod_sku
+          sql_type: VARCHAR
+          semantic_type: code
+          entity_role: dimension
+        - name: prod_department
+          sql_type: VARCHAR
+          semantic_type: enum
+          entity_role: dimension
+          enum_values:
+            - {value: Electronics, meaning: "electronics department", decode_source: human}
+            - {value: Home, meaning: "home goods department", decode_source: human}
+            - {value: Apparel, meaning: "apparel department", decode_source: human}
+        - name: prod_category
+          sql_type: VARCHAR
+          semantic_type: enum
+          entity_role: dimension
+          enum_values:
+            - {value: Phones, meaning: "phones category (Electronics)", decode_source: human}
+            - {value: Laptops, meaning: "laptops category (Electronics)", decode_source: human}
+            - {value: Audio, meaning: "audio category (Electronics)", decode_source: human}
+            - {value: Kitchen, meaning: "kitchen category (Home)", decode_source: human}
+            - {value: Furniture, meaning: "furniture category (Home)", decode_source: human}
+            - {value: Decor, meaning: "decor category (Home)", decode_source: human}
+            - {value: Mens, meaning: "mens category (Apparel)", decode_source: human}
+            - {value: Womens, meaning: "womens category (Apparel)", decode_source: human}
+            - {value: Kids, meaning: "kids category (Apparel)", decode_source: human}
+        - name: prod_brand
+          sql_type: VARCHAR
+          semantic_type: enum
+          entity_role: dimension
+          enum_values:
+            - {value: Acme, meaning: "Acme brand", decode_source: human}
+            - {value: Globex, meaning: "Globex brand", decode_source: human}
+            - {value: Initech, meaning: "Initech brand", decode_source: human}
+            - {value: Umbrella, meaning: "Umbrella brand", decode_source: human}
+            - {value: Soylent, meaning: "Soylent brand", decode_source: human}
+        - name: prod_color
+          sql_type: VARCHAR
+          semantic_type: enum
+          entity_role: dimension
+          enum_values:
+            - {value: black, meaning: "black", decode_source: human}
+            - {value: white, meaning: "white", decode_source: human}
+            - {value: red, meaning: "red", decode_source: human}
+            - {value: blue, meaning: "blue", decode_source: human}
+            - {value: green, meaning: "green", decode_source: human}
+        - name: prod_size
+          sql_type: VARCHAR
+          semantic_type: enum
+          entity_role: dimension
+          enum_values:
+            - {value: XS, meaning: "extra small", decode_source: human}
+            - {value: S, meaning: "small", decode_source: human}
+            - {value: M, meaning: "medium", decode_source: human}
+            - {value: L, meaning: "large", decode_source: human}
+            - {value: XL, meaning: "extra large", decode_source: human}
+        - name: prod_weight_kg
+          sql_type: "DECIMAL(8,2)"
+          semantic_type: quantity
+          entity_role: dimension
+        - name: prod_unit_cost
+          sql_type: "DECIMAL(12,2)"
+          semantic_type: monetary_value
+          entity_role: dimension
+        - name: prod_list_price
+          sql_type: "DECIMAL(12,2)"
+          semantic_type: monetary_value
+          entity_role: dimension
+        - name: store_id
+          sql_type: INTEGER
+          semantic_type: identifier
+          entity_role: dimension
+          canonical_entity: store
+        - name: store_name
+          sql_type: VARCHAR
+          semantic_type: name
+          entity_role: dimension
+        - name: store_format
+          sql_type: VARCHAR
+          semantic_type: enum
+          entity_role: dimension
+          enum_values:
+            - {value: flagship, meaning: "flagship store", decode_source: human}
+            - {value: mall, meaning: "mall location", decode_source: human}
+            - {value: outlet, meaning: "outlet store", decode_source: human}
+            - {value: pop_up, meaning: "temporary pop-up", decode_source: human}
+        - name: store_country
+          sql_type: VARCHAR
+          semantic_type: geo_country
+          entity_role: dimension
+        - name: store_state
+          sql_type: VARCHAR
+          semantic_type: geo_region
+          entity_role: dimension
+        - name: store_city
+          sql_type: VARCHAR
+          semantic_type: geo_city
+          entity_role: dimension
+        - name: qty
+          sql_type: INTEGER
+          semantic_type: quantity
+          entity_role: measure
+          aggregations:
+            allowed: [sum, avg, min, max, count]
+            default: sum
+        - name: unit_price
+          sql_type: "DECIMAL(12,2)"
+          semantic_type: monetary_value
+          entity_role: dimension
+        - name: discount_pct
+          sql_type: "DECIMAL(5,2)"
+          semantic_type: percentage
+          entity_role: dimension
+        - name: order_total
+          sql_type: "DECIMAL(12,2)"
+          semantic_type: monetary_value
+          entity_role: measure
+          aggregations:
+            allowed: [sum, avg, min, max, count]
+            default: sum
+        - name: tax_amount
+          sql_type: "DECIMAL(12,2)"
+          semantic_type: monetary_value
+          entity_role: measure
+          aggregations:
+            allowed: [sum, avg, min, max]
+            default: sum
+        - name: shipping_amount
+          sql_type: "DECIMAL(12,2)"
+          semantic_type: monetary_value
+          entity_role: measure
+          aggregations:
+            allowed: [sum, avg, min, max]
+            default: sum
+        - name: payment_method
+          sql_type: VARCHAR
+          semantic_type: enum
+          entity_role: dimension
+          enum_values:
+            - {value: card, meaning: "card payment", decode_source: human}
+            - {value: ach, meaning: "ACH bank transfer", decode_source: human}
+            - {value: wire, meaning: "wire transfer", decode_source: human}
+            - {value: gift_card, meaning: "gift card redemption", decode_source: human}
+        - name: order_status
+          sql_type: VARCHAR
+          semantic_type: status_code
+          entity_role: dimension
+          enum_values:
+            - {value: placed, meaning: "order placed", decode_source: human}
+            - {value: shipped, meaning: "order shipped", decode_source: human}
+            - {value: delivered, meaning: "order delivered", decode_source: human}
+            - {value: cancelled, meaning: "order cancelled", decode_source: human}
+            - {value: returned, meaning: "order returned", decode_source: human}
+        - name: is_gift
+          sql_type: BOOLEAN
+          semantic_type: flag
+          entity_role: dimension
+        - name: is_returned
+          sql_type: BOOLEAN
+          semantic_type: flag
+          entity_role: dimension
+        - name: coupon_code
+          sql_type: VARCHAR
+          semantic_type: code
+          entity_role: dimension
+        - name: loyalty_points_earned
+          sql_type: INTEGER
+          semantic_type: quantity
+          entity_role: measure
+          aggregations:
+            allowed: [sum, avg, min, max]
+            default: sum
+      knowledge:
+        usage_notes:
+          - "No relationships are declared: every attribute is already flattened onto events_wide, so there is nothing to join."
+          - "80 additional attr_text_*/attr_num_*/attr_flag_* padding columns exist on the physical table to reach ~124 total columns; they carry no business semantics and are intentionally left undeclared here (unmodeled, not inferable from name alone)."
+  hierarchies:
+    - name: geography
+      kind: level
+      dimension_table: events_wide
+      ai_context: "Declared from columns inside events_wide, not a separate dimension table — this is an intra-table hierarchy."
+      levels:
+        - {name: country, column: cust_country}
+        - {name: state, column: cust_state}
+        - {name: city, column: cust_city}
+    - name: product_taxonomy
+      kind: level
+      dimension_table: events_wide
+      ai_context: "Declared from columns inside events_wide, not a separate dimension table — this is an intra-table hierarchy."
+      levels:
+        - {name: department, column: prod_department}
+        - {name: category, column: prod_category}
+    - name: event_time
+      kind: time
+      dimension_table: events_wide
+      base_column: event_ts
+      levels:
+        - {name: year, grain_expr: {duckdb: "date_trunc('year', event_ts)"}}
+        - {name: quarter, grain_expr: {duckdb: "date_trunc('quarter', event_ts)"}}
+        - {name: month, grain_expr: {duckdb: "date_trunc('month', event_ts)"}}
+        - {name: day, grain_expr: {duckdb: "date_trunc('day', event_ts)"}}
+  metrics:
+    - name: total_order_revenue
+      display_name: "Total Order Revenue"
+      type: simple
+      measure: events_wide.order_total
+      agg: sum
+      dimensions: [event_time.*, geography.country, geography.state, geography.city, product_taxonomy.department, product_taxonomy.category]
+      grain: event
+  repo_knowledge:
+    domains:
+      - name: sales
+        tables: [events_wide]

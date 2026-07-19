@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "59c0b72cdf42",
+ "response": "{\"action\":\"sql\",\"sql\":\"WITH ranked AS (\\n  SELECT sub_id, evt_typ_cd, mrr_amt, evt_dt,\\n         ROW_NUMBER() OVER (PARTITION BY sub_id ORDER BY evt_dt DESC, evt_id DESC) AS rn\\n  FROM sub_evt\\n)\\nSELECT SUM(mrr_amt) AS current_mrr\\nFROM ranked\\nWHERE rn = 1 AND evt_typ_cd <> 'CANCEL';\",\"reason\":null}",
+ "usage": {
+  "in": 12419,
+  "out": 360
+ }
+}

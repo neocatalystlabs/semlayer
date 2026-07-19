@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "59c0b72cdf42",
+ "response": "{\"action\": \"clarify\", \"sql\": null, \"reason\": \"No table links orders to marketing campaigns; promo_id \u2260 campaign attribution.\"}",
+ "usage": {
+  "in": 9138,
+  "out": 52
+ }
+}

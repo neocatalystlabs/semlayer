@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "59c0b72cdf42",
+ "response": "{\"action\": \"refuse\", \"sql\": null, \"reason\": \"Joining ord_hdr to ord_ln without dedup double-counts order amount per line item, producing incorrect revenue.\"}",
+ "usage": {
+  "in": 5328,
+  "out": 436
+ }
+}

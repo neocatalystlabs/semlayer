@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "5d5ce4dbf19e",
+ "response": "```json\n[\n  {\n    \"id\": 0,\n    \"verdict\": \"plausible\",\n    \"confidence\": 0.85,\n    \"reason\": \"Customer ID to account ID semantically reasonable; high inclusion ratio supports FK.\"\n  }\n]\n```",
+ "usage": {
+  "in": 264,
+  "out": 66
+ }
+}

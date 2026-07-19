@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "59c0b72cdf42",
+ "response": "{\"action\": \"refuse\", \"reason\": \"cust_mstr columns (segment, SCD2 effective dates) not provided in context.\"}",
+ "usage": {
+  "in": 5313,
+  "out": 337
+ }
+}

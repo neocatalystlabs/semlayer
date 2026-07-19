@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "26fea8ed3e9d",
+ "response": "```json\n{\n  \"table_description\": \"Operational control table tracking ETL job definitions, schedules, and active status for data pipeline execution.\",\n  \"ai_context\": \"Join on job_nm to filter active jobs (actv_flg=1). Use last_run_dt and next_run_dt for scheduling logic. All 5 jobs currently active.\",\n  \"table_type\": \"operational\",\n  \"columns\": [\n    {\n      \"name\": \"job_nm\",\n      \"description\": \"Job name code: agg_dly_sls, agg_mth_cust, load_cust_mstr, load_ord_hdr, load_web_evt. Primary key.\"\n    },\n    {\n      \"name\": \"last_run_dt\",\n      \"description\": \"Date of most recent job execution (2025-12-31 for all rows).\"\n    },\n    {\n      \"name\": \"next_run_dt\",\n      \"description\": \"Scheduled date for next job run (2026-01-01 for all rows).\"\n    },\n    {\n      \"name\": \"actv_flg\",\n      \"description\": \"Active flag: 1=enabled, 0=disabled. All jobs currently enabled.\"\n    }\n  ]\n}\n```",
+ "usage": {
+  "in": 779,
+  "out": 306
+ }
+}

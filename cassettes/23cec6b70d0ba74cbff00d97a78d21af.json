@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "59c0b72cdf42",
+ "response": "{\"action\": \"refuse\", \"sql\": null, \"reason\": \"No average-order-value metric defined in provided context.\"}",
+ "usage": {
+  "in": 8049,
+  "out": 38
+ }
+}

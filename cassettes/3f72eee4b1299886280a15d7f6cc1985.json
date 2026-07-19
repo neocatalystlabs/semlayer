@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "26fea8ed3e9d",
+ "response": "```json\n{\n  \"table_description\": \"Fact table linking orders to products with quantities. Each row represents one product line item within an order.\",\n  \"ai_context\": \"Join to orders via order_id and products via product_id. Aggregate qty by product_id or order_id for sales analysis. 1200 items across 521 orders.\",\n  \"table_type\": \"fact\",\n  \"columns\": [\n    {\n      \"name\": \"order_item_id\",\n      \"description\": \"Unique identifier for each order line item; primary key.\"\n    },\n    {\n      \"name\": \"order_id\",\n      \"description\": \"Foreign key to orders table; identifies parent order for this item.\"\n    },\n    {\n      \"name\": \"product_id\",\n      \"description\": \"Foreign key to products table; identifies product sold in this line item.\"\n    },\n    {\n      \"name\": \"qty\",\n      \"description\": \"Quantity of product ordered in this line item; ranges 4\u201310 units.\"\n    }\n  ]\n}\n```",
+ "usage": {
+  "in": 777,
+  "out": 252
+ }
+}

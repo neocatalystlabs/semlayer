@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "59c0b72cdf42",
+ "response": "{\"action\": \"refuse\", \"reason\": \"ord_hdr_legacy and cust_mstr_legacy are UNUSABLE/deprecated; no usable pre-2023 data source.\"}",
+ "usage": {
+  "in": 5299,
+  "out": 64
+ }
+}

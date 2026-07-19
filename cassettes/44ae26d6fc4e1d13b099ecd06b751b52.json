@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"name\",\n    \"semantic_type\": \"name\",\n    \"entity_role\": \"unique_key\",\n    \"confidence\": 0.85,\n    \"enum_decodes\": null,\n    \"rationale\": \"Unique product names; appears to be natural identifier despite generic format.\"\n  }\n]\n```",
+ "usage": {
+  "in": 512,
+  "out": 88
+ }
+}

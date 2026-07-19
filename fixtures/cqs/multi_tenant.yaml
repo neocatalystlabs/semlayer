@@ -1,0 +1,65 @@
+# Gold CQ suite for multi_tenant. Hand-authored; expected_sql is reviewed truth.
+cq_suite:
+  fixture: multi_tenant
+  version: 1
+  questions:
+    - id: MT-1
+      question: "What was total order revenue for tenant_001?"
+      complexity: simple
+      expected_kind: scalar
+      expected_sql:
+        duckdb: "SELECT round(sum(qty * unit_price), 2) FROM tenant_001.order_items"
+      references: [tables.order_items, metrics.total_item_qty]
+      notes: >
+        The semantic layer models `order_items` as one templated table
+        (tenant_template.parameter = tenant_schema, instances: 20), not 20
+        separate tables; tenant_001 is one resolved instance of that template.
+
+    - id: MT-2
+      question: "What was total order revenue across tenant_001, tenant_002, and tenant_003 combined?"
+      complexity: complex
+      expected_kind: scalar
+      expected_sql:
+        duckdb: >
+          SELECT round(sum(rev), 2) FROM (
+            SELECT qty * unit_price AS rev FROM tenant_001.order_items
+            UNION ALL
+            SELECT qty * unit_price FROM tenant_002.order_items
+            UNION ALL
+            SELECT qty * unit_price FROM tenant_003.order_items
+          )
+      references: [tables.order_items]
+      notes: >
+        Cross-tenant totals require iterating the tenant_template over each
+        physical schema instance and UNION-ing the results — customer_id,
+        order_id, etc. are tenant-local surrogate keys, not globally unique,
+        so a plain cross-schema JOIN would be invalid; UNION ALL per-tenant
+        before aggregating is the only safe strategy.
+
+    - id: MT-3
+      question: "How many orders were placed by tenant_001?"
+      complexity: simple
+      expected_kind: scalar
+      expected_sql:
+        duckdb: "SELECT count(*) FROM tenant_001.orders"
+      references: [metrics.order_count, tables.orders]
+
+    - id: MT-4
+      question: "How many orders were placed per tenant, across tenant_001 through tenant_003?"
+      complexity: complex
+      expected_kind: rows
+      expected_sql:
+        duckdb: >
+          SELECT * FROM (
+            SELECT 'tenant_001' AS tenant, count(*) AS n FROM tenant_001.orders
+            UNION ALL
+            SELECT 'tenant_002', count(*) FROM tenant_002.orders
+            UNION ALL
+            SELECT 'tenant_003', count(*) FROM tenant_003.orders
+          ) ORDER BY 1
+      references: [metrics.order_count, tables.orders]
+      notes: >
+        Same iterate-and-UNION pattern as MT-2, applied to order_count instead
+        of revenue: the semantic template parameterizes the schema
+        (tenant_template.parameter = tenant_schema), and a cross-tenant
+        rollup means resolving that parameter once per tenant instance.

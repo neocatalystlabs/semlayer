@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"store_nm\",\n    \"semantic_type\": \"name\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": null,\n    \"rationale\": \"Store name; unique identifier for store entities in dimension table\"\n  },\n  {\n    \"column\": \"cntry_cd\",\n    \"semantic_type\": \"geo_country\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.92,\n    \"enum_decodes\": null,\n    \"rationale\": \"Country code; 5 distinct values suggest coded country references\"\n  }\n]\n```",
+ "usage": {
+  "in": 521,
+  "out": 166
+ }
+}

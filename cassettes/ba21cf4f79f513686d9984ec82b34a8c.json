@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"dept\",\n    \"semantic_type\": \"enum\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": {\n      \"ops\": \"Operations\",\n      \"support\": \"Support\",\n      \"finance\": \"Finance\",\n      \"sales\": \"Sales\",\n      \"engineering\": \"Engineering\"\n    },\n    \"rationale\": \"5 distinct department codes; categorical dimension with clear business meaning.\"\n  },\n  {\n    \"column\": \"salary\",\n    \"semantic_type\": \"monetary_value\",\n    \"entity_role\": \"measure\",\n    \"confidence\": 0.98,\n    \"enum_decodes\": null,\n    \"rationale\": \"DECIMAL currency type; employee compensation measure with realistic range.\"\n  }\n]\n```",
+ "usage": {
+  "in": 567,
+  "out": 202
+ }
+}

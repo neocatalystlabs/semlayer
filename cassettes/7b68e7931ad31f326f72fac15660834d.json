@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "59c0b72cdf42",
+ "response": "```json\n{\n  \"action\": \"sql\",\n  \"sql\": \"SELECT s.cntry_cd, s.state_cd, s.city_nm, SUM(oh.tot_amt) AS total_revenue FROM ord_hdr oh JOIN store_dim s ON oh.store_id = s.store_id WHERE oh.sts_cd <> 'X' GROUP BY s.cntry_cd, s.state_cd, s.city_nm ORDER BY s.cntry_cd, s.state_cd, s.city_nm\",\n  \"reason\": \"Aggregates order totals by store geography hierarchy with required filter applied.\"\n}\n```",
+ "usage": {
+  "in": 10633,
+  "out": 159
+ }
+}

@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "59c0b72cdf42",
+ "response": "{\"action\": \"refuse\", \"sql\": null, \"reason\": \"ord_hdr_legacy is deprecated/UNUSABLE; use ord_hdr instead.\"}",
+ "usage": {
+  "in": 8387,
+  "out": 57
+ }
+}

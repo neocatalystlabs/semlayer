@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "59c0b72cdf42",
+ "response": "{\"action\": \"sql\", \"sql\": \"WITH ord_agg AS (\\n  SELECT cust_id, strftime(ord_dt, '%Y-%m') AS yr_mth, COUNT(ord_id) AS ord_hdr_ord_cnt\\n  FROM ord_hdr\\n  WHERE sts_cd <> 'X'\\n  GROUP BY cust_id, strftime(ord_dt, '%Y-%m')\\n)\\nSELECT m.cust_id, m.yr_mth, m.ord_cnt AS mth_cust_agg_ord_cnt, COALESCE(o.ord_hdr_ord_cnt,0) AS ord_hdr_ord_cnt,\\n       m.ord_cnt - COALESCE(o.ord_hdr_ord_cnt,0) AS diff\\nFROM mth_cust_agg m\\nLEFT JOIN ord_agg o ON m.cust_id = o.cust_id AND m.yr_mth = o.yr_mth\\nWHERE m.ord_cnt <> COALESCE(o.ord_hdr_ord_cnt,0)\\nORDER BY diff DESC;\", \"reason\": null}",
+ "usage": {
+  "in": 5443,
+  "out": 575
+ }
+}

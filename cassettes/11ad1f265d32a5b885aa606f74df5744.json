@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "59c0b72cdf42",
+ "response": "{\"action\": \"clarify\", \"sql\": null, \"reason\": \"Cannot determine which evt_typ_cd values denote 'active' subscription status.\"}",
+ "usage": {
+  "in": 3050,
+  "out": 527
+ }
+}

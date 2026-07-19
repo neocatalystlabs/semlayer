@@ -1,0 +1,52 @@
+# Gold CQ suite for obt. Hand-authored; expected_sql is reviewed truth.
+cq_suite:
+  fixture: obt
+  version: 1
+  questions:
+    - id: OB-1
+      question: "What was total order revenue across all events?"
+      complexity: simple
+      expected_kind: scalar
+      expected_sql:
+        duckdb: "SELECT round(sum(order_total), 2) FROM events_wide"
+      references: [metrics.total_order_revenue]
+
+    - id: OB-2
+      question: "What was total order revenue by customer country and state?"
+      complexity: simple
+      expected_kind: rows
+      expected_sql:
+        duckdb: >
+          SELECT cust_country, cust_state, round(sum(order_total), 2) AS revenue
+          FROM events_wide GROUP BY 1, 2 ORDER BY 1, 2
+      references: [metrics.total_order_revenue, hierarchies.geography]
+      notes: "geography is an intra-table hierarchy (cust_country -> cust_state -> cust_city) declared directly on events_wide; there is no separate customer dimension to join."
+
+    - id: OB-3
+      question: "What was total order revenue by product department and category?"
+      complexity: simple
+      expected_kind: rows
+      expected_sql:
+        duckdb: >
+          SELECT prod_department, prod_category, round(sum(order_total), 2) AS revenue
+          FROM events_wide GROUP BY 1, 2 ORDER BY 1, 2
+      references: [metrics.total_order_revenue, hierarchies.product_taxonomy]
+      notes: "product_taxonomy is an intra-table hierarchy (prod_department -> prod_category) declared directly on events_wide."
+
+    - id: OB-4
+      question: "What was total order revenue by month?"
+      complexity: simple
+      expected_kind: rows
+      expected_sql:
+        duckdb: >
+          SELECT date_trunc('month', event_ts) AS m, round(sum(order_total), 2) AS revenue
+          FROM events_wide GROUP BY 1 ORDER BY 1
+      references: [metrics.total_order_revenue, hierarchies.event_time]
+
+    - id: OB-5
+      question: "What was total quantity sold by channel?"
+      complexity: simple
+      expected_kind: rows
+      expected_sql:
+        duckdb: "SELECT channel, sum(qty) FROM events_wide GROUP BY 1 ORDER BY 1"
+      references: [tables.events_wide]

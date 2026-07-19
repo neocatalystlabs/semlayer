@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "26fea8ed3e9d",
+ "response": "```json\n{\n  \"table_description\": \"Operational web event log capturing 10,000 user interactions (views, clicks, cart adds, purchases) across sessions and customers with timestamps and page URLs.\",\n  \"ai_context\": \"Join to cust_mstr on cust_id (30% nulls\u2014guest events); sess_id always present. ord_id sparse (94% null)\u2014only PURCHASE events typically populated. Filter by evt_typ_cd for event type.\",\n  \"table_type\": \"operational\",\n  \"columns\": [\n    {\n      \"name\": \"evt_id\",\n      \"description\": \"Unique event identifier; primary key for this transaction log.\"\n    },\n    {\n      \"name\": \"cust_id\",\n      \"description\": \"Customer identifier; foreign key to cust_mstr. Null for anonymous/guest sessions.\"\n    },\n    {\n      \"name\": \"sess_id\",\n      \"description\": \"Session identifier; groups events within a single user visit. Always populated.\"\n    },\n    {\n      \"name\": \"evt_typ_cd\",\n      \"description\": \"Event type code: VIEW, CLICK, ADD_CART, or PURCHASE. Indicates user action.\"\n    },\n    {\n      \"name\": \"pg_url\",\n      \"description\": \"Page URL where event occurred; typically product pages (/p/{product_id}).\"\n    },\n    {\n      \"name\": \"evt_ts\",\n      \"description\": \"Event timestamp; precise moment user action was recorded.\"\n    },\n    {\n      \"name\": \"ord_id\",\n      \"description\": \"Order identifier; foreign key to ord_hdr. Populated only for PURCHASE events (6% non-null).\"\n    }\n  ]\n}\n```",
+ "usage": {
+  "in": 1051,
+  "out": 414
+ }
+}

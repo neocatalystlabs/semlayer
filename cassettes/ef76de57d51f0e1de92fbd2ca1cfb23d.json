@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "59c0b72cdf42",
+ "response": "```json\n{\n  \"action\": \"clarify\",\n  \"sql\": null,\n  \"reason\": \"Need to know: Does 'active' mean currently in stock, available for sale, or another status criterion?\"\n}\n```",
+ "usage": {
+  "in": 10409,
+  "out": 56
+ }
+}

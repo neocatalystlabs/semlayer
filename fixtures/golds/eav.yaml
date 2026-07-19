@@ -1,0 +1,115 @@
+# Gold semantic layer for the eav (entity-attribute-value) fixture.
+# Hand-authored (no confidence fields = human truth). Exercises: honest
+# non-inference — a table whose row-level semantics are NOT recoverable from
+# column names/types because the "column" that matters is a value (attr_name),
+# not a schema element.
+semantic_layer:
+  spec_version: "0.1.0"
+  name: eav
+  description: >
+    eav fixture: entity_attr stores ~20 distinct attributes for ~5000
+    entities as (entity_id, attr_name, attr_value) rows, with attr_value
+    always VARCHAR regardless of the attribute's real underlying type.
+  ai_context: >
+    entity_attr is an entity-attribute-value (EAV) table. Its semantics are
+    not column-inferable: the meaning and "real" type of a row (numeric,
+    date, boolean, enum, ...) is determined by the value of attr_name, not
+    by the attr_value column's declared SQL type, which is always VARCHAR.
+    A conforming producer MUST NOT guess per-attribute semantic types for
+    attr_value from statistics alone; attributes live in rows, not columns.
+    Consumers that need attribute-level semantics (e.g. "average age") must
+    pivot attr_name = 'age' explicitly and cast attr_value themselves — this
+    document does not model a metric per attribute because doing so would
+    require inferring a type the schema does not declare.
+  calendar:
+    timezone: UTC
+  tables:
+    - name: entities
+      table_type: dimension
+      grain: "one row per entity"
+      source: main.entities
+      primary_key: [entity_id]
+      columns:
+        - name: entity_id
+          sql_type: INTEGER
+          semantic_type: identifier
+          entity_role: primary_key
+        - name: entity_type
+          sql_type: VARCHAR
+          semantic_type: enum
+          entity_role: dimension
+          enum_values:
+            - {value: account, meaning: "individual account entity", decode_source: human}
+            - {value: organization, meaning: "organization entity", decode_source: human}
+        - name: created_ts
+          sql_type: TIMESTAMP
+          semantic_type: timestamp_event
+          entity_role: dimension
+    - name: entity_attr
+      table_type: operational
+      grain: "one row per (entity_id, attr_name) present"
+      source: main.entity_attr
+      primary_key: [entity_attr_id]
+      ai_context: >
+        Entity-attribute-value table: ~20 distinct attr_name values (status,
+        plan_tier, signup_date, account_balance, is_verified, ...) span
+        enum, date, timestamp, int, decimal, and bool "real" types, but
+        every attr_value is stored as VARCHAR. Semantics are not
+        column-inferable here — they live in the attr_name value of each
+        row, not in any column definition. Table is sparse: each entity has
+        at most 20 rows (not every attribute is present for every entity).
+      knowledge:
+        usage_notes:
+          - "To answer a question about a specific attribute (e.g. 'average account_balance'), filter entity_attr WHERE attr_name = 'account_balance' and CAST attr_value to the appropriate type — this document does not pre-declare per-attribute types because they are not schema-visible."
+          - "attr_name is a closed-ish set in practice (~20 values) but is data, not schema; new attribute names can appear without a DDL change and would not be reflected here without re-profiling."
+      columns:
+        - name: entity_attr_id
+          sql_type: INTEGER
+          semantic_type: identifier
+          entity_role: primary_key
+        - name: entity_id
+          sql_type: INTEGER
+          semantic_type: identifier
+          entity_role: foreign_key
+          foreign_key:
+            references: entities.entity_id
+            relationship: many_to_one
+        - name: attr_name
+          sql_type: VARCHAR
+          semantic_type: enum
+          entity_role: dimension
+          ai_context: "Determines the real semantics of the row's attr_value; the attribute vocabulary is data-defined, not schema-defined."
+          enum_values:
+            - {value: status, meaning: "account status (enum: active/inactive/pending/suspended)", decode_source: human}
+            - {value: plan_tier, meaning: "subscription plan tier (enum)", decode_source: human}
+            - {value: signup_date, meaning: "signup date (date, string-encoded)", decode_source: human}
+            - {value: last_login_ts, meaning: "last login timestamp (timestamp, string-encoded)", decode_source: human}
+            - {value: age, meaning: "age in years (int, string-encoded)", decode_source: human}
+            - {value: account_balance, meaning: "account balance (decimal, string-encoded)", decode_source: human}
+            - {value: is_verified, meaning: "verification flag (bool, string-encoded 'true'/'false')", decode_source: human}
+            - {value: is_trial, meaning: "trial flag (bool, string-encoded)", decode_source: human}
+            - {value: country_code, meaning: "ISO-ish country code (enum)", decode_source: human}
+            - {value: referral_source, meaning: "acquisition channel (enum)", decode_source: human}
+            - {value: num_logins, meaning: "login count (int, string-encoded)", decode_source: human}
+            - {value: num_purchases, meaning: "purchase count (int, string-encoded)", decode_source: human}
+            - {value: lifetime_value, meaning: "lifetime value (decimal, string-encoded)", decode_source: human}
+            - {value: email_opt_in, meaning: "email opt-in flag (bool, string-encoded)", decode_source: human}
+            - {value: sms_opt_in, meaning: "sms opt-in flag (bool, string-encoded)", decode_source: human}
+            - {value: preferred_language, meaning: "preferred language code (enum)", decode_source: human}
+            - {value: support_tickets_open, meaning: "open support ticket count (int, string-encoded)", decode_source: human}
+            - {value: nps_score, meaning: "NPS score (int, string-encoded)", decode_source: human}
+            - {value: device_type, meaning: "primary device type (enum)", decode_source: human}
+            - {value: churn_risk_score, meaning: "churn risk score (decimal, string-encoded)", decode_source: human}
+        - name: attr_value
+          sql_type: VARCHAR
+          semantic_type: unknown
+          entity_role: dimension
+          ai_context: >
+            Value's real type/meaning depends on the sibling attr_name for
+            this row and cannot be determined from this column alone;
+            declared unknown rather than guessed. Do not aggregate
+            attr_value directly — cast per attr_name after filtering.
+  repo_knowledge:
+    domains:
+      - name: crm
+        tables: [entities, entity_attr]

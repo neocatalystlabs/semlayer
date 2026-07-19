@@ -1,0 +1,462 @@
+# Gold CQ suite for messy_mart. Hand-authored; expected_sql is reviewed truth.
+# Verified against an in-memory build of fixtures/generators/messy_mart.py (MESSY_SCALE=1.0, SEED=8675309).
+cq_suite:
+  fixture: messy_mart
+  version: 1
+  questions:
+
+    # ------------------------------------------------------------ simple: single-table reads
+    - id: MM-1
+      question: "What was total order revenue, excluding cancelled orders?"
+      complexity: simple
+      expected_kind: scalar
+      expected_sql:
+        duckdb: "SELECT round(sum(tot_amt), 2) FROM ord_hdr WHERE sts_cd != 'X'"
+      references: [metrics.total_order_revenue, tables.ord_hdr]
+      notes: "Business rule: dly_sls_agg/mth_cust_agg both exclude sts_cd='X'; this is the base-fact equivalent."
+
+    - id: MM-2
+      question: "How many orders are there by status?"
+      complexity: simple
+      expected_kind: rows
+      expected_sql:
+        duckdb: "SELECT sts_cd, count(*) FROM ord_hdr GROUP BY 1 ORDER BY 1"
+      references: [metrics.order_count, tables.ord_hdr]
+
+    - id: MM-3
+      question: "What is the average order value for completed orders?"
+      complexity: simple
+      expected_kind: scalar
+      expected_sql:
+        duckdb: "SELECT round(avg(tot_amt), 2) FROM ord_hdr WHERE sts_cd = 'C'"
+      references: [metrics.completed_order_revenue, tables.ord_hdr]
+
+    - id: MM-4
+      question: "How many orders were placed through each sales channel?"
+      complexity: simple
+      expected_kind: rows
+      expected_sql:
+        duckdb: "SELECT chnl_cd, count(*) FROM ord_hdr GROUP BY 1 ORDER BY 1"
+      references: [metrics.order_count, tables.ord_hdr, tables.chnl_dim]
+
+    - id: MM-5
+      question: "What was total completed-order revenue by payment method?"
+      complexity: simple
+      expected_kind: rows
+      expected_sql:
+        duckdb: >
+          SELECT pmt_mthd_cd, round(sum(tot_amt), 2) AS revenue
+          FROM ord_hdr WHERE sts_cd != 'X' GROUP BY 1 ORDER BY 1
+      references: [metrics.total_order_revenue, tables.ord_hdr, tables.pmt_mthd_dim]
+
+    - id: MM-6
+      question: "How many orders were placed in each currency?"
+      complexity: simple
+      expected_kind: rows
+      expected_sql:
+        duckdb: "SELECT curr_cd, count(*) FROM ord_hdr GROUP BY 1 ORDER BY 1"
+      references: [tables.ord_hdr, tables.curr_dim]
+
+    - id: MM-7
+      question: "How many active products are in the catalog?"
+      complexity: simple
+      expected_kind: scalar
+      expected_sql:
+        duckdb: "SELECT count(*) FROM prod_ref WHERE actv_flg = 1"
+      references: [tables.prod_ref]
+
+    - id: MM-8
+      question: "How many stores do we have?"
+      complexity: simple
+      expected_kind: scalar
+      expected_sql:
+        duckdb: "SELECT count(*) FROM store_dim"
+      references: [tables.store_dim]
+
+    - id: MM-9
+      question: "What is the total return amount by return reason?"
+      complexity: simple
+      expected_kind: rows
+      expected_sql:
+        duckdb: >
+          SELECT rtn_rsn_cd, count(*) AS n, round(sum(rtn_amt), 2) AS amt
+          FROM ord_rtn GROUP BY 1 ORDER BY 1
+      references: [tables.ord_rtn, tables.rtn_rsn_dim]
+
+    - id: MM-10
+      question: "How many orders had a promotion applied?"
+      complexity: simple
+      expected_kind: scalar
+      expected_sql:
+        duckdb: "SELECT count(*) FROM ord_hdr WHERE promo_id IS NOT NULL"
+      references: [tables.ord_hdr, tables.promo_dim]
+
+    - id: MM-11
+      question: "How many web events were recorded, broken down by event type?"
+      complexity: simple
+      expected_kind: rows
+      expected_sql:
+        duckdb: "SELECT evt_typ_cd, count(*) FROM web_evt GROUP BY 1 ORDER BY 1"
+      references: [tables.web_evt]
+
+    - id: MM-12
+      question: "What is the total on-hand inventory quantity across all snapshot rows?"
+      complexity: simple
+      expected_kind: scalar
+      expected_sql:
+        duckdb: "SELECT sum(on_hand_qty) FROM inv_snpsht"
+      references: [tables.inv_snpsht]
+      notes: "Raw sum across snapshot rows is semi-additive-unsafe (double counts across dates) but is a valid literal read of the table; contrast with point-in-time reads in complex CQs."
+
+    - id: MM-13
+      question: "What was total daily sales revenue on 2024-06-15, across all stores?"
+      complexity: simple
+      expected_kind: scalar
+      expected_sql:
+        duckdb: "SELECT round(sum(tot_sls_amt), 2) FROM dly_sls_agg WHERE agg_dt_key = 20240615"
+      references: [tables.dly_sls_agg, aggregate_tables.dly_sls_agg]
+
+    - id: MM-14
+      question: "How many subscription events are there by event type?"
+      complexity: simple
+      expected_kind: rows
+      expected_sql:
+        duckdb: "SELECT evt_typ_cd, count(*) FROM sub_evt GROUP BY 1 ORDER BY 1"
+      references: [tables.sub_evt, tables.evt_typ_dim]
+
+    - id: MM-15
+      question: "How many customer master rows are marked as the current version?"
+      complexity: simple
+      expected_kind: scalar
+      expected_sql:
+        duckdb: "SELECT count(*) FROM cust_mstr WHERE is_curr_flg = 1"
+      references: [tables.cust_mstr]
+
+    # ------------------------------------------------------------ complex: multi-join / hierarchy / reconciliation
+    - id: MM-16
+      question: "What was total order revenue by store country?"
+      complexity: complex
+      expected_kind: rows
+      expected_sql:
+        duckdb: >
+          SELECT s.cntry_cd, round(sum(o.tot_amt), 2) AS revenue
+          FROM ord_hdr o JOIN store_dim s ON o.store_id = s.store_id
+          WHERE o.sts_cd != 'X'
+          GROUP BY 1 ORDER BY 1
+      references: [metrics.total_order_revenue, hierarchies.geography, relationships.ord_hdr_to_store_dim]
+
+    - id: MM-17
+      question: "What was total line-item revenue by product department?"
+      complexity: complex
+      expected_kind: rows
+      expected_sql:
+        duckdb: >
+          SELECT p.dept_cd, round(sum(l.line_amt), 2) AS revenue
+          FROM ord_ln l
+          JOIN prod_ref p ON l.prod_id = p.prod_id
+          JOIN ord_hdr o ON l.ord_id = o.ord_id
+          WHERE o.sts_cd != 'X'
+          GROUP BY 1 ORDER BY 1
+      references: [metrics.line_item_revenue, hierarchies.product_hierarchy, relationships.ord_ln_to_prod_ref]
+      notes: "Uses ord_ln.line_amt (line grain), not ord_hdr.tot_amt, to avoid fan-out when joining to product."
+
+    - id: MM-18
+      question: "What was total order revenue by calendar month?"
+      complexity: complex
+      expected_kind: rows
+      expected_sql:
+        duckdb: >
+          SELECT date_trunc('month', ord_dt) AS m, round(sum(tot_amt), 2) AS revenue
+          FROM ord_hdr WHERE sts_cd != 'X'
+          GROUP BY 1 ORDER BY 1
+      references: [metrics.total_order_revenue, hierarchies.order_time]
+
+    - id: MM-19
+      question: "What was total daily sales revenue by calendar month, reading from the daily aggregate table?"
+      complexity: complex
+      expected_kind: rows
+      expected_sql:
+        duckdb: >
+          SELECT d.yr_nbr, d.mth_nbr, round(sum(a.tot_sls_amt), 2) AS revenue
+          FROM dly_sls_agg a JOIN date_dim d ON a.agg_dt_key = d.date_key
+          GROUP BY 1, 2 ORDER BY 1, 2
+      references: [tables.dly_sls_agg, tables.date_dim, aggregate_tables.dly_sls_agg]
+      notes: "dly_sls_agg is grained (date, store); rolling to month requires summing across all store rows per date, not averaging."
+
+    - id: MM-20
+      question: "Does the monthly customer aggregate table's order count reconcile with the base order-header fact (excluding cancelled orders)?"
+      complexity: complex
+      expected_kind: scalar
+      expected_sql:
+        duckdb: >
+          SELECT (SELECT sum(ord_cnt) FROM mth_cust_agg) - (SELECT count(*) FROM ord_hdr WHERE sts_cd != 'X')
+      tolerance: 0.5
+      notes: "Expected 0: mth_cust_agg.ord_cnt sums to exactly the non-cancelled order count in ord_hdr."
+      references: [aggregate_tables.mth_cust_agg, tables.mth_cust_agg, tables.ord_hdr]
+
+    - id: MM-21
+      question: "Does the daily sales aggregate reconcile with total non-cancelled order revenue?"
+      complexity: complex
+      expected_kind: scalar
+      expected_sql:
+        duckdb: >
+          SELECT round((SELECT sum(tot_sls_amt) FROM dly_sls_agg) -
+                       (SELECT sum(tot_amt) FROM ord_hdr WHERE sts_cd != 'X'), 2)
+      tolerance: 0.5
+      notes: "Expected 0: dly_sls_agg reconciles exactly with ord_hdr once cancelled orders are excluded."
+      references: [aggregate_tables.dly_sls_agg, tables.dly_sls_agg, tables.ord_hdr]
+
+    - id: MM-22
+      question: "What was total non-cancelled order revenue by customer segment, attributed as of each order's date?"
+      complexity: complex
+      expected_kind: rows
+      expected_sql:
+        duckdb: >
+          SELECT cm.seg_cd, round(sum(o.tot_amt), 2) AS revenue
+          FROM ord_hdr o
+          JOIN cust_mstr cm
+            ON o.cust_id = cm.cust_id
+           AND o.ord_dt BETWEEN cm.eff_start_dt AND COALESCE(cm.eff_end_dt, DATE '9999-12-31')
+          WHERE o.sts_cd != 'X'
+          GROUP BY 1 ORDER BY 1
+      wrong_sql:
+        duckdb: >
+          SELECT cm.seg_cd, round(sum(o.tot_amt), 2) AS revenue
+          FROM ord_hdr o
+          JOIN cust_mstr cm ON o.cust_id = cm.cust_id AND cm.is_curr_flg = 1
+          WHERE o.sts_cd != 'X'
+          GROUP BY 1 ORDER BY 1
+      trap: current_row_scd_join
+      references: [metrics.total_order_revenue, tables.cust_mstr, relationships.ord_hdr_to_cust_mstr]
+      notes: >
+        cust_mstr is SCD2; segment can change between versions. Joining on the validity window
+        (as of ord_dt) correctly attributes historical orders to the segment in effect at order
+        time; joining only to is_curr_flg=1 misattributes orders placed before a customer's most
+        recent segment change. Row-level segment totals diverge though the grand total does not.
+
+    - id: MM-23
+      question: "What was total revenue for orders that also have at least one line item returned, counted once per order?"
+      complexity: complex
+      expected_kind: scalar
+      expected_sql:
+        duckdb: >
+          SELECT round(sum(o.tot_amt), 2)
+          FROM ord_hdr o
+          WHERE o.sts_cd != 'X'
+            AND o.ord_id IN (
+              SELECT DISTINCT l.ord_id FROM ord_ln l JOIN ord_rtn r ON l.ord_ln_id = r.ord_ln_id
+            )
+      wrong_sql:
+        duckdb: >
+          SELECT round(sum(o.tot_amt), 2)
+          FROM ord_hdr o
+          JOIN ord_ln l ON o.ord_id = l.ord_id
+          JOIN ord_rtn r ON l.ord_ln_id = r.ord_ln_id
+          WHERE o.sts_cd != 'X'
+      trap: fan_out
+      references: [metrics.total_order_revenue, tables.ord_ln, tables.ord_rtn, relationships.ord_rtn_to_ord_ln]
+      notes: >
+        Naively joining ord_hdr -> ord_ln -> ord_rtn and summing ord_hdr.tot_amt repeats each
+        order's total once per return row (an order can have multiple returned lines, and a line
+        can have multiple returns), overstating revenue; de-duplicating on ord_id first is required.
+
+    - id: MM-24
+      question: "What was total revenue by customer, computed from ord_hdr_legacy?"
+      complexity: complex
+      expected_kind: scalar
+      expected_sql:
+        duckdb: "SELECT round(sum(tot_amt), 2) FROM ord_hdr WHERE sts_cd != 'X'"
+      wrong_sql:
+        duckdb: "SELECT round(sum(amount), 2) FROM ord_hdr_legacy"
+      trap: deprecated_table
+      references: [tables.ord_hdr, tables.ord_hdr_legacy, repo_knowledge.routing]
+      notes: >
+        ord_hdr_legacy is deprecated: it covers only 2020-2022, uses an incompatible status
+        vocabulary (OPEN/CLOSED/CANCELLED, no filter applied), and is a strict subset of history
+        superseded by ord_hdr. Its total (596289.10) is far below current ord_hdr revenue.
+
+    - id: MM-25
+      question: "What was total order revenue including cancelled orders?"
+      complexity: simple
+      expected_kind: scalar
+      expected_sql:
+        duckdb: "SELECT round(sum(tot_amt), 2) FROM ord_hdr WHERE sts_cd != 'X'"
+      wrong_sql:
+        duckdb: "SELECT round(sum(tot_amt), 2) FROM ord_hdr"
+      trap: missing_required_filter
+      references: [metrics.total_order_revenue, tables.ord_hdr, aggregate_tables.dly_sls_agg]
+      notes: >
+        Cancelled (sts_cd='X') orders must be excluded to match the business rule encoded by
+        dly_sls_agg/mth_cust_agg; summing tot_amt unfiltered inflates revenue by the cancelled total.
+
+    - id: MM-26
+      question: "What was total daily sales revenue on 2024-06-15?"
+      complexity: complex
+      expected_kind: scalar
+      expected_sql:
+        duckdb: "SELECT round(sum(tot_sls_amt), 2) FROM dly_sls_agg WHERE agg_dt_key = 20240615"
+      wrong_sql:
+        duckdb: "SELECT round(avg(tot_sls_amt), 2) FROM dly_sls_agg WHERE agg_dt_key = 20240615"
+      trap: wrong_grain_aggregate
+      references: [tables.dly_sls_agg, aggregate_tables.dly_sls_agg]
+      notes: >
+        dly_sls_agg is grained at (date, store) — multiple rows per date. Averaging across the
+        store rows for a date (as if grain were date-only) understates total daily revenue;
+        the correct readback sums across all stores for that date.
+
+    - id: MM-27
+      question: "What was total order revenue for orders joined to their line items, without de-duplication?"
+      complexity: complex
+      expected_kind: scalar
+      expected_sql:
+        duckdb: "SELECT round(sum(tot_amt), 2) FROM ord_hdr WHERE sts_cd != 'X'"
+      wrong_sql:
+        duckdb: >
+          SELECT round(sum(o.tot_amt), 2)
+          FROM ord_hdr o JOIN ord_ln l ON o.ord_id = l.ord_id
+          WHERE o.sts_cd != 'X'
+      trap: fan_out
+      references: [metrics.total_order_revenue, tables.ord_ln, relationships.ord_ln_to_ord_hdr]
+      notes: >
+        Orders with multiple line items have o.tot_amt repeated once per matched ord_ln row,
+        multiplying revenue by the average line count per order (~3.7x here). The header total
+        must be read from ord_hdr directly, or the join must use symmetric aggregation.
+
+    - id: MM-28
+      question: "What is current customer profile data, computed from cust_mstr_legacy?"
+      complexity: complex
+      expected_kind: scalar
+      expected_sql:
+        duckdb: "SELECT count(*) FROM cust_mstr WHERE is_curr_flg = 1"
+      wrong_sql:
+        duckdb: "SELECT count(*) FROM cust_mstr_legacy"
+      trap: deprecated_table
+      references: [tables.cust_mstr, tables.cust_mstr_legacy, repo_knowledge.routing]
+      notes: >
+        cust_mstr_legacy is a deprecated flat export covering only ~1/3 of customers with no
+        SCD2 history; cust_mstr is the superseding source for current customer profiles.
+
+    - id: MM-29
+      question: "What is total revenue per completed order, using the derived average-order-value metric?"
+      complexity: complex
+      expected_kind: scalar
+      expected_sql:
+        duckdb: >
+          SELECT round(
+            (SELECT sum(tot_amt) FROM ord_hdr WHERE sts_cd != 'X') /
+            (SELECT count(*) FROM ord_hdr WHERE sts_cd != 'X'), 2)
+      references: [metrics.avg_order_value, metrics.total_order_revenue, metrics.order_count]
+
+    - id: MM-30
+      question: "What was total order revenue by product department and store country?"
+      complexity: complex
+      expected_kind: rows
+      expected_sql:
+        duckdb: >
+          SELECT p.dept_cd, s.cntry_cd, round(sum(l.line_amt), 2) AS revenue
+          FROM ord_ln l
+          JOIN ord_hdr o ON l.ord_id = o.ord_id
+          JOIN prod_ref p ON l.prod_id = p.prod_id
+          JOIN store_dim s ON o.store_id = s.store_id
+          WHERE o.sts_cd != 'X'
+          GROUP BY 1, 2 ORDER BY 1, 2
+      references: [metrics.line_item_revenue, hierarchies.product_hierarchy, hierarchies.geography]
+      notes: "Multi-dimension rollup joining fact to two hierarchy dimensions at line grain."
+
+    - id: MM-31
+      question: "What is the current monthly recurring revenue (MRR) across active subscriptions, using the latest event per subscription?"
+      complexity: complex
+      expected_kind: scalar
+      expected_sql:
+        duckdb: >
+          WITH ranked AS (
+            SELECT sub_id, mrr_amt,
+                   row_number() OVER (PARTITION BY sub_id ORDER BY evt_dt DESC, evt_id DESC) AS rn
+            FROM sub_evt
+          )
+          SELECT round(sum(mrr_amt), 2) FROM ranked WHERE rn = 1
+      references: [tables.sub_evt, repo_knowledge.routing]
+      notes: "mrr_amt is semi-additive over sub_id (window_choice: last); must pick each subscription's most recent event, not sum all events."
+
+    - id: MM-32
+      question: "How many orders did each customer place, joined to their as-of segment at order time, restricted to segment ENT?"
+      complexity: complex
+      expected_kind: scalar
+      expected_sql:
+        duckdb: >
+          SELECT count(*)
+          FROM ord_hdr o
+          JOIN cust_mstr cm
+            ON o.cust_id = cm.cust_id
+           AND o.ord_dt BETWEEN cm.eff_start_dt AND COALESCE(cm.eff_end_dt, DATE '9999-12-31')
+          WHERE o.sts_cd != 'X' AND cm.seg_cd = 'ENT'
+      references: [tables.ord_hdr, tables.cust_mstr, relationships.ord_hdr_to_cust_mstr]
+
+    - id: MM-33
+      question: "What products, by department, have the highest total returned amount?"
+      complexity: complex
+      expected_kind: rows
+      expected_sql:
+        duckdb: >
+          SELECT p.dept_cd, round(sum(r.rtn_amt), 2) AS returned_amt
+          FROM ord_rtn r
+          JOIN ord_ln l ON r.ord_ln_id = l.ord_ln_id
+          JOIN prod_ref p ON l.prod_id = p.prod_id
+          GROUP BY 1 ORDER BY 2 DESC
+      references: [tables.ord_rtn, tables.ord_ln, hierarchies.product_hierarchy]
+
+    - id: MM-34
+      question: "What was total store revenue by geography hierarchy (country, state, city)?"
+      complexity: complex
+      expected_kind: rows
+      expected_sql:
+        duckdb: >
+          SELECT s.cntry_cd, s.state_cd, s.city_nm, round(sum(o.tot_amt), 2) AS revenue
+          FROM ord_hdr o JOIN store_dim s ON o.store_id = s.store_id
+          WHERE o.sts_cd != 'X'
+          GROUP BY 1, 2, 3 ORDER BY 1, 2, 3
+      references: [metrics.total_order_revenue, hierarchies.geography]
+
+    # ------------------------------------------------------------ refusal / clarification
+    - id: MM-35
+      question: "How many customers do we have?"
+      complexity: simple
+      expected_kind: clarification
+      notes: >
+        Ambiguous over an SCD2 dimension: count(*) on cust_mstr (2101) counts every historical
+        version, while count(distinct cust_id) (1500) counts natural-key customers. A conforming
+        consumer must ask which is intended rather than silently picking one.
+      references: [tables.cust_mstr]
+
+    - id: MM-36
+      question: "What was our customer count and revenue before 2023, from the historical order and customer records?"
+      complexity: complex
+      expected_kind: refusal
+      notes: >
+        Pre-2023 order history exists only in the deprecated ord_hdr_legacy /
+        cust_mstr_legacy tables, which repo_knowledge.routing marks as superseded and to be
+        avoided (incompatible status vocabulary, no SCD2 history, partial coverage). A conforming
+        consumer should refuse or reroute rather than silently querying deprecated-only sources.
+      references: [tables.ord_hdr_legacy, tables.cust_mstr_legacy, repo_knowledge.routing]
+
+    - id: MM-37
+      question: "What was revenue per customer, joining web events to order headers to subscription events?"
+      complexity: complex
+      expected_kind: refusal
+      notes: >
+        No relationship or aggregation strategy connects web_evt and sub_evt for revenue
+        purposes — repo_knowledge.routing explicitly states web_evt is not a source of MRR/
+        subscription revenue, and no fan-out-safe join path exists across all three tables for
+        a per-customer revenue figure. A conforming consumer must refuse rather than guess a join.
+      references: [repo_knowledge.routing, tables.web_evt, tables.sub_evt]
+
+    - id: MM-38
+      question: "What is total revenue attributable to marketing campaigns?"
+      complexity: complex
+      expected_kind: clarification
+      notes: >
+        No relationship links mktg_cmpgn_dim to ord_hdr or any revenue fact in the gold layer
+        (campaigns join only to chnl_dim). Attribution logic (e.g. matching campaign channel to
+        order channel and date window) is undefined, so a conforming consumer must ask how
+        campaign attribution should be computed rather than inventing a join.
+      references: [tables.mktg_cmpgn_dim, tables.ord_hdr]

@@ -1,0 +1,2064 @@
+semantic_layer:
+  spec_version: 0.1.0
+  name: messy_mart
+  description: '~35-table messy enterprise mart: cryptic names, no declared keys, SCD2 customers, product/geo
+    hierarchies, two lineage-backed aggregates, two deprecated legacy tables.'
+  calendar:
+    timezone: UTC
+    week_start: monday
+  tables:
+  - name: date_dim
+    table_type: dimension
+    grain: one row per calendar day
+    source: main.date_dim
+    primary_key:
+    - date_key
+    columns:
+    - name: date_key
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+      description: YYYYMMDD integer key
+    - name: cal_dt
+      sql_type: DATE
+      semantic_type: date
+      entity_role: dimension
+    - name: day_of_wk
+      sql_type: INTEGER
+      semantic_type: code
+      entity_role: dimension
+    - name: day_nm
+      sql_type: VARCHAR
+      semantic_type: free_text
+      entity_role: dimension
+    - name: wk_of_yr
+      sql_type: INTEGER
+      semantic_type: code
+      entity_role: dimension
+    - name: mth_nbr
+      sql_type: INTEGER
+      semantic_type: code
+      entity_role: dimension
+    - name: mth_nm
+      sql_type: VARCHAR
+      semantic_type: free_text
+      entity_role: dimension
+    - name: qtr_nbr
+      sql_type: INTEGER
+      semantic_type: code
+      entity_role: dimension
+    - name: yr_nbr
+      sql_type: INTEGER
+      semantic_type: code
+      entity_role: dimension
+    - name: is_wknd_flg
+      sql_type: INTEGER
+      semantic_type: flag
+      entity_role: dimension
+  - name: dept_dim
+    table_type: dimension
+    grain: one row per department
+    source: main.dept_dim
+    primary_key:
+    - dept_cd
+    columns:
+    - name: dept_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: primary_key
+    - name: dept_nm
+      sql_type: VARCHAR
+      semantic_type: name
+      entity_role: dimension
+  - name: category_dim
+    table_type: dimension
+    grain: one row per product category
+    source: main.category_dim
+    primary_key:
+    - category_cd
+    columns:
+    - name: category_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: primary_key
+    - name: category_nm
+      sql_type: VARCHAR
+      semantic_type: name
+      entity_role: dimension
+    - name: dept_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: foreign_key
+      foreign_key:
+        references: dept_dim.dept_cd
+        relationship: many_to_one
+  - name: prod_ref
+    table_type: dimension
+    grain: one row per product (current)
+    source: main.prod_ref
+    primary_key:
+    - prod_sk
+    columns:
+    - name: prod_sk
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: prod_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: natural_key
+      canonical_entity: product
+    - name: prod_nm
+      sql_type: VARCHAR
+      semantic_type: name
+      entity_role: dimension
+    - name: category_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: foreign_key
+      foreign_key:
+        references: category_dim.category_cd
+        relationship: many_to_one
+    - name: dept_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: foreign_key
+      description: Denormalized copy of category_dim.dept_cd; kept redundant on purpose (real-warehouse
+        cruft).
+      foreign_key:
+        references: dept_dim.dept_cd
+        relationship: many_to_one
+    - name: unit_cost
+      sql_type: DECIMAL(10,2)
+      semantic_type: monetary_value
+      entity_role: measure
+      aggregations:
+        allowed:
+        - avg
+        - min
+        - max
+        default: avg
+    - name: list_price
+      sql_type: DECIMAL(10,2)
+      semantic_type: monetary_value
+      entity_role: measure
+      aggregations:
+        allowed:
+        - avg
+        - min
+        - max
+        default: avg
+    - name: actv_flg
+      sql_type: INTEGER
+      semantic_type: flag
+      entity_role: dimension
+    - name: crt_dt
+      sql_type: DATE
+      semantic_type: timestamp_event
+      entity_role: metadata
+  - name: prod_ref_legacy
+    table_type: dimension
+    lifecycle: deprecated
+    deprecation:
+      replacement: prod_ref
+      reason: Pre-migration product catalog; superseded by prod_ref which adds surrogate keys, pricing,
+        and category linkage.
+    grain: one row per product (legacy export)
+    source: main.prod_ref_legacy
+    columns:
+    - name: prod_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: natural_key
+      canonical_entity: product
+    - name: prod_desc
+      sql_type: VARCHAR
+      semantic_type: free_text
+      entity_role: dimension
+    - name: dept_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: foreign_key
+      foreign_key:
+        references: dept_dim.dept_cd
+        relationship: many_to_one
+    - name: load_dt
+      sql_type: DATE
+      semantic_type: timestamp_event
+      entity_role: metadata
+  - name: prod_attr_ext
+    table_type: dimension
+    grain: one row per (product, attribute name)
+    source: main.prod_attr_ext
+    columns:
+    - name: prod_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      foreign_key:
+        references: prod_ref.prod_id
+        relationship: many_to_one
+    - name: attr_nm
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: dimension
+    - name: attr_val
+      sql_type: VARCHAR
+      semantic_type: free_text
+      entity_role: dimension
+  - name: sku_xref
+    table_type: dimension
+    grain: one row per (product, external system) crosswalk
+    source: main.sku_xref
+    columns:
+    - name: prod_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      foreign_key:
+        references: prod_ref.prod_id
+        relationship: many_to_one
+    - name: ext_sys_id
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: dimension
+    - name: ext_sku
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: dimension
+    - name: sync_dt
+      sql_type: DATE
+      semantic_type: timestamp_event
+      entity_role: metadata
+  - name: whs_dim
+    table_type: dimension
+    grain: one row per warehouse
+    source: main.whs_dim
+    primary_key:
+    - whs_id
+    columns:
+    - name: whs_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: whs_nm
+      sql_type: VARCHAR
+      semantic_type: name
+      entity_role: dimension
+    - name: city_nm
+      sql_type: VARCHAR
+      semantic_type: geo_city
+      entity_role: dimension
+    - name: state_cd
+      sql_type: VARCHAR
+      semantic_type: geo_region
+      entity_role: dimension
+  - name: store_dim
+    table_type: dimension
+    grain: one row per store
+    source: main.store_dim
+    primary_key:
+    - store_sk
+    columns:
+    - name: store_sk
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: store_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: natural_key
+      canonical_entity: store
+    - name: store_nm
+      sql_type: VARCHAR
+      semantic_type: name
+      entity_role: dimension
+    - name: city_nm
+      sql_type: VARCHAR
+      semantic_type: geo_city
+      entity_role: dimension
+    - name: state_cd
+      sql_type: VARCHAR
+      semantic_type: geo_region
+      entity_role: dimension
+    - name: cntry_cd
+      sql_type: VARCHAR
+      semantic_type: geo_country
+      entity_role: dimension
+    - name: whs_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      foreign_key:
+        references: whs_dim.whs_id
+        relationship: many_to_one
+    - name: open_dt
+      sql_type: DATE
+      semantic_type: date
+      entity_role: dimension
+  - name: sls_rep_dim
+    table_type: dimension
+    grain: one row per sales rep
+    source: main.sls_rep_dim
+    primary_key:
+    - rep_id
+    columns:
+    - name: rep_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: rep_nm
+      sql_type: VARCHAR
+      semantic_type: pii_name
+      entity_role: dimension
+      pii: true
+    - name: store_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      foreign_key:
+        references: store_dim.store_id
+        relationship: many_to_one
+    - name: hire_dt
+      sql_type: DATE
+      semantic_type: date
+      entity_role: dimension
+  - name: chnl_dim
+    table_type: dimension
+    grain: one row per sales channel
+    source: main.chnl_dim
+    primary_key:
+    - chnl_cd
+    columns:
+    - name: chnl_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: primary_key
+    - name: chnl_nm
+      sql_type: VARCHAR
+      semantic_type: name
+      entity_role: dimension
+  - name: pmt_mthd_dim
+    table_type: dimension
+    grain: one row per payment method code
+    source: main.pmt_mthd_dim
+    primary_key:
+    - pmt_mthd_cd
+    columns:
+    - name: pmt_mthd_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: primary_key
+    - name: pmt_mthd_desc
+      sql_type: VARCHAR
+      semantic_type: name
+      entity_role: dimension
+  - name: sts_cd_dim
+    table_type: dimension
+    grain: one row per order status code (decode dictionary)
+    source: main.sts_cd_dim
+    primary_key:
+    - sts_cd
+    columns:
+    - name: sts_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: primary_key
+    - name: sts_desc
+      sql_type: VARCHAR
+      semantic_type: name
+      entity_role: dimension
+  - name: evt_typ_dim
+    table_type: dimension
+    grain: one row per subscription event type code (decode dictionary)
+    source: main.evt_typ_dim
+    primary_key:
+    - evt_typ_cd
+    columns:
+    - name: evt_typ_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: primary_key
+    - name: evt_typ_desc
+      sql_type: VARCHAR
+      semantic_type: name
+      entity_role: dimension
+  - name: rtn_rsn_dim
+    table_type: dimension
+    grain: one row per return reason code (decode dictionary)
+    source: main.rtn_rsn_dim
+    primary_key:
+    - rtn_rsn_cd
+    columns:
+    - name: rtn_rsn_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: primary_key
+    - name: rtn_rsn_desc
+      sql_type: VARCHAR
+      semantic_type: name
+      entity_role: dimension
+  - name: curr_dim
+    table_type: dimension
+    grain: one row per currency
+    source: main.curr_dim
+    primary_key:
+    - curr_cd
+    columns:
+    - name: curr_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: primary_key
+    - name: curr_nm
+      sql_type: VARCHAR
+      semantic_type: name
+      entity_role: dimension
+    - name: to_usd_rate
+      sql_type: DECIMAL(10,4)
+      semantic_type: rate
+      entity_role: measure
+      aggregations:
+        allowed:
+        - avg
+        - min
+        - max
+        default: avg
+  - name: promo_dim
+    table_type: dimension
+    grain: one row per promotion
+    source: main.promo_dim
+    primary_key:
+    - promo_id
+    columns:
+    - name: promo_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: promo_nm
+      sql_type: VARCHAR
+      semantic_type: name
+      entity_role: dimension
+    - name: promo_typ_cd
+      sql_type: VARCHAR
+      semantic_type: enum
+      entity_role: dimension
+      enum_values:
+      - value: PCT_OFF
+        meaning: 'guessed: percent-off discount'
+        decode_source: llm_guess
+      - value: FLAT_OFF
+        meaning: 'guessed: flat-amount discount'
+        decode_source: llm_guess
+      - value: BOGO
+        meaning: 'guessed: buy-one-get-one'
+        decode_source: llm_guess
+    - name: disc_pct
+      sql_type: DECIMAL(5,2)
+      semantic_type: percentage
+      entity_role: measure
+      aggregations:
+        allowed:
+        - avg
+        - min
+        - max
+        default: avg
+    - name: start_dt
+      sql_type: DATE
+      semantic_type: date
+      entity_role: dimension
+    - name: end_dt
+      sql_type: DATE
+      semantic_type: date
+      entity_role: dimension
+  - name: mktg_cmpgn_dim
+    table_type: dimension
+    grain: one row per marketing campaign
+    source: main.mktg_cmpgn_dim
+    primary_key:
+    - cmpgn_id
+    columns:
+    - name: cmpgn_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: cmpgn_nm
+      sql_type: VARCHAR
+      semantic_type: name
+      entity_role: dimension
+    - name: chnl_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: foreign_key
+      foreign_key:
+        references: chnl_dim.chnl_cd
+        relationship: many_to_one
+    - name: start_dt
+      sql_type: DATE
+      semantic_type: date
+      entity_role: dimension
+    - name: end_dt
+      sql_type: DATE
+      semantic_type: date
+      entity_role: dimension
+    - name: budget_amt
+      sql_type: DECIMAL(12,2)
+      semantic_type: monetary_value
+      entity_role: measure
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        default: sum
+  - name: cust_mstr
+    table_type: snapshot_scd2
+    grain: one row per customer per validity period (SCD2)
+    source: main.cust_mstr
+    primary_key:
+    - cust_sk
+    scd:
+      type: 2
+      valid_from: eff_start_dt
+      valid_to: eff_end_dt
+      is_current_flag: is_curr_flg
+      natural_key:
+      - cust_id
+    columns:
+    - name: cust_sk
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: cust_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: natural_key
+      canonical_entity: customer
+    - name: cust_nm
+      sql_type: VARCHAR
+      semantic_type: pii_name
+      entity_role: dimension
+      pii: true
+    - name: email
+      sql_type: VARCHAR
+      semantic_type: pii_email
+      entity_role: dimension
+      pii: true
+    - name: city_nm
+      sql_type: VARCHAR
+      semantic_type: geo_city
+      entity_role: dimension
+      temporal: scd2
+    - name: state_cd
+      sql_type: VARCHAR
+      semantic_type: geo_region
+      entity_role: dimension
+      temporal: scd2
+    - name: cntry_cd
+      sql_type: VARCHAR
+      semantic_type: geo_country
+      entity_role: dimension
+      temporal: scd2
+    - name: seg_cd
+      sql_type: VARCHAR
+      semantic_type: enum
+      entity_role: dimension
+      temporal: scd2
+      enum_values:
+      - value: CON
+        meaning: 'guessed: consumer segment'
+        decode_source: llm_guess
+      - value: SMB
+        meaning: 'guessed: small/medium business segment'
+        decode_source: llm_guess
+      - value: ENT
+        meaning: 'guessed: enterprise segment'
+        decode_source: llm_guess
+    - name: src_sys_id
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: metadata
+      description: Source system code (CRM1/CRM2/LEGACY); no decode dictionary exists in the warehouse.
+    - name: eff_start_dt
+      sql_type: DATE
+      semantic_type: timestamp_effective
+      entity_role: dimension
+    - name: eff_end_dt
+      sql_type: DATE
+      semantic_type: timestamp_effective
+      entity_role: dimension
+    - name: is_curr_flg
+      sql_type: INTEGER
+      semantic_type: flag
+      entity_role: dimension
+    - name: crt_dt
+      sql_type: DATE
+      semantic_type: timestamp_event
+      entity_role: metadata
+  - name: cust_mstr_legacy
+    table_type: dimension
+    lifecycle: deprecated
+    deprecation:
+      replacement: cust_mstr
+      reason: Pre-migration flat customer table with no SCD2 versioning; superseded by cust_mstr.
+    grain: one row per customer (legacy export, no history)
+    source: main.cust_mstr_legacy
+    columns:
+    - name: cust_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: natural_key
+      canonical_entity: customer
+    - name: cust_nm
+      sql_type: VARCHAR
+      semantic_type: pii_name
+      entity_role: dimension
+      pii: true
+    - name: email
+      sql_type: VARCHAR
+      semantic_type: pii_email
+      entity_role: dimension
+      pii: true
+    - name: city_nm
+      sql_type: VARCHAR
+      semantic_type: geo_city
+      entity_role: dimension
+    - name: state_cd
+      sql_type: VARCHAR
+      semantic_type: geo_region
+      entity_role: dimension
+    - name: load_dt
+      sql_type: DATE
+      semantic_type: timestamp_event
+      entity_role: metadata
+  - name: cust_addr
+    table_type: dimension
+    grain: one row per (customer, address type)
+    source: main.cust_addr
+    primary_key:
+    - addr_id
+    columns:
+    - name: addr_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: cust_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      foreign_key:
+        references: cust_mstr.cust_id
+        relationship: many_to_one
+    - name: addr_typ_cd
+      sql_type: VARCHAR
+      semantic_type: enum
+      entity_role: dimension
+      enum_values:
+      - value: BILL
+        meaning: 'guessed: billing address'
+        decode_source: llm_guess
+      - value: SHIP
+        meaning: 'guessed: shipping address'
+        decode_source: llm_guess
+    - name: line1
+      sql_type: VARCHAR
+      semantic_type: pii_address
+      entity_role: dimension
+      pii: true
+    - name: city_nm
+      sql_type: VARCHAR
+      semantic_type: geo_city
+      entity_role: dimension
+    - name: state_cd
+      sql_type: VARCHAR
+      semantic_type: geo_region
+      entity_role: dimension
+    - name: postal_cd
+      sql_type: VARCHAR
+      semantic_type: geo_postal
+      entity_role: dimension
+    - name: cntry_cd
+      sql_type: VARCHAR
+      semantic_type: geo_country
+      entity_role: dimension
+  - name: ord_hdr
+    table_type: fact
+    grain: one row per order
+    source: main.ord_hdr
+    primary_key:
+    - ord_id
+    columns:
+    - name: ord_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+      aggregations:
+        allowed:
+        - count
+        - count_distinct
+        default: count
+    - name: cust_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      description: "References cust_mstr's natural key, not the surrogate cust_sk \u2014 point-in-time\
+        \ resolution required (SCD2)."
+      foreign_key:
+        references: cust_mstr.cust_id
+        relationship: many_to_one
+    - name: store_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      foreign_key:
+        references: store_dim.store_id
+        relationship: many_to_one
+    - name: date_key
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: foreign_key
+      foreign_key:
+        references: date_dim.date_key
+        relationship: many_to_one
+    - name: ord_dt
+      sql_type: DATE
+      semantic_type: date
+      entity_role: dimension
+      description: Redundant copy of date_dim.cal_dt via date_key; kept for convenience (real-warehouse
+        cruft).
+    - name: sts_cd
+      sql_type: VARCHAR
+      semantic_type: status_code
+      entity_role: dimension
+      foreign_key:
+        references: sts_cd_dim.sts_cd
+        relationship: many_to_one
+      enum_values:
+      - value: P
+        meaning: Pending
+        decode_source: dictionary_join
+      - value: C
+        meaning: Complete
+        decode_source: dictionary_join
+      - value: X
+        meaning: Cancelled
+        decode_source: dictionary_join
+    - name: chnl_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: foreign_key
+      foreign_key:
+        references: chnl_dim.chnl_cd
+        relationship: many_to_one
+    - name: pmt_mthd_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: foreign_key
+      foreign_key:
+        references: pmt_mthd_dim.pmt_mthd_cd
+        relationship: many_to_one
+    - name: promo_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      foreign_key:
+        references: promo_dim.promo_id
+        relationship: many_to_one
+    - name: rep_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      foreign_key:
+        references: sls_rep_dim.rep_id
+        relationship: many_to_one
+    - name: curr_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: foreign_key
+      foreign_key:
+        references: curr_dim.curr_cd
+        relationship: many_to_one
+    - name: tot_amt
+      sql_type: DECIMAL(12,2)
+      semantic_type: monetary_value
+      entity_role: measure
+      description: Equals SUM(ord_ln.line_amt) for the order; fans out if joined to ord_ln without de-duplication.
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        - count
+        default: sum
+        fanout_safety:
+          strategy: symmetric_aggregate
+          symmetric_key: ord_hdr.ord_id
+    - name: crt_dt
+      sql_type: DATE
+      semantic_type: timestamp_event
+      entity_role: metadata
+      description: ETL load date; may lag ord_dt by up to 2 days.
+    - name: src_sys_id
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: metadata
+      description: Source system code; no decode dictionary exists in the warehouse.
+    knowledge:
+      required_filters: []
+      usage_notes:
+      - dly_sls_agg and mth_cust_agg exclude sts_cd = 'X' (cancelled) orders; a raw SUM(tot_amt) over
+        ord_hdr without that filter will not match the aggregates.
+  - name: ord_ln
+    table_type: fact
+    grain: one row per order line
+    source: main.ord_ln
+    primary_key:
+    - ord_ln_id
+    columns:
+    - name: ord_ln_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: ord_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: foreign_key
+      foreign_key:
+        references: ord_hdr.ord_id
+        relationship: many_to_one
+    - name: ln_num
+      sql_type: INTEGER
+      semantic_type: quantity
+      entity_role: metadata
+    - name: prod_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      foreign_key:
+        references: prod_ref.prod_id
+        relationship: many_to_one
+    - name: qty
+      sql_type: INTEGER
+      semantic_type: quantity
+      entity_role: measure
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        default: sum
+    - name: unit_price
+      sql_type: DECIMAL(10,2)
+      semantic_type: monetary_value
+      entity_role: measure
+      aggregations:
+        allowed:
+        - avg
+        - min
+        - max
+        default: avg
+    - name: line_amt
+      sql_type: DECIMAL(12,2)
+      semantic_type: monetary_value
+      entity_role: measure
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        default: sum
+        fanout_safety:
+          strategy: symmetric_aggregate
+          symmetric_key: ord_ln.ord_ln_id
+    - name: line_sts_cd
+      sql_type: VARCHAR
+      semantic_type: status_code
+      entity_role: foreign_key
+      description: "Mirrors ord_hdr.sts_cd at line grain; no separate decode table \u2014 join sts_cd_dim\
+        \ via ord_hdr if a decode is needed."
+      foreign_key:
+        references: sts_cd_dim.sts_cd
+        relationship: many_to_one
+  - name: ord_rtn
+    table_type: fact
+    grain: one row per return
+    source: main.ord_rtn
+    primary_key:
+    - rtn_id
+    columns:
+    - name: rtn_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: ord_ln_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: foreign_key
+      foreign_key:
+        references: ord_ln.ord_ln_id
+        relationship: many_to_one
+    - name: rtn_dt
+      sql_type: DATE
+      semantic_type: date
+      entity_role: dimension
+    - name: rtn_rsn_cd
+      sql_type: VARCHAR
+      semantic_type: status_code
+      entity_role: dimension
+      foreign_key:
+        references: rtn_rsn_dim.rtn_rsn_cd
+        relationship: many_to_one
+    - name: rtn_qty
+      sql_type: INTEGER
+      semantic_type: quantity
+      entity_role: measure
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        default: sum
+    - name: rtn_amt
+      sql_type: DECIMAL(12,2)
+      semantic_type: monetary_value
+      entity_role: measure
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        default: sum
+  - name: ord_hdr_legacy
+    table_type: fact
+    lifecycle: deprecated
+    deprecation:
+      replacement: ord_hdr
+      reason: Pre-2023 order export with a different status vocabulary (OPEN/CLOSED/CANCELLED vs sts_cd
+        P/C/X) and no line-level detail; superseded by ord_hdr/ord_ln.
+    grain: one row per legacy order (2020-2022)
+    source: main.ord_hdr_legacy
+    columns:
+    - name: order_number
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: customer_number
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      description: Same value domain as cust_mstr.cust_id, named differently in the legacy schema.
+      foreign_key:
+        references: cust_mstr.cust_id
+        relationship: many_to_one
+    - name: order_dt
+      sql_type: DATE
+      semantic_type: date
+      entity_role: dimension
+    - name: status
+      sql_type: VARCHAR
+      semantic_type: status_code
+      entity_role: dimension
+      enum_values:
+      - value: OPEN
+        meaning: order open
+        decode_source: human
+      - value: CLOSED
+        meaning: order closed/fulfilled
+        decode_source: human
+      - value: CANCELLED
+        meaning: order cancelled
+        decode_source: human
+    - name: amount
+      sql_type: DECIMAL(12,2)
+      semantic_type: monetary_value
+      entity_role: measure
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        default: sum
+  - name: sub_evt
+    table_type: fact
+    grain: one row per subscription lifecycle event
+    source: main.sub_evt
+    primary_key:
+    - evt_id
+    columns:
+    - name: evt_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: cust_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      foreign_key:
+        references: cust_mstr.cust_id
+        relationship: many_to_one
+    - name: sub_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: natural_key
+      canonical_entity: subscription
+    - name: evt_typ_cd
+      sql_type: VARCHAR
+      semantic_type: status_code
+      entity_role: dimension
+      foreign_key:
+        references: evt_typ_dim.evt_typ_cd
+        relationship: many_to_one
+      enum_values:
+      - value: START
+        meaning: Subscription started
+        decode_source: dictionary_join
+      - value: RENEW
+        meaning: Subscription renewed
+        decode_source: dictionary_join
+      - value: UPGRADE
+        meaning: Plan upgraded
+        decode_source: dictionary_join
+      - value: DOWNGRADE
+        meaning: Plan downgraded
+        decode_source: dictionary_join
+      - value: CANCEL
+        meaning: Subscription cancelled
+        decode_source: dictionary_join
+    - name: evt_dt
+      sql_type: DATE
+      semantic_type: date
+      entity_role: dimension
+    - name: mrr_amt
+      sql_type: DECIMAL(10,2)
+      semantic_type: monetary_value
+      entity_role: measure
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        default: sum
+        semi_additive:
+          non_additive_dimension: sub_evt.sub_id
+          window_choice: last
+    - name: crt_dt
+      sql_type: DATE
+      semantic_type: timestamp_event
+      entity_role: metadata
+  - name: web_evt
+    table_type: fact
+    grain: one row per web/app interaction event
+    source: main.web_evt
+    primary_key:
+    - evt_id
+    columns:
+    - name: evt_id
+      sql_type: BIGINT
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: cust_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      description: "Null for anonymous sessions (~30% of rows) \u2014 inclusion dependency holds only\
+        \ over non-null values."
+      foreign_key:
+        references: cust_mstr.cust_id
+        relationship: many_to_one
+    - name: sess_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: dimension
+    - name: evt_typ_cd
+      sql_type: VARCHAR
+      semantic_type: enum
+      entity_role: dimension
+      description: "VIEW/CLICK/ADD_CART/PURCHASE \u2014 deliberately no decode dictionary table exists\
+        \ in this warehouse; values are self-explanatory strings."
+      enum_values:
+      - value: VIEW
+        meaning: page viewed
+        decode_source: human
+      - value: CLICK
+        meaning: element clicked
+        decode_source: human
+      - value: ADD_CART
+        meaning: item added to cart
+        decode_source: human
+      - value: PURCHASE
+        meaning: checkout completed
+        decode_source: human
+    - name: pg_url
+      sql_type: VARCHAR
+      semantic_type: url
+      entity_role: dimension
+    - name: evt_ts
+      sql_type: TIMESTAMP
+      semantic_type: timestamp_event
+      entity_role: dimension
+    - name: ord_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: foreign_key
+      description: Populated only when evt_typ_cd = 'PURCHASE'.
+      foreign_key:
+        references: ord_hdr.ord_id
+        relationship: many_to_one
+  - name: inv_snpsht
+    table_type: fact
+    grain: one row per (date, store, product) inventory snapshot
+    source: main.inv_snpsht
+    primary_key:
+    - snpsht_id
+    columns:
+    - name: snpsht_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: date_key
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: foreign_key
+      foreign_key:
+        references: date_dim.date_key
+        relationship: many_to_one
+    - name: store_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      foreign_key:
+        references: store_dim.store_id
+        relationship: many_to_one
+    - name: prod_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      foreign_key:
+        references: prod_ref.prod_id
+        relationship: many_to_one
+    - name: on_hand_qty
+      sql_type: INTEGER
+      semantic_type: quantity
+      entity_role: measure
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        default: sum
+        semi_additive:
+          non_additive_dimension: date_dim.date_key
+          window_choice: last
+    - name: on_order_qty
+      sql_type: INTEGER
+      semantic_type: quantity
+      entity_role: measure
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        default: sum
+        semi_additive:
+          non_additive_dimension: date_dim.date_key
+          window_choice: last
+  - name: dly_sls_agg
+    table_type: aggregate
+    grain: one row per (date, store)
+    source: main.dly_sls_agg
+    columns:
+    - name: agg_dt_key
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: foreign_key
+      foreign_key:
+        references: date_dim.date_key
+        relationship: many_to_one
+    - name: store_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      foreign_key:
+        references: store_dim.store_id
+        relationship: many_to_one
+    - name: tot_sls_amt
+      sql_type: DECIMAL(14,2)
+      semantic_type: monetary_value
+      entity_role: measure
+      aggregations:
+        allowed:
+        - sum
+        default: sum
+    - name: ord_cnt
+      sql_type: INTEGER
+      semantic_type: quantity
+      entity_role: measure
+      aggregations:
+        allowed:
+        - sum
+        default: sum
+  - name: mth_cust_agg
+    table_type: aggregate
+    grain: one row per (year-month, customer)
+    source: main.mth_cust_agg
+    columns:
+    - name: yr_mth
+      sql_type: VARCHAR
+      semantic_type: date
+      entity_role: dimension
+      description: YYYY-MM string.
+    - name: cust_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      foreign_key:
+        references: cust_mstr.cust_id
+        relationship: many_to_one
+    - name: tot_spend_amt
+      sql_type: DECIMAL(14,2)
+      semantic_type: monetary_value
+      entity_role: measure
+      aggregations:
+        allowed:
+        - sum
+        default: sum
+    - name: ord_cnt
+      sql_type: INTEGER
+      semantic_type: quantity
+      entity_role: measure
+      aggregations:
+        allowed:
+        - sum
+        default: sum
+  - name: etl_log
+    table_type: operational
+    grain: one row per ETL job run
+    source: main.etl_log
+    primary_key:
+    - run_id
+    columns:
+    - name: run_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: job_nm
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: dimension
+    - name: start_ts
+      sql_type: TIMESTAMP
+      semantic_type: timestamp_event
+      entity_role: dimension
+    - name: end_ts
+      sql_type: TIMESTAMP
+      semantic_type: timestamp_event
+      entity_role: dimension
+    - name: sts_cd
+      sql_type: VARCHAR
+      semantic_type: status_code
+      entity_role: dimension
+      enum_values:
+      - value: SUCCESS
+        meaning: run succeeded
+        decode_source: human
+      - value: FAILED
+        meaning: run failed
+        decode_source: human
+      - value: RUNNING
+        meaning: run in progress
+        decode_source: human
+    - name: rows_in
+      sql_type: INTEGER
+      semantic_type: quantity
+      entity_role: measure
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        default: sum
+    - name: rows_out
+      sql_type: INTEGER
+      semantic_type: quantity
+      entity_role: measure
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        default: sum
+  - name: stg_orders_raw
+    table_type: staging
+    grain: one row per raw ingested order record
+    source: main.stg_orders_raw
+    primary_key:
+    - raw_id
+    columns:
+    - name: raw_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: raw_ord_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: metadata
+    - name: raw_payload
+      sql_type: VARCHAR
+      semantic_type: json_object
+      entity_role: metadata
+    - name: load_ts
+      sql_type: TIMESTAMP
+      semantic_type: timestamp_event
+      entity_role: metadata
+    - name: file_nm
+      sql_type: VARCHAR
+      semantic_type: free_text
+      entity_role: metadata
+    - name: processed_flg
+      sql_type: INTEGER
+      semantic_type: flag
+      entity_role: metadata
+  - name: stg_customers_raw
+    table_type: staging
+    grain: one row per raw ingested customer record
+    source: main.stg_customers_raw
+    primary_key:
+    - raw_id
+    columns:
+    - name: raw_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: raw_cust_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      foreign_key:
+        references: cust_mstr.cust_id
+        relationship: many_to_one
+    - name: raw_payload
+      sql_type: VARCHAR
+      semantic_type: json_object
+      entity_role: metadata
+    - name: load_ts
+      sql_type: TIMESTAMP
+      semantic_type: timestamp_event
+      entity_role: metadata
+    - name: file_nm
+      sql_type: VARCHAR
+      semantic_type: free_text
+      entity_role: metadata
+  - name: job_ctrl
+    table_type: operational
+    grain: one row per scheduled job
+    source: main.job_ctrl
+    primary_key:
+    - job_nm
+    columns:
+    - name: job_nm
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: primary_key
+    - name: last_run_dt
+      sql_type: DATE
+      semantic_type: date
+      entity_role: metadata
+    - name: next_run_dt
+      sql_type: DATE
+      semantic_type: date
+      entity_role: metadata
+    - name: actv_flg
+      sql_type: INTEGER
+      semantic_type: flag
+      entity_role: metadata
+  - name: dq_chk_log
+    table_type: operational
+    grain: one row per data-quality check execution
+    source: main.dq_chk_log
+    primary_key:
+    - chk_id
+    columns:
+    - name: chk_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: tbl_nm
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: metadata
+    - name: chk_nm
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: metadata
+    - name: chk_dt
+      sql_type: DATE
+      semantic_type: date
+      entity_role: metadata
+    - name: pass_flg
+      sql_type: INTEGER
+      semantic_type: flag
+      entity_role: metadata
+    - name: fail_cnt
+      sql_type: INTEGER
+      semantic_type: quantity
+      entity_role: measure
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        default: sum
+  - name: file_load_hist
+    table_type: operational
+    grain: one row per source file load
+    source: main.file_load_hist
+    primary_key:
+    - load_id
+    columns:
+    - name: load_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: file_nm
+      sql_type: VARCHAR
+      semantic_type: free_text
+      entity_role: metadata
+    - name: src_sys_id
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: metadata
+    - name: load_dt
+      sql_type: DATE
+      semantic_type: date
+      entity_role: metadata
+    - name: row_cnt
+      sql_type: INTEGER
+      semantic_type: quantity
+      entity_role: measure
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        default: sum
+    - name: sts_cd
+      sql_type: VARCHAR
+      semantic_type: status_code
+      entity_role: metadata
+      enum_values:
+      - value: SUCCESS
+        meaning: load succeeded
+        decode_source: human
+      - value: FAILED
+        meaning: load failed
+        decode_source: human
+  relationships:
+  - name: ord_hdr_to_cust_mstr
+    from:
+      table: ord_hdr
+      columns:
+      - cust_id
+    to:
+      table: cust_mstr
+      columns:
+      - cust_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+    asof:
+      enabled: true
+      'on': ord_hdr.ord_dt
+  - name: ord_hdr_to_store_dim
+    from:
+      table: ord_hdr
+      columns:
+      - store_id
+    to:
+      table: store_dim
+      columns:
+      - store_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  - name: ord_hdr_to_date_dim
+    from:
+      table: ord_hdr
+      columns:
+      - date_key
+    to:
+      table: date_dim
+      columns:
+      - date_key
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  - name: ord_hdr_to_chnl_dim
+    from:
+      table: ord_hdr
+      columns:
+      - chnl_cd
+    to:
+      table: chnl_dim
+      columns:
+      - chnl_cd
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  - name: ord_hdr_to_pmt_mthd_dim
+    from:
+      table: ord_hdr
+      columns:
+      - pmt_mthd_cd
+    to:
+      table: pmt_mthd_dim
+      columns:
+      - pmt_mthd_cd
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  - name: ord_hdr_to_promo_dim
+    from:
+      table: ord_hdr
+      columns:
+      - promo_id
+    to:
+      table: promo_dim
+      columns:
+      - promo_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  - name: ord_hdr_to_sls_rep_dim
+    from:
+      table: ord_hdr
+      columns:
+      - rep_id
+    to:
+      table: sls_rep_dim
+      columns:
+      - rep_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  - name: ord_hdr_to_curr_dim
+    from:
+      table: ord_hdr
+      columns:
+      - curr_cd
+    to:
+      table: curr_dim
+      columns:
+      - curr_cd
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  - name: ord_hdr_to_sts_cd_dim
+    from:
+      table: ord_hdr
+      columns:
+      - sts_cd
+    to:
+      table: sts_cd_dim
+      columns:
+      - sts_cd
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  - name: ord_ln_to_ord_hdr
+    from:
+      table: ord_ln
+      columns:
+      - ord_id
+    to:
+      table: ord_hdr
+      columns:
+      - ord_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+  - name: ord_ln_to_prod_ref
+    from:
+      table: ord_ln
+      columns:
+      - prod_id
+    to:
+      table: prod_ref
+      columns:
+      - prod_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  - name: ord_rtn_to_ord_ln
+    from:
+      table: ord_rtn
+      columns:
+      - ord_ln_id
+    to:
+      table: ord_ln
+      columns:
+      - ord_ln_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+  - name: ord_rtn_to_rtn_rsn_dim
+    from:
+      table: ord_rtn
+      columns:
+      - rtn_rsn_cd
+    to:
+      table: rtn_rsn_dim
+      columns:
+      - rtn_rsn_cd
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  - name: ord_hdr_legacy_to_cust_mstr
+    from:
+      table: ord_hdr_legacy
+      columns:
+      - customer_number
+    to:
+      table: cust_mstr
+      columns:
+      - cust_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  - name: sub_evt_to_cust_mstr
+    from:
+      table: sub_evt
+      columns:
+      - cust_id
+    to:
+      table: cust_mstr
+      columns:
+      - cust_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+  - name: sub_evt_to_evt_typ_dim
+    from:
+      table: sub_evt
+      columns:
+      - evt_typ_cd
+    to:
+      table: evt_typ_dim
+      columns:
+      - evt_typ_cd
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  - name: web_evt_to_cust_mstr
+    from:
+      table: web_evt
+      columns:
+      - cust_id
+    to:
+      table: cust_mstr
+      columns:
+      - cust_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+  - name: web_evt_to_ord_hdr
+    from:
+      table: web_evt
+      columns:
+      - ord_id
+    to:
+      table: ord_hdr
+      columns:
+      - ord_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  - name: inv_snpsht_to_store_dim
+    from:
+      table: inv_snpsht
+      columns:
+      - store_id
+    to:
+      table: store_dim
+      columns:
+      - store_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  - name: inv_snpsht_to_prod_ref
+    from:
+      table: inv_snpsht
+      columns:
+      - prod_id
+    to:
+      table: prod_ref
+      columns:
+      - prod_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  - name: inv_snpsht_to_date_dim
+    from:
+      table: inv_snpsht
+      columns:
+      - date_key
+    to:
+      table: date_dim
+      columns:
+      - date_key
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  - name: prod_ref_to_category_dim
+    from:
+      table: prod_ref
+      columns:
+      - category_cd
+    to:
+      table: category_dim
+      columns:
+      - category_cd
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  - name: prod_ref_to_dept_dim
+    from:
+      table: prod_ref
+      columns:
+      - dept_cd
+    to:
+      table: dept_dim
+      columns:
+      - dept_cd
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  - name: category_dim_to_dept_dim
+    from:
+      table: category_dim
+      columns:
+      - dept_cd
+    to:
+      table: dept_dim
+      columns:
+      - dept_cd
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  - name: store_dim_to_whs_dim
+    from:
+      table: store_dim
+      columns:
+      - whs_id
+    to:
+      table: whs_dim
+      columns:
+      - whs_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  - name: sls_rep_dim_to_store_dim
+    from:
+      table: sls_rep_dim
+      columns:
+      - store_id
+    to:
+      table: store_dim
+      columns:
+      - store_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  - name: mktg_cmpgn_dim_to_chnl_dim
+    from:
+      table: mktg_cmpgn_dim
+      columns:
+      - chnl_cd
+    to:
+      table: chnl_dim
+      columns:
+      - chnl_cd
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  - name: cust_addr_to_cust_mstr
+    from:
+      table: cust_addr
+      columns:
+      - cust_id
+    to:
+      table: cust_mstr
+      columns:
+      - cust_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+  - name: sku_xref_to_prod_ref
+    from:
+      table: sku_xref
+      columns:
+      - prod_id
+    to:
+      table: prod_ref
+      columns:
+      - prod_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  - name: prod_attr_ext_to_prod_ref
+    from:
+      table: prod_attr_ext
+      columns:
+      - prod_id
+    to:
+      table: prod_ref
+      columns:
+      - prod_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+  - name: dly_sls_agg_to_date_dim
+    from:
+      table: dly_sls_agg
+      columns:
+      - agg_dt_key
+    to:
+      table: date_dim
+      columns:
+      - date_key
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  - name: dly_sls_agg_to_store_dim
+    from:
+      table: dly_sls_agg
+      columns:
+      - store_id
+    to:
+      table: store_dim
+      columns:
+      - store_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  - name: mth_cust_agg_to_cust_mstr
+    from:
+      table: mth_cust_agg
+      columns:
+      - cust_id
+    to:
+      table: cust_mstr
+      columns:
+      - cust_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  hierarchies:
+  - name: product_hierarchy
+    kind: level
+    dimension_table: prod_ref
+    levels:
+    - name: department
+      column: dept_cd
+    - name: category
+      column: category_cd
+    - name: product
+      column: prod_id
+  - name: geography
+    kind: level
+    dimension_table: store_dim
+    levels:
+    - name: country
+      column: cntry_cd
+    - name: state
+      column: state_cd
+    - name: city
+      column: city_nm
+  - name: order_time
+    kind: time
+    dimension_table: ord_hdr
+    base_column: ord_dt
+    levels:
+    - name: year
+      grain_expr:
+        duckdb: date_trunc('year', ord_dt)
+    - name: quarter
+      grain_expr:
+        duckdb: date_trunc('quarter', ord_dt)
+    - name: month
+      grain_expr:
+        duckdb: date_trunc('month', ord_dt)
+    - name: day
+      grain_expr:
+        duckdb: ord_dt
+  aggregate_tables:
+  - table: dly_sls_agg
+    aggregates: ord_hdr
+    mapping_source: lineage
+    grain:
+    - date_dim.date_key
+    - store_dim.store_id
+    measure_mappings:
+    - source: sum(ord_hdr.tot_amt)
+      target: dly_sls_agg.tot_sls_amt
+    - source: count(ord_hdr.ord_id)
+      target: dly_sls_agg.ord_cnt
+    routing:
+      rule: "Route daily/store-grain revenue or order-count queries here. Excludes ord_hdr rows with sts_cd\
+        \ = 'X' (cancelled) \u2014 both the aggregate and the base-fact rollup apply that filter."
+      status: verified
+    consistency:
+      method: deterministic_window
+      status: consistent
+  - table: mth_cust_agg
+    aggregates: ord_hdr
+    mapping_source: lineage
+    grain:
+    - order_time.month
+    - cust_mstr.cust_id
+    measure_mappings:
+    - source: sum(ord_hdr.tot_amt)
+      target: mth_cust_agg.tot_spend_amt
+    - source: count(ord_hdr.ord_id)
+      target: mth_cust_agg.ord_cnt
+    routing:
+      rule: Route monthly customer-spend queries here. Excludes cancelled (sts_cd = 'X') orders, same
+        as dly_sls_agg.
+      status: verified
+    consistency:
+      method: deterministic_window
+      status: consistent
+  metrics:
+  - name: total_order_revenue
+    display_name: Total Order Revenue
+    type: simple
+    measure: ord_hdr.tot_amt
+    agg: sum
+    dimensions:
+    - order_time.*
+    - geography.*
+    - product_hierarchy.*
+    - ord_hdr.sts_cd
+    grain: order
+    fanout_safety:
+      strategy: symmetric_aggregate
+      symmetric_key: ord_hdr.ord_id
+  - name: completed_order_revenue
+    display_name: Completed Order Revenue
+    type: simple
+    measure: ord_hdr.tot_amt
+    agg: sum
+    filter: ord_hdr.sts_cd = 'C'
+    dimensions:
+    - order_time.*
+    - geography.*
+    grain: order
+    fanout_safety:
+      strategy: symmetric_aggregate
+      symmetric_key: ord_hdr.ord_id
+  - name: line_item_revenue
+    display_name: Line Item Revenue
+    type: simple
+    measure: ord_ln.line_amt
+    agg: sum
+    dimensions:
+    - product_hierarchy.*
+    - order_time.*
+    grain: order_line
+  - name: order_count
+    display_name: Order Count
+    type: simple
+    measure: ord_hdr.ord_id
+    agg: count
+    dimensions:
+    - order_time.*
+    - geography.*
+    - ord_hdr.sts_cd
+    grain: order
+  - name: avg_order_value
+    display_name: Average Order Value
+    type: derived
+    expr: total_order_revenue / order_count
+    input_metrics:
+    - total_order_revenue
+    - order_count
+    dimensions:
+    - order_time.*
+    - geography.*
+  repo_knowledge:
+    routing:
+    - intent: customer profile / current attributes
+      use:
+      - cust_mstr
+      avoid:
+      - table: cust_mstr_legacy
+        reason: deprecated pre-migration table with no SCD2 history; superseded by cust_mstr
+    - intent: order revenue analysis
+      use:
+      - ord_hdr
+      - dly_sls_agg
+      - mth_cust_agg
+      avoid:
+      - table: ord_hdr_legacy
+        reason: deprecated; covers only 2020-2022 and uses an incompatible status vocabulary (OPEN/CLOSED/CANCELLED
+          vs sts_cd)
+      - table: ord_ln
+        reason: line-level join fans out ord_hdr.tot_amt; use ord_ln.line_amt for line-grain revenue instead
+    - intent: product catalog lookup
+      use:
+      - prod_ref
+      avoid:
+      - table: prod_ref_legacy
+        reason: deprecated pre-migration product export; superseded by prod_ref
+    - intent: subscription / recurring revenue (MRR)
+      use:
+      - sub_evt
+      avoid:
+      - table: web_evt
+        reason: web_evt captures site interactions, not subscription lifecycle; not a source of MRR
+    conventions:
+      notes:
+      - No PK/FK constraints are declared in the warehouse DDL; every key and relationship in this document
+        was recovered from data, not the catalog.
+      - '*_cd / *_flg / *_dt / *_amt suffixes are the house naming convention: coded value, 0/1 flag,
+        date, monetary amount respectively.'
+      - Some enum columns (ord_hdr.sts_cd, sub_evt.evt_typ_cd, ord_rtn.rtn_rsn_cd) have a decode dictionary
+        table; others (web_evt.evt_typ_cd, cust_mstr.seg_cd, promo_dim.promo_typ_cd, cust_addr.addr_typ_cd)
+        do not and are decoded only by LLM guess or self-evident human labeling.
+    domains:
+    - name: sales
+      description: 'Order-to-cash: headers, lines, returns, and their rollups.'
+      tables:
+      - ord_hdr
+      - ord_ln
+      - ord_rtn
+      - dly_sls_agg
+      - mth_cust_agg
+      - ord_hdr_legacy
+    - name: customer
+      description: Customer identity, history, and addresses.
+      tables:
+      - cust_mstr
+      - cust_mstr_legacy
+      - cust_addr
+    - name: product
+      description: Product catalog and cross-reference data.
+      tables:
+      - prod_ref
+      - prod_ref_legacy
+      - dept_dim
+      - category_dim
+      - prod_attr_ext
+      - sku_xref
+    - name: engagement
+      description: Subscription and web/app behavioral events.
+      tables:
+      - sub_evt
+      - web_evt
+    - name: operations
+      description: ETL and data-quality operational metadata; not business data.
+      tables:
+      - etl_log
+      - stg_orders_raw
+      - stg_customers_raw
+      - job_ctrl
+      - dq_chk_log
+      - file_load_hist

@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"priority_name\",\n    \"semantic_type\": \"enum\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": {\n      \"prioritie_1\": \"Priority 1\",\n      \"prioritie_2\": \"Priority 2\",\n      \"prioritie_3\": \"Priority 3\",\n      \"prioritie_4\": \"Priority 4\",\n      \"prioritie_5\": \"Priority 5\"\n    },\n    \"rationale\": \"Five distinct priority levels; enumerated categorical dimension with systematic naming pattern.\"\n  }\n]\n```",
+ "usage": {
+  "in": 495,
+  "out": 155
+ }
+}

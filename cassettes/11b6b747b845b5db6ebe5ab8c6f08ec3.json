@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "59c0b72cdf42",
+ "response": "{\"action\": \"refuse\", \"sql\": null, \"reason\": \"Legacy tables are deprecated/unusable; ord_hdr schema lacks a date column",
+ "usage": {
+  "in": 9709,
+  "out": 800
+ }
+}

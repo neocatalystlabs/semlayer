@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"raw_payload\",\n    \"semantic_type\": \"json_object\",\n    \"entity_role\": \"metadata\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": null,\n    \"rationale\": \"Raw payload typically contains serialized JSON/structured data from source systems\"\n  },\n  {\n    \"column\": \"file_nm\",\n    \"semantic_type\": \"code\",\n    \"entity_role\": \"metadata\",\n    \"confidence\": 0.85,\n    \"enum_decodes\": null,\n    \"rationale\": \"File name identifier; 30 distinct values suggest batch/source file tracking\"\n  }\n]\n```",
+ "usage": {
+  "in": 508,
+  "out": 169
+ }
+}

@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"prod_nm\",\n    \"semantic_type\": \"name\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": null,\n    \"rationale\": \"Product name; unique identifier for product dimension\"\n  },\n  {\n    \"column\": \"dept_cd\",\n    \"semantic_type\": \"code\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.85,\n    \"enum_decodes\": null,\n    \"rationale\": \"Department code; 5 distinct values suggest enumerated classification\"\n  }\n]\n```",
+ "usage": {
+  "in": 526,
+  "out": 159
+ }
+}

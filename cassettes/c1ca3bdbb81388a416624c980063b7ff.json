@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"part_name\",\n    \"semantic_type\": \"code\",\n    \"entity_role\": \"unique_key\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": null,\n    \"rationale\": \"Unique identifier with systematic code pattern (part_NNNN)\"\n  },\n  {\n    \"column\": \"part_level\",\n    \"semantic_type\": \"enum\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.85,\n    \"enum_decodes\": {\n      \"1\": \"Level 1\",\n      \"2\": \"Level 2\",\n      \"3\": \"Level 3\",\n      \"4\": \"Level 4\"\n    },\n    \"rationale\": \"Small integer range (1-4) suggests hierarchical classification level\"\n  }\n]\n```",
+ "usage": {
+  "in": 631,
+  "out": 210
+ }
+}

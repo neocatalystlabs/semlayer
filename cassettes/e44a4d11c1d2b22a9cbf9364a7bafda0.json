@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"weight_kg\",\n    \"semantic_type\": \"quantity\",\n    \"entity_role\": \"measure\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": null,\n    \"rationale\": \"Physical weight measurement in kilograms; continuous numeric range typical of shipment mass.\"\n  }\n]\n```",
+ "usage": {
+  "in": 457,
+  "out": 91
+ }
+}

@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"sr_ticket_number\",\n    \"semantic_type\": \"identifier\",\n    \"entity_role\": \"natural_key\",\n    \"confidence\": 0.85,\n    \"enum_decodes\": null,\n    \"rationale\": \"Return transaction identifier; numeric but non-sequential, identifies individual returns\"\n  },\n  {\n    \"column\": \"sr_return_tax\",\n    \"semantic_type\": \"monetary_value\",\n    \"entity_role\": \"measure\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": null,\n    \"rationale\": \"Tax amount on returned items; decimal currency format, typical tax range\"\n  },\n  {\n    \"column\": \"sr_refunded_cash\",\n    \"semantic_type\": \"monetary_value\",\n    \"entity_role\": \"measure\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": null,\n    \"rationale\": \"Cash refund amount; decimal currency format, refund transaction component\"\n  },\n  {\n    \"column\": \"sr_store_credit\",\n    \"semantic_type\": \"monetary_value\",\n    \"entity_role\": \"measure\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": null,\n    \"rationale\": \"Store credit issued; decimal currency format, alternative refund method\"\n  },\n  {\n    \"column\": \"sr_net_loss\",\n    \"semantic_type\": \"monetary_value\",\n    \"entity_role\": \"measure\",\n    \"confidence\": 0.90,\n    \"enum_decodes\": null,\n    \"rationale\": \"Net loss from return; decimal currency format, financial impact metric\"\n  }\n]\n```",
+ "usage": {
+  "in": 971,
+  "out": 415
+ }
+}

@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "59c0b72cdf42",
+ "response": "{\"action\": \"sql\", \"sql\": \"WITH ord_agg AS (\\n  SELECT cust_id, strftime(ord_dt, '%Y-%m') AS yr_mth, COUNT(*) AS ord_cnt_hdr\\n  FROM ord_hdr\\n  WHERE sts_cd <> 'X'\\n  GROUP BY cust_id, strftime(ord_dt, '%Y-%m')\\n)\\nSELECT \\n  COALESCE(m.cust_id, o.cust_id) AS cust_id,\\n  COALESCE(m.yr_mth, o.yr_mth) AS yr_mth,\\n  m.",
+ "usage": {
+  "in": 12956,
+  "out": 800
+ }
+}

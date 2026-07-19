@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "59c0b72cdf42",
+ "response": "{\"action\": \"sql\", \"sql\": \"SELECT (SELECT SUM(tot_sls_amt) FROM dly_sls_agg) AS dly_sls_agg_total, (SELECT SUM(tot_amt) FROM ord_hdr WHERE sts_cd <> 'X') AS ord_hdr_non_cancelled_total, (SELECT SUM(tot_sls_amt) FROM dly_sls_agg) - (SELECT SUM(tot_amt) FROM ord_hdr WHERE sts_cd <> 'X') AS difference\", \"reason\": null}",
+ "usage": {
+  "in": 5178,
+  "out": 268
+ }
+}

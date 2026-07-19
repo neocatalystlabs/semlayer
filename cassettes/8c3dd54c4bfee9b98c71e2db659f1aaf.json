@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"ext_sys_id\",\n    \"semantic_type\": \"code\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.85,\n    \"enum_decodes\": null,\n    \"rationale\": \"External system identifier; low cardinality (3 values) suggests coded system reference\"\n  },\n  {\n    \"column\": \"ext_sku\",\n    \"semantic_type\": \"code\",\n    \"entity_role\": \"foreign_key\",\n    \"confidence\": 0.90,\n    \"enum_decodes\": null,\n    \"rationale\": \"External SKU code; high cardinality (399) with no nulls; cross-reference key\"\n  }\n]\n```",
+ "usage": {
+  "in": 496,
+  "out": 182
+ }
+}

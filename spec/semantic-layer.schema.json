@@ -1,0 +1,537 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://semlayer.dev/spec/0.1/semantic-layer.schema.json",
+  "title": "Semantic Layer",
+  "description": "Open format for warehouse semantic layers with inference-native primitives: confidence, provenance, and lifecycle on every element. See SPEC.md for the normative consumer contract.",
+  "type": "object",
+  "required": ["semantic_layer"],
+  "additionalProperties": false,
+  "properties": {
+    "semantic_layer": {
+      "type": "object",
+      "required": ["spec_version", "name", "tables"],
+      "additionalProperties": false,
+      "properties": {
+        "spec_version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "description": "Version of this spec the document conforms to (semver)."
+        },
+        "name": {"type": "string", "minLength": 1},
+        "generated_by": {"$ref": "#/$defs/generated_by"},
+        "calendar": {"$ref": "#/$defs/calendar"},
+        "description": {"type": "string"},
+        "ai_context": {"type": "string"},
+        "tables": {"type": "array", "items": {"$ref": "#/$defs/table"}, "minItems": 1},
+        "relationships": {"type": "array", "items": {"$ref": "#/$defs/relationship"}},
+        "hierarchies": {"type": "array", "items": {"$ref": "#/$defs/hierarchy"}},
+        "aggregate_tables": {"type": "array", "items": {"$ref": "#/$defs/aggregate_table"}},
+        "metrics": {"type": "array", "items": {"$ref": "#/$defs/metric"}},
+        "repo_knowledge": {"$ref": "#/$defs/repo_knowledge"}
+      }
+    }
+  },
+  "$defs": {
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Calibrated confidence. Absent means human-authored. Consumers MUST follow the lifecycle x confidence behavior matrix in SPEC.md."
+    },
+    "provenance_entry": {
+      "type": "object",
+      "required": ["signal"],
+      "additionalProperties": false,
+      "properties": {
+        "signal": {
+          "enum": ["statistic", "inclusion_dependency", "functional_dependency", "naming", "llm", "query_log", "catalog_prior", "etl_lineage", "view_ddl", "format_metadata", "human"]
+        },
+        "detail": {"type": "string"}
+      }
+    },
+    "conflict_entry": {
+      "type": "object",
+      "required": ["between"],
+      "additionalProperties": false,
+      "properties": {
+        "between": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/provenance_entry/properties/signal"},
+          "minItems": 2
+        },
+        "detail": {"type": "string"}
+      }
+    },
+    "lifecycle": {
+      "enum": ["inferred", "reviewed", "certified", "deprecated", "orphaned"],
+      "description": "Certification protects content from re-inference; existence is governed by the warehouse. Objects whose warehouse element disappeared transition to 'orphaned' and are unusable (SPEC.md)."
+    },
+    "deprecation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "replacement": {"type": "string", "description": "Reference to the replacement object, e.g. 'table.column' or 'metric_name'."},
+        "reason": {"type": "string"}
+      }
+    },
+    "generated_by": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "engine": {"type": "string"},
+        "model": {"type": "string"},
+        "generated_at": {"type": "string", "format": "date-time"}
+      }
+    },
+    "envelope": {
+      "description": "Universal annotation fields available on every object.",
+      "type": "object",
+      "properties": {
+        "description": {"type": "string"},
+        "ai_context": {"type": "string"},
+        "synonyms": {"type": "array", "items": {"type": "string"}},
+        "confidence": {"$ref": "#/$defs/confidence"},
+        "provenance": {"type": "array", "items": {"$ref": "#/$defs/provenance_entry"}},
+        "conflicts": {"type": "array", "items": {"$ref": "#/$defs/conflict_entry"}},
+        "lifecycle": {"$ref": "#/$defs/lifecycle"},
+        "deprecation": {"$ref": "#/$defs/deprecation"},
+        "generated_by": {"$ref": "#/$defs/generated_by"}
+      }
+    },
+    "calendar": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "fiscal_year_start_month": {"type": "integer", "minimum": 1, "maximum": 12},
+        "week_start": {"enum": ["monday", "sunday"]},
+        "timezone": {"type": "string", "description": "IANA timezone all timestamps are stored in, e.g. 'UTC'."}
+      }
+    },
+    "dialect_sql": {
+      "description": "SQL expression, either a single default-dialect string or a per-dialect map. Applies to EVERY SQL-bearing field.",
+      "oneOf": [
+        {"type": "string"},
+        {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {"enum": ["ansi", "snowflake", "bigquery", "databricks", "postgres", "duckdb"]},
+          "additionalProperties": {"type": "string"}
+        }
+      ]
+    },
+    "semantic_type": {
+      "enum": [
+        "identifier", "monetary_value", "quantity", "rate", "percentage",
+        "timestamp_event", "timestamp_effective", "date", "duration",
+        "status_code", "enum", "flag", "free_text", "name", "url", "code",
+        "geo_country", "geo_region", "geo_city", "geo_postal", "geo_coordinates",
+        "pii_email", "pii_name", "pii_phone", "pii_address", "pii_national_id", "pii_other",
+        "json_object", "unknown"
+      ]
+    },
+    "entity_role": {
+      "enum": ["primary_key", "unique_key", "natural_key", "foreign_key", "dimension", "measure", "metadata"]
+    },
+    "aggregation": {
+      "enum": ["sum", "avg", "min", "max", "count", "count_distinct", "count_distinct_approx", "median", "percentile"]
+    },
+    "enum_value": {
+      "type": "object",
+      "required": ["value", "meaning", "decode_source"],
+      "additionalProperties": false,
+      "properties": {
+        "value": {"type": ["string", "number", "boolean"]},
+        "meaning": {"type": "string"},
+        "decode_source": {
+          "enum": ["dictionary_join", "dbt_accepted_values", "docs", "catalog_prior", "human", "llm_guess"],
+          "description": "Metric filters MUST NOT reference values whose only decode_source is llm_guess (SPEC.md)."
+        }
+      }
+    },
+    "semi_additive": {
+      "type": "object",
+      "required": ["non_additive_dimension", "window_choice"],
+      "additionalProperties": false,
+      "properties": {
+        "non_additive_dimension": {"type": "string"},
+        "window_choice": {"enum": ["first", "last"]}
+      }
+    },
+    "window_spec": {
+      "type": "object",
+      "required": ["order", "range"],
+      "additionalProperties": false,
+      "properties": {
+        "order": {"type": "string", "description": "Ordering field reference."},
+        "range": {"type": "string", "description": "current | cumulative | 'trailing N unit' | 'leading N unit' | all"},
+        "semiadditive": {"enum": ["first", "last"]},
+        "offset": {"type": "string", "description": "Signed period offset for period-over-period, e.g. '-1 month'."}
+      }
+    },
+    "fanout_safety": {
+      "type": "object",
+      "required": ["strategy"],
+      "additionalProperties": false,
+      "properties": {
+        "strategy": {
+          "enum": ["symmetric_aggregate", "distinct_key", "refuse"],
+          "description": "How compilation must behave when this measure is aggregated across a one-to-many relationship. Compilers MUST NOT silently sum across a fan-out (SPEC.md)."
+        },
+        "symmetric_key": {"type": "string", "description": "Primary-key reference used for symmetric aggregation / distinct-key de-duplication."}
+      }
+    },
+    "aggregations_block": {
+      "type": "object",
+      "required": ["allowed"],
+      "additionalProperties": false,
+      "properties": {
+        "allowed": {"type": "array", "items": {"$ref": "#/$defs/aggregation"}, "minItems": 1},
+        "default": {"$ref": "#/$defs/aggregation"},
+        "semi_additive": {"$ref": "#/$defs/semi_additive"},
+        "window": {"type": "array", "items": {"$ref": "#/$defs/window_spec"}},
+        "fanout_safety": {"$ref": "#/$defs/fanout_safety"}
+      }
+    },
+    "nested_path": {
+      "type": "object",
+      "required": ["path"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {"type": "string", "description": "Path into a semi-structured column, e.g. 'payload:customer.id'."},
+        "sql_type": {"type": "string"},
+        "semantic_type": {"$ref": "#/$defs/semantic_type"},
+        "description": {"type": "string"},
+        "confidence": {"$ref": "#/$defs/confidence"},
+        "provenance": {"type": "array", "items": {"$ref": "#/$defs/provenance_entry"}}
+      }
+    },
+    "column": {
+      "allOf": [{"$ref": "#/$defs/envelope"}],
+      "type": "object",
+      "required": ["name", "sql_type"],
+      "unevaluatedProperties": false,
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "display_name": {"type": "string"},
+        "sql_type": {"type": "string"},
+        "semantic_type": {"$ref": "#/$defs/semantic_type"},
+        "entity_role": {"$ref": "#/$defs/entity_role"},
+        "enum_values": {"type": "array", "items": {"$ref": "#/$defs/enum_value"}},
+        "foreign_key": {
+          "type": "object",
+          "required": ["references"],
+          "additionalProperties": false,
+          "properties": {
+            "references": {"type": "string", "description": "'table.column' reference."},
+            "relationship": {"enum": ["one_to_one", "many_to_one", "one_to_many", "many_to_many"]}
+          }
+        },
+        "aggregations": {"$ref": "#/$defs/aggregations_block"},
+        "pii": {"type": "boolean"},
+        "canonical_entity": {"type": "string", "description": "Flat entity-identity tag unifying columns that identify the same real-world entity without a declared FK."},
+        "temporal": {"enum": ["scd2"], "description": "Marks a dimension attribute as SCD2-versioned: traversal requires point-in-time resolution (SPEC.md)."},
+        "paths": {"type": "array", "items": {"$ref": "#/$defs/nested_path"}}
+      }
+    },
+    "common_query": {
+      "allOf": [{"$ref": "#/$defs/envelope"}],
+      "type": "object",
+      "required": ["question", "sql", "verified"],
+      "unevaluatedProperties": false,
+      "properties": {
+        "question": {"type": "string"},
+        "sql": {"$ref": "#/$defs/dialect_sql"},
+        "verified": {"type": "boolean", "description": "Unverified (mined) queries are advisory and outside the metric-safety contract (SPEC.md)."},
+        "verified_by": {"type": ["string", "null"]},
+        "verified_at": {"type": "string", "format": "date-time"},
+        "source": {"enum": ["query_log_mined", "human", "docs"]}
+      }
+    },
+    "required_filter": {
+      "type": "object",
+      "required": ["expr", "enforcement"],
+      "additionalProperties": false,
+      "properties": {
+        "expr": {"$ref": "#/$defs/dialect_sql"},
+        "reason": {"type": "string"},
+        "enforcement": {
+          "enum": ["required", "advisory"],
+          "description": "'required' = consumers must apply; 'advisory' = apply or caveat the answer (SPEC.md)."
+        }
+      }
+    },
+    "access_filter": {
+      "type": "object",
+      "required": ["user_attribute", "expr"],
+      "additionalProperties": false,
+      "properties": {
+        "user_attribute": {"type": "string"},
+        "expr": {"$ref": "#/$defs/dialect_sql"},
+        "reason": {"type": "string"}
+      }
+    },
+    "freshness": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "expected_cadence": {"type": "string", "description": "e.g. 'hourly', 'daily', 'weekly', 'static'"},
+        "typically_loaded_by": {"type": "string"},
+        "inferred_from": {"type": "string"}
+      },
+      "description": "Recorded expectation only — this format does not monitor freshness."
+    },
+    "scd": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {"enum": [1, 2, 4, 6]},
+        "valid_from": {"type": "string"},
+        "valid_to": {"type": "string"},
+        "is_current_flag": {"type": "string"},
+        "natural_key": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "table": {
+      "allOf": [{"$ref": "#/$defs/envelope"}],
+      "type": "object",
+      "required": ["name", "source", "columns"],
+      "unevaluatedProperties": false,
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "display_name": {"type": "string"},
+        "table_type": {
+          "enum": ["fact", "dimension", "denormalized", "aggregate", "snapshot_scd2", "operational", "staging", "unknown"]
+        },
+        "grain": {"type": "string"},
+        "source": {"type": "string", "description": "Fully-qualified physical location, e.g. 'db.schema.table'."},
+        "freshness": {"$ref": "#/$defs/freshness"},
+        "primary_key": {"type": "array", "items": {"type": "string"}},
+        "scd": {"$ref": "#/$defs/scd"},
+        "tenant_template": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "parameter": {"type": "string", "description": "Tenant parameter name, e.g. 'tenant_schema'."},
+            "instances": {"type": "integer", "minimum": 1}
+          },
+          "description": "Present when this table is an inferred template collapsing N identical tenant copies."
+        },
+        "columns": {"type": "array", "items": {"$ref": "#/$defs/column"}, "minItems": 1},
+        "knowledge": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "common_queries": {"type": "array", "items": {"$ref": "#/$defs/common_query"}},
+            "required_filters": {"type": "array", "items": {"$ref": "#/$defs/required_filter"}},
+            "access_filters": {"type": "array", "items": {"$ref": "#/$defs/access_filter"}},
+            "usage_notes": {"type": "array", "items": {"type": "string"}}
+          }
+        }
+      }
+    },
+    "relationship": {
+      "allOf": [{"$ref": "#/$defs/envelope"}],
+      "type": "object",
+      "required": ["name", "from", "to", "cardinality"],
+      "unevaluatedProperties": false,
+      "properties": {
+        "name": {"type": "string"},
+        "from": {"$ref": "#/$defs/table_columns_ref"},
+        "to": {"$ref": "#/$defs/table_columns_ref"},
+        "cardinality": {"enum": ["one_to_one", "many_to_one", "one_to_many", "many_to_many"]},
+        "join_type": {"enum": ["inner", "left", "right", "full"]},
+        "fanout_risk": {
+          "type": "boolean",
+          "description": "True when traversing this relationship can multiply fact rows. Compilers MUST apply fanout_safety when aggregating across it."
+        },
+        "asof": {
+          "type": "object",
+          "required": ["enabled"],
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "on": {"type": "string", "description": "Driving date expression, e.g. 'ord_hdr.order_date'."}
+          }
+        }
+      }
+    },
+    "table_columns_ref": {
+      "type": "object",
+      "required": ["table", "columns"],
+      "additionalProperties": false,
+      "properties": {
+        "table": {"type": "string"},
+        "columns": {"type": "array", "items": {"type": "string"}, "minItems": 1}
+      }
+    },
+    "hierarchy": {
+      "allOf": [{"$ref": "#/$defs/envelope"}],
+      "type": "object",
+      "required": ["name", "kind"],
+      "unevaluatedProperties": false,
+      "properties": {
+        "name": {"type": "string"},
+        "kind": {"enum": ["level", "time", "recursive"]},
+        "dimension_table": {"type": "string"},
+        "levels": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "additionalProperties": false,
+            "properties": {
+              "name": {"type": "string"},
+              "column": {"type": "string"},
+              "grain_expr": {"$ref": "#/$defs/dialect_sql", "description": "For time hierarchies: expression producing this grain from the base column."}
+            }
+          },
+          "description": "Ordered most-general to most-granular. The level vocabulary is closed: grains/dimensions may only reference declared levels or level_aliases."
+        },
+        "level_aliases": {
+          "type": "object",
+          "additionalProperties": {"type": "string"},
+          "description": "Alias -> level name, e.g. {region: state}."
+        },
+        "base_column": {"type": "string", "description": "For time hierarchies: the underlying date/timestamp column."},
+        "recursive": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "parent_column": {"type": "string"},
+            "child_column": {"type": "string"}
+          },
+          "description": "For kind: recursive (org charts, BOM)."
+        }
+      }
+    },
+    "aggregate_table": {
+      "allOf": [{"$ref": "#/$defs/envelope"}],
+      "type": "object",
+      "required": ["table", "aggregates", "mapping_source"],
+      "unevaluatedProperties": false,
+      "properties": {
+        "table": {"type": "string"},
+        "aggregates": {"type": "string", "description": "Base table this aggregates."},
+        "grain": {"type": "array", "items": {"type": "string"}},
+        "measure_mappings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["source", "target"],
+            "additionalProperties": false,
+            "properties": {
+              "source": {"$ref": "#/$defs/dialect_sql"},
+              "target": {"type": "string"}
+            }
+          }
+        },
+        "mapping_source": {
+          "enum": ["lineage", "heuristic"],
+          "description": "'lineage' = extracted from ETL/dbt derivation (trustworthy). 'heuristic' = data-inferred; never auto-included."
+        },
+        "routing": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "rule": {"type": "string"},
+            "status": {
+              "enum": ["verified", "advisory"],
+              "description": "Routing is 'verified' only when consistency was checked over the routed grain; otherwise advisory."
+            }
+          }
+        },
+        "consistency": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {"enum": ["deterministic_window", "sampled", "none"]},
+            "last_verified": {"type": "string", "format": "date-time"},
+            "status": {"enum": ["consistent", "divergent", "unverified"]}
+          }
+        }
+      }
+    },
+    "metric": {
+      "allOf": [{"$ref": "#/$defs/envelope"}],
+      "type": "object",
+      "required": ["name", "type"],
+      "unevaluatedProperties": false,
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "display_name": {"type": "string"},
+        "type": {"enum": ["simple", "ratio", "derived", "cumulative", "conversion"]},
+        "measure": {"type": "string", "description": "simple: 'table.column' measure reference."},
+        "agg": {"$ref": "#/$defs/aggregation"},
+        "numerator": {"type": "string"},
+        "denominator": {"type": "string"},
+        "expr": {"$ref": "#/$defs/dialect_sql", "description": "derived: expression over other metrics. Metrics MUST NOT reference unmodeled columns."},
+        "input_metrics": {"type": "array", "items": {"type": "string"}},
+        "window": {"$ref": "#/$defs/window_spec"},
+        "entity": {"type": "string"},
+        "base_metric": {"type": "string"},
+        "conversion_metric": {"type": "string"},
+        "filter": {"$ref": "#/$defs/dialect_sql"},
+        "dimensions": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Valid dimension references: 'table.column', 'hierarchy.level', or 'hierarchy.*'."
+        },
+        "grain": {"type": "string"},
+        "fanout_safety": {"$ref": "#/$defs/fanout_safety"}
+      }
+    },
+    "repo_knowledge": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "routing": {
+          "type": "array",
+          "items": {
+            "allOf": [{"$ref": "#/$defs/envelope"}],
+            "type": "object",
+            "required": ["intent"],
+            "unevaluatedProperties": false,
+            "properties": {
+              "intent": {"type": "string"},
+              "use": {"type": "array", "items": {"type": "string"}},
+              "avoid": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["table", "reason"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "table": {"type": "string"},
+                    "reason": {"type": "string"}
+                  }
+                }
+              }
+            }
+          }
+        },
+        "conventions": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "notes": {"type": "array", "items": {"type": "string"}, "description": "Human-facing prose only; machine-consumed conventions belong in structured fields (calendar, etc.)."}
+          }
+        },
+        "domains": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "tables"],
+            "additionalProperties": false,
+            "properties": {
+              "name": {"type": "string"},
+              "description": {"type": "string"},
+              "tables": {"type": "array", "items": {"type": "string"}}
+            }
+          }
+        }
+      }
+    }
+  }
+}

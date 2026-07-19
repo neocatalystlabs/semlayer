@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "59c0b72cdf42",
+ "response": "{\"action\": \"sql\", \"sql\": \"SELECT d.dept_nm, SUM(ol.line_amt) AS total_revenue FROM ord_ln ol JOIN prod_ref p ON ol.prod_id = p.prod_id JOIN dept_dim d ON p.dept_cd = d.dept_cd GROUP BY d.dept_nm ORDER BY total_revenue DESC\", \"reason\": null}",
+ "usage": {
+  "in": 3027,
+  "out": 304
+ }
+}

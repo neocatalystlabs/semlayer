@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "59c0b72cdf42",
+ "response": "{\"action\": \"sql\", \"sql\": \"SELECT SUM(l.line_amt) AS total_order_revenue FROM ord_hdr h JOIN ord_ln l ON h.ord_id = l.ord_id;\", \"reason\": null}",
+ "usage": {
+  "in": 3038,
+  "out": 569
+ }
+}

@@ -1,0 +1,198 @@
+# Gold semantic layer for the multi_tenant fixture.
+# Hand-authored (no confidence fields = human truth). Exercises: tenant_template
+# collapsing (schema-per-tenant -> one modeled table per logical entity, not
+# one per physical schema copy).
+#
+# NOTE on `source`: the spec's `source` field (semantic-layer.schema.json
+# #/$defs/table/properties/source) is a free-form "fully-qualified physical
+# location" string. It has no first-class tenant-parameter substitution
+# syntax, so we encode the per-tenant placeholder as literal
+# "{tenant_schema}.orders" text — a convention, not a schema feature. A
+# consumer resolves the real physical location by substituting
+# `tenant_template.parameter` with one of the N instances. We did not modify
+# the schema to add native templating; this is the documented workaround.
+semantic_layer:
+  spec_version: "0.1.0"
+  name: multi_tenant
+  description: "Schema-per-tenant multi-tenancy: 20 identical tenant_NNN schemas, each a 4-table mini-mart. Modeled as 4 templated tables, not 80 physical copies."
+  calendar:
+    timezone: UTC
+    week_start: monday
+  tables:
+    - name: customers
+      table_type: dimension
+      grain: "one row per customer, within a tenant"
+      source: "{tenant_schema}.customers"
+      primary_key: [customer_id]
+      tenant_template:
+        parameter: tenant_schema
+        instances: 20
+      description: "Templated across 20 tenant schemas (tenant_001..tenant_020); customer_id is unique only within a tenant, not globally."
+      columns:
+        - name: customer_id
+          sql_type: INTEGER
+          semantic_type: identifier
+          entity_role: primary_key
+        - name: name
+          sql_type: VARCHAR
+          semantic_type: name
+          entity_role: dimension
+          pii: true
+        - name: region
+          sql_type: VARCHAR
+          semantic_type: geo_region
+          entity_role: dimension
+    - name: products
+      table_type: dimension
+      grain: "one row per product, within a tenant"
+      source: "{tenant_schema}.products"
+      primary_key: [product_id]
+      tenant_template:
+        parameter: tenant_schema
+        instances: 20
+      columns:
+        - name: product_id
+          sql_type: INTEGER
+          semantic_type: identifier
+          entity_role: primary_key
+        - name: name
+          sql_type: VARCHAR
+          semantic_type: name
+          entity_role: dimension
+        - name: category
+          sql_type: VARCHAR
+          semantic_type: enum
+          entity_role: dimension
+          enum_values:
+            - {value: widgets, meaning: "Widgets", decode_source: human}
+            - {value: gadgets, meaning: "Gadgets", decode_source: human}
+            - {value: gizmos, meaning: "Gizmos", decode_source: human}
+            - {value: doohickeys, meaning: "Doohickeys", decode_source: human}
+        - name: unit_price
+          sql_type: "DECIMAL(10,2)"
+          semantic_type: monetary_value
+          entity_role: measure
+          aggregations:
+            allowed: [avg, min, max]
+            default: avg
+    - name: orders
+      table_type: fact
+      grain: "one row per order, within a tenant"
+      source: "{tenant_schema}.orders"
+      primary_key: [order_id]
+      tenant_template:
+        parameter: tenant_schema
+        instances: 20
+      columns:
+        - name: order_id
+          sql_type: INTEGER
+          semantic_type: identifier
+          entity_role: primary_key
+          aggregations:
+            allowed: [count, count_distinct]
+            default: count
+        - name: customer_id
+          sql_type: INTEGER
+          semantic_type: identifier
+          entity_role: foreign_key
+          foreign_key:
+            references: customers.customer_id
+            relationship: many_to_one
+        - name: order_date
+          sql_type: DATE
+          semantic_type: date
+          entity_role: dimension
+        - name: status
+          sql_type: VARCHAR
+          semantic_type: status_code
+          entity_role: dimension
+          enum_values:
+            - {value: pending, meaning: "Order placed, not yet shipped", decode_source: human}
+            - {value: shipped, meaning: "Order shipped", decode_source: human}
+            - {value: delivered, meaning: "Order delivered", decode_source: human}
+            - {value: cancelled, meaning: "Order cancelled", decode_source: human}
+    - name: order_items
+      table_type: fact
+      grain: "one row per order line item, within a tenant"
+      source: "{tenant_schema}.order_items"
+      primary_key: [order_item_id]
+      tenant_template:
+        parameter: tenant_schema
+        instances: 20
+      columns:
+        - name: order_item_id
+          sql_type: INTEGER
+          semantic_type: identifier
+          entity_role: primary_key
+        - name: order_id
+          sql_type: INTEGER
+          semantic_type: identifier
+          entity_role: foreign_key
+          foreign_key:
+            references: orders.order_id
+            relationship: many_to_one
+        - name: product_id
+          sql_type: INTEGER
+          semantic_type: identifier
+          entity_role: foreign_key
+          foreign_key:
+            references: products.product_id
+            relationship: many_to_one
+        - name: qty
+          sql_type: INTEGER
+          semantic_type: quantity
+          entity_role: measure
+          aggregations:
+            allowed: [sum, avg, min, max]
+            default: sum
+        - name: unit_price
+          sql_type: "DECIMAL(10,2)"
+          semantic_type: monetary_value
+          entity_role: measure
+          aggregations:
+            allowed: [sum, avg, min, max]
+            default: avg
+  relationships:
+    - name: orders_to_customers
+      from: {table: orders, columns: [customer_id]}
+      to: {table: customers, columns: [customer_id]}
+      cardinality: many_to_one
+      join_type: left
+      fanout_risk: false
+      description: "Within a single tenant instance; cross-tenant joins are never valid."
+    - name: order_items_to_orders
+      from: {table: order_items, columns: [order_id]}
+      to: {table: orders, columns: [order_id]}
+      cardinality: many_to_one
+      join_type: inner
+      fanout_risk: true
+    - name: order_items_to_products
+      from: {table: order_items, columns: [product_id]}
+      to: {table: products, columns: [product_id]}
+      cardinality: many_to_one
+      join_type: left
+      fanout_risk: false
+  metrics:
+    - name: order_count
+      type: simple
+      measure: orders.order_id
+      agg: count
+      dimensions: [orders.status, customers.region]
+      grain: order
+    - name: total_item_qty
+      type: simple
+      measure: order_items.qty
+      agg: sum
+      dimensions: [products.category]
+      grain: order_item
+      fanout_safety:
+        strategy: symmetric_aggregate
+        symmetric_key: order_items.order_item_id
+  repo_knowledge:
+    conventions:
+      notes:
+        - "Every table here is a template collapsing 20 identical physical schemas (tenant_001..tenant_020); do not enumerate them as separate tables."
+        - "customer_id, product_id, order_id, order_item_id are tenant-local surrogate keys, not globally unique — always scope joins to a single tenant_schema instance."
+    domains:
+      - name: tenant_mart
+        tables: [customers, products, orders, order_items]

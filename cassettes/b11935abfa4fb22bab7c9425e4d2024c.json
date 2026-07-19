@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "59c0b72cdf42",
+ "response": "{\"action\": \"clarify\", \"sql\": null, \"reason\": \"No schema details for ord_hdr or cust_mstr segment/effective-date columns provided.\"}",
+ "usage": {
+  "in": 7853,
+  "out": 327
+ }
+}

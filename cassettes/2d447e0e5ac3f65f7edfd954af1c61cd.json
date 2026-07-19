@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"line1\",\n    \"semantic_type\": \"pii_address\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": null,\n    \"rationale\": \"Street address line; PII; high cardinality dimension in address table\"\n  },\n  {\n    \"column\": \"cntry_cd\",\n    \"semantic_type\": \"geo_country\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.98,\n    \"enum_decodes\": {\n      \"US\": \"United States\",\n      \"DE\": \"Delaware\",\n      \"CA\": \"Canada\",\n      \"GB\": \"United Kingdom\",\n      \"FR\": \"France\"\n    },\n    \"rationale\": \"Country code; 5 distinct values; standard ISO country codes\"\n  }\n]\n```",
+ "usage": {
+  "in": 606,
+  "out": 217
+ }
+}

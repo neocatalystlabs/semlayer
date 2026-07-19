@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"cd_gender\",\n    \"semantic_type\": \"enum\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.99,\n    \"enum_decodes\": {\n      \"F\": \"Female\",\n      \"M\": \"Male\"\n    },\n    \"rationale\": \"Binary gender codes F/M; demographic dimension\"\n  },\n  {\n    \"column\": \"cd_purchase_estimate\",\n    \"semantic_type\": \"monetary_value\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.85,\n    \"enum_decodes\": null,\n    \"rationale\": \"Dollar amounts in 500-10000 range; likely estimated purchase value\"\n  },\n  {\n    \"column\": \"cd_credit_rating\",\n    \"semantic_type\": \"enum\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.98,\n    \"enum_decodes\": {\n      \"Good\": \"Good credit rating\",\n      \"Low Risk\": \"Low risk rating\",\n      \"High Risk\": \"High risk rating\",\n      \"Unknown\": \"Unknown rating\"\n    },\n    \"rationale\": \"Four categorical credit assessment values; demographic dimension\"\n  }\n]\n```",
+ "usage": {
+  "in": 777,
+  "out": 302
+ }
+}

@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "59c0b72cdf42",
+ "response": "{\"action\": \"clarify\", \"sql\": null, \"reason\": \"No customer segment or as-of segment history table provided in context to join.\"}",
+ "usage": {
+  "in": 13821,
+  "out": 200
+ }
+}

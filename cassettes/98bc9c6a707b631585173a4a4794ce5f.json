@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"store_id\",\n    \"semantic_type\": \"identifier\",\n    \"entity_role\": \"foreign_key\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": null,\n    \"rationale\": \"Store identifier linking to store dimension; 40 distinct values typical for retail chain.\"\n  }\n]\n```",
+ "usage": {
+  "in": 445,
+  "out": 93
+ }
+}

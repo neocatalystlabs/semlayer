@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "59c0b72cdf42",
+ "response": "```json\n{\n  \"action\": \"sql\",\n  \"sql\": \"SELECT o.order_id, o.order_total, SUM(p.amount) as total_payments, o.order_total - SUM(p.amount) as difference FROM orders o LEFT JOIN payments p ON o.order_id = p.order_id GROUP BY o.order_id, o.order_total HAVING o.order_total != SUM(p.amount) OR SUM(p.amount) IS NULL ORDER BY ABS(o.order_total - SUM(p.amount)) DESC;\",\n  \"reason\": \"Query identifies orders where payment amounts don't match order totals for reconciliation analysis.\"\n}\n```",
+ "usage": {
+  "in": 3886,
+  "out": 166
+ }
+}

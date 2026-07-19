@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "26fea8ed3e9d",
+ "response": "```json\n{\n  \"table_description\": \"Order master records with customer linkage and status tracking. 600 orders from 145 unique customers with 5 distinct status codes.\",\n  \"ai_context\": \"Join to customers on customer_id for demographics. Join to order_items for line details. status_cd values 1\u20135 require decode lookup. Multiple items per order possible.\",\n  \"table_type\": \"fact\",\n  \"columns\": [\n    {\n      \"name\": \"order_id\",\n      \"description\": \"Unique order identifier. Primary key, 600 distinct values, no nulls.\"\n    },\n    {\n      \"name\": \"customer_id\",\n      \"description\": \"Foreign key to customers table. 145 distinct customers, no nulls. Links orders to customer dimension.\"\n    },\n    {\n      \"name\": \"status_cd\",\n      \"description\": \"Order status code (1\u20135). 5 distinct values, no nulls. Decode required for status meanings.\"\n    }\n  ]\n}\n```",
+ "usage": {
+  "in": 728,
+  "out": 244
+ }
+}

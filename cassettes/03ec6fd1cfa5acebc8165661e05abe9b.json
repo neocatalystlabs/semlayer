@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "26fea8ed3e9d",
+ "response": "```json\n{\n  \"table_description\": \"Master product reference dimension containing 400 products with identifiers, names, department/category classifications, and pricing attributes.\",\n  \"ai_context\": \"Join on prod_sk or prod_id to fact tables (ord_ln, inv_snpsht). Filter by actv_flg=1 for active products. dept_cd and category_cd link to dimension tables.\",\n  \"table_type\": \"dimension\",\n  \"columns\": [\n    {\n      \"name\": \"prod_sk\",\n      \"description\": \"Surrogate key for product; unique identifier for dimension joins.\"\n    },\n    {\n      \"name\": \"prod_id\",\n      \"description\": \"Business key; internal product identifier in format P######.\"\n    },\n    {\n      \"name\": \"prod_nm\",\n      \"description\": \"Product name or description for reporting and display.\"\n    },\n    {\n      \"name\": \"category_cd\",\n      \"description\": \"Product category code; foreign key to category_dim (12 distinct categories).\"\n    },\n    {\n      \"name\": \"dept_cd\",\n      \"description\": \"Department code: HOME, ELEC, APPRL, GROC, or TOYS; foreign key to dept_dim.\"\n    },\n    {\n      \"name\": \"unit_cost\",\n      \"description\": \"Cost per unit in decimal currency; used for margin and profitability calculations.\"\n    },\n    {\n      \"name\": \"list_price\",\n      \"description\": \"Retail list price per unit in decimal currency; baseline for pricing analytics.\"\n    },\n    {\n      \"name\": \"actv_flg\",\n      \"description\": \"Active flag: 1=active product, 0=inactive; filter for current product set.\"\n    },\n    {\n      \"name\": \"crt_dt\",\n      \"description\": \"Product creation date; metadata for product lifecycle and historical tracking.\"\n    }\n  ]\n}\n```",
+ "usage": {
+  "in": 1706,
+  "out": 461
+ }
+}

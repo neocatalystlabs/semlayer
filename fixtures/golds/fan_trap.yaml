@@ -1,0 +1,190 @@
+# Gold semantic layer for the fan_trap fixture.
+# Hand-authored (no confidence fields = human truth). Exercises: fan-out safety,
+# relationships with fanout_risk, time hierarchy, routing knowledge.
+semantic_layer:
+  spec_version: "0.1.0"
+  name: fan_trap
+  description: "Fan-trap fixture: one fact joined 1:N to payments and shipments."
+  calendar:
+    timezone: UTC
+    week_start: monday
+  tables:
+    - name: customers
+      table_type: dimension
+      grain: "one row per customer"
+      source: main.customers
+      primary_key: [customer_id]
+      columns:
+        - name: customer_id
+          sql_type: INTEGER
+          semantic_type: identifier
+          entity_role: primary_key
+        - name: name
+          sql_type: VARCHAR
+          semantic_type: name
+          entity_role: dimension
+          pii: true
+        - name: region
+          sql_type: VARCHAR
+          semantic_type: geo_region
+          entity_role: dimension
+    - name: orders
+      table_type: fact
+      grain: "one row per order"
+      source: main.orders
+      primary_key: [order_id]
+      columns:
+        - name: order_id
+          sql_type: INTEGER
+          semantic_type: identifier
+          entity_role: primary_key
+          aggregations:
+            allowed: [count, count_distinct]
+            default: count
+        - name: customer_id
+          sql_type: INTEGER
+          semantic_type: identifier
+          entity_role: foreign_key
+          foreign_key:
+            references: customers.customer_id
+            relationship: many_to_one
+        - name: order_date
+          sql_type: DATE
+          semantic_type: date
+          entity_role: dimension
+        - name: order_total
+          sql_type: "DECIMAL(12,2)"
+          semantic_type: monetary_value
+          entity_role: measure
+          aggregations:
+            allowed: [sum, avg, min, max, count]
+            default: sum
+            fanout_safety:
+              strategy: symmetric_aggregate
+              symmetric_key: orders.order_id
+    - name: payments
+      table_type: fact
+      grain: "one row per payment; an order has one or more payments"
+      source: main.payments
+      primary_key: [payment_id]
+      columns:
+        - name: payment_id
+          sql_type: INTEGER
+          semantic_type: identifier
+          entity_role: primary_key
+        - name: order_id
+          sql_type: INTEGER
+          semantic_type: identifier
+          entity_role: foreign_key
+          foreign_key:
+            references: orders.order_id
+            relationship: many_to_one
+        - name: amount
+          sql_type: "DECIMAL(12,2)"
+          semantic_type: monetary_value
+          entity_role: measure
+          aggregations:
+            allowed: [sum, avg, min, max, count]
+            default: sum
+            fanout_safety:
+              strategy: symmetric_aggregate
+              symmetric_key: payments.payment_id
+        - name: method
+          sql_type: VARCHAR
+          semantic_type: enum
+          entity_role: dimension
+          enum_values:
+            - {value: card, meaning: "card payment", decode_source: human}
+            - {value: ach, meaning: "ACH bank transfer", decode_source: human}
+            - {value: wire, meaning: "wire transfer", decode_source: human}
+    - name: shipments
+      table_type: fact
+      grain: "one row per shipment; an order has one or more shipments"
+      source: main.shipments
+      primary_key: [shipment_id]
+      columns:
+        - name: shipment_id
+          sql_type: INTEGER
+          semantic_type: identifier
+          entity_role: primary_key
+        - name: order_id
+          sql_type: INTEGER
+          semantic_type: identifier
+          entity_role: foreign_key
+          foreign_key:
+            references: orders.order_id
+            relationship: many_to_one
+        - name: weight_kg
+          sql_type: "DECIMAL(8,2)"
+          semantic_type: quantity
+          entity_role: measure
+          aggregations:
+            allowed: [sum, avg, min, max, count]
+            default: sum
+  relationships:
+    - name: orders_to_customers
+      from: {table: orders, columns: [customer_id]}
+      to: {table: customers, columns: [customer_id]}
+      cardinality: many_to_one
+      join_type: left
+      fanout_risk: false
+    - name: payments_to_orders
+      from: {table: payments, columns: [order_id]}
+      to: {table: orders, columns: [order_id]}
+      cardinality: many_to_one
+      join_type: left
+      fanout_risk: true
+    - name: shipments_to_orders
+      from: {table: shipments, columns: [order_id]}
+      to: {table: orders, columns: [order_id]}
+      cardinality: many_to_one
+      join_type: left
+      fanout_risk: true
+  hierarchies:
+    - name: order_time
+      kind: time
+      dimension_table: orders
+      base_column: order_date
+      levels:
+        - {name: year, grain_expr: {duckdb: "date_trunc('year', order_date)"}}
+        - {name: quarter, grain_expr: {duckdb: "date_trunc('quarter', order_date)"}}
+        - {name: month, grain_expr: {duckdb: "date_trunc('month', order_date)"}}
+        - {name: day, grain_expr: {duckdb: "order_date"}}
+    - name: geography
+      kind: level
+      dimension_table: customers
+      levels:
+        - {name: region, column: region}
+  metrics:
+    - name: total_revenue
+      display_name: "Total Revenue"
+      type: simple
+      measure: orders.order_total
+      agg: sum
+      dimensions: [order_time.*, geography.region, customers.region]
+      grain: order
+      fanout_safety:
+        strategy: symmetric_aggregate
+        symmetric_key: orders.order_id
+    - name: total_payments
+      type: simple
+      measure: payments.amount
+      agg: sum
+      dimensions: [payments.method, order_time.*]
+      grain: payment
+    - name: order_count
+      type: simple
+      measure: orders.order_id
+      agg: count
+      dimensions: [order_time.*, geography.region]
+      grain: order
+  repo_knowledge:
+    routing:
+      - intent: "revenue analysis"
+        use: [orders]
+        avoid:
+          - table: payments
+            reason: "payment amounts double-count split payments against order totals"
+    domains:
+      - name: sales
+        tables: [orders, customers, payments, shipments]

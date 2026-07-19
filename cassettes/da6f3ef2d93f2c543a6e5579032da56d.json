@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "1d25ef67b201",
+ "response": "[{\"id\": 0, \"verdict\": \"reject\", \"reason\": \"Vague, undefined 'vibe' metric not modeled.\"},\n{\"id\": 1, \"verdict\": \"reject\", \"reason\": \"Profitability requires costs, not modeled in layer.\"},\n{\"id\": 2, \"verdict\": \"reject\", \"reason\": \"Employee/office floor data not modeled anywhere.\"},\n{\"id\": 3, \"verdict\": \"reject\", \"reason\": \"Ambiguous, subjective 'good' with no defined threshold.\"},\n{\"id\": 4, \"verdict\": \"reject\", \"reason\": \"Completely ambiguous, no defined entities or metrics.\"},\n{\"id\": 5, \"verdict\": \"reject\", \"reason\": \"Churn not defined or modeled as a metric.\"}]",
+ "usage": {
+  "in": 4405,
+  "out": 391
+ }
+}

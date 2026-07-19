@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"attr_nm\",\n    \"semantic_type\": \"code\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": {\n      \"warranty_months\": \"Product warranty duration in months\",\n      \"weight_kg\": \"Product weight in kilograms\",\n      \"color\": \"Product color\"\n    },\n    \"rationale\": \"Attribute name field with 3 distinct coded values representing product attribute types.\"\n  },\n  {\n    \"column\": \"attr_val\",\n    \"semantic_type\": \"free_text\",\n    \"entity_role\": \"measure\",\n    \"confidence\": 0.70,\n    \"enum_decodes\": null,\n    \"rationale\": \"Attribute value field holding mixed types (colors, numeric quantities). Context-dependent semantic meaning.\"\n  }\n]\n```",
+ "usage": {
+  "in": 602,
+  "out": 214
+ }
+}

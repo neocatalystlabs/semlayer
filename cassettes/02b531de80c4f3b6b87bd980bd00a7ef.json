@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "26fea8ed3e9d",
+ "response": "```json\n{\n  \"table_description\": \"Dimension table of shipping modes with 20 distinct carrier and service type combinations, including transport method codes and contract identifiers.\",\n  \"ai_context\": \"Join on sm_ship_mode_sk to fact tables. Filter by sm_code for transport method or sm_type for service speed. All columns non-null.\",\n  \"table_type\": \"dimension\",\n  \"columns\": [\n    {\n      \"name\": \"sm_ship_mode_sk\",\n      \"description\": \"Surrogate key for shipping mode; primary key, sequential 1\u201320.\"\n    },\n    {\n      \"name\": \"sm_ship_mode_id\",\n      \"description\": \"Natural unique identifier for shipping mode; alphanumeric code.\"\n    },\n    {\n      \"name\": \"sm_type\",\n      \"description\": \"Service speed classification: EXPRESS, NEXT DAY, LIBRARY, OVERNIGHT, REGULAR, TWO DAY.\"\n    },\n    {\n      \"name\": \"sm_code\",\n      \"description\": \"Transport method: SEA (ocean), SURFACE (ground), AIR (air), BIKE (courier).\"\n    },\n    {\n      \"name\": \"sm_carrier\",\n      \"description\": \"Shipping carrier name; 20 distinct carriers including AIRBORNE, DHL, DIAMOND.\"\n    },\n    {\n      \"name\": \"sm_contract\",\n      \"description\": \"Contract identifier for carrier agreement; alphanumeric code, one per mode.\"\n    }\n  ]\n}\n```",
+ "usage": {
+  "in": 1123,
+  "out": 363
+ }
+}

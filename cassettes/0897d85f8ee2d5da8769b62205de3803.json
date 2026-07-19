@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "59c0b72cdf42",
+ "response": "```json\n{\n  \"action\": \"sql\",\n  \"sql\": \"SELECT SUM(tot_amt) AS total_order_revenue FROM main.ord_hdr\",\n  \"reason\": \"Query sums all order totals from ord_hdr fact table without filtering, including cancelled orders (sts_cd='X').\"\n}\n```",
+ "usage": {
+  "in": 12513,
+  "out": 82
+ }
+}

@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "59c0b72cdf42",
+ "response": "{\"action\": \"sql\", \"sql\": \"SELECT evt_typ_cd, COUNT(*) AS event_cnt FROM sub_evt GROUP BY evt_typ_cd ORDER BY event_cnt DESC\", \"reason\": null}",
+ "usage": {
+  "in": 3026,
+  "out": 85
+ }
+}

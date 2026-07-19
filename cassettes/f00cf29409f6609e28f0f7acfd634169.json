@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"currency_code\",\n    \"semantic_type\": \"code\",\n    \"entity_role\": \"unique_key\",\n    \"confidence\": 0.85,\n    \"enum_decodes\": null,\n    \"rationale\": \"Unique VARCHAR code identifier for currencies; likely ISO or internal currency code.\"\n  }\n]\n```",
+ "usage": {
+  "in": 509,
+  "out": 91
+ }
+}

@@ -1,0 +1,34 @@
+name: Nightly (live)
+
+# Live tier: real warehouse connectors + live LLM sanity. Requires repo
+# secrets (SNOWFLAKE_*, GOOGLE_*, ANTHROPIC_API_KEY); jobs skip cleanly
+# when absent so forks stay green.
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    if: github.repository_owner == 'neocatalystlabs'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev,warehouses]"
+      - name: Live warehouse tier (skips without secrets)
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_READER_USER: ${{ secrets.SNOWFLAKE_READER_USER }}
+          SNOWFLAKE_READER_PASSWORD: ${{ secrets.SNOWFLAKE_READER_PASSWORD }}
+          SNOWFLAKE_ADMIN_USER: ${{ secrets.SNOWFLAKE_ADMIN_USER }}
+          SNOWFLAKE_ADMIN_PASSWORD: ${{ secrets.SNOWFLAKE_ADMIN_PASSWORD }}
+          SNOWFLAKE_WAREHOUSE: semlayer_wh
+          SNOWFLAKE_DATABASE: semlayer_test
+          GCP_PROJECT: ${{ secrets.GCP_PROJECT }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: pytest tests/test_snowflake_live.py tests/test_bigquery_live.py -q

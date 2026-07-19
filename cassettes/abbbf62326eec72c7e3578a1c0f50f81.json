@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"supplier_name\",\n    \"semantic_type\": \"name\",\n    \"entity_role\": \"unique_key\",\n    \"confidence\": 0.85,\n    \"enum_decodes\": null,\n    \"rationale\": \"Unique supplier identifier with name-like format; likely natural key alongside supplier_id\"\n  }\n]\n```",
+ "usage": {
+  "in": 509,
+  "out": 94
+ }
+}

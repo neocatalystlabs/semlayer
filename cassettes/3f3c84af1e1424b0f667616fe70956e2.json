@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "59c0b72cdf42",
+ "response": "{\"action\":\"clarify\",\"sql\":null,\"reason\":\"Cancelled order status code value unspecified; cannot filter ord_hdr accurately.\"}",
+ "usage": {
+  "in": 3054,
+  "out": 330
+ }
+}

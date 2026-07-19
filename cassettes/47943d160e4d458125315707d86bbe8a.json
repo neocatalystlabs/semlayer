@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "59c0b72cdf42",
+ "response": "{\"action\": \"refuse\", \"sql\": null, \"reason\": \"No product catalog/status table or 'active product' definition provided in context.\"}",
+ "usage": {
+  "in": 9922,
+  "out": 44
+ }
+}

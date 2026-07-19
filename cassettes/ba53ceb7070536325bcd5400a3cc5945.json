@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"order_number\",\n    \"semantic_type\": \"identifier\",\n    \"entity_role\": \"primary_key\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": null,\n    \"rationale\": \"Unique integer identifier for orders; no nulls; natural primary key\"\n  },\n  {\n    \"column\": \"customer_number\",\n    \"semantic_type\": \"identifier\",\n    \"entity_role\": \"foreign_key\",\n    \"confidence\": 0.90,\n    \"enum_decodes\": null,\n    \"rationale\": \"Non-unique customer reference; likely links to customer dimension table\"\n  }\n]\n```",
+ "usage": {
+  "in": 495,
+  "out": 169
+ }
+}

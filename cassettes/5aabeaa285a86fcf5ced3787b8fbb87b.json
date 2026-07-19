@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "5d5ce4dbf19e",
+ "response": "```json\n[\n  {\n    \"id\": 0,\n    \"verdict\": \"plausible\",\n    \"confidence\": 0.99,\n    \"reason\": \"Orders reference customers; standard e-commerce schema.\"\n  },\n  {\n    \"id\": 1,\n    \"verdict\": \"implausible\",\n    \"confidence\": 0.98,\n    \"reason\": \"Customer_id cannot reference order_id; semantic mismatch.\"\n  },\n  {\n    \"id\": 2,\n    \"verdict\": \"implausible\",\n    \"confidence\": 0.98,\n    \"reason\": \"Customer_id cannot reference payment_id; semantic mismatch.\"\n  },\n  {\n    \"id\": 3,\n    \"verdict\": \"implausible\",\n    \"confidence\": 0.98,\n    \"reason\": \"Customer_id cannot reference shipment_id; semantic mismatch.\"\n  },\n  {\n    \"id\": 4,\n    \"verdict\": \"plausible\",\n    \"confidence\": 0.99,\n    \"reason\": \"Payments reference orders; standard transactional schema.\"\n  },\n  {\n    \"id\": 5,\n    \"verdict\": \"implausible\",\n    \"confidence\": 0.98,\n    \"reason\": \"Order_id cannot reference payment_id; semantic mismatch.\"\n  },\n  {\n    \"id\": 6,\n    \"verdict\": \"implausible\",\n    \"confidence\": 0.98,\n    \"reason\": \"Order_id cannot reference shipment_id; semantic mismatch.\"\n  },\n  {\n    \"id\": 7,\n    \"verdict\": \"plausible\",\n    \"confidence\": 0.99,\n    \"reason\": \"Shipments reference orders; standard fulfillment schema.\"\n  },\n  {\n    \"id\": 8,\n    \"verdict\": \"implausible\",\n    \"confidence\": 0.98,\n    \"reason\": \"Order_id cannot reference payment_id; semantic mismatch.\"\n  },\n  {\n    \"id\": 9,\n    \"verdict\": \"implausible\",\n    \"confidence\": 0.98,\n    \"reason\": \"Order_id cannot reference shipment_id; semantic mismatch.\"\n  }\n]\n```",
+ "usage": {
+  "in": 902,
+  "out": 545
+ }
+}

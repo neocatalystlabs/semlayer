@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"job_nm\",\n    \"semantic_type\": \"code\",\n    \"entity_role\": \"primary_key\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": {\n      \"agg_dly_sls\": \"Aggregate daily sales\",\n      \"agg_mth_cust\": \"Aggregate monthly customer\",\n      \"load_cust_mstr\": \"Load customer master\",\n      \"load_ord_hdr\": \"Load order header\",\n      \"load_web_evt\": \"Load web events\"\n    },\n    \"rationale\": \"Unique job identifier with cryptic abbreviations; controls job scheduling.\"\n  }\n]\n```",
+ "usage": {
+  "in": 536,
+  "out": 173
+ }
+}

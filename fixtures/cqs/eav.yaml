@@ -1,0 +1,42 @@
+# Gold CQ suite for eav. Hand-authored; expected_sql is reviewed truth.
+cq_suite:
+  fixture: eav
+  version: 1
+  questions:
+    - id: EV-1
+      question: "How many entities are there?"
+      complexity: simple
+      expected_kind: scalar
+      expected_sql:
+        duckdb: "SELECT count(*) FROM entities"
+      references: [tables.entities]
+
+    - id: EV-2
+      question: "What is the average account_balance across entities?"
+      complexity: complex
+      expected_kind: refusal
+      references: [tables.entity_attr]
+      notes: >
+        entity_attr.attr_value is declared semantic_type: unknown and is
+        VARCHAR regardless of attribute — its "real" type (decimal, for
+        account_balance) is not schema-visible, only recoverable by filtering
+        attr_name = 'account_balance' and casting by convention. A conforming
+        consumer must refuse to silently CAST an untyped value and average
+        it; the gold layer explicitly does not pre-declare a metric for this
+        because doing so would require inferring a type the schema does not
+        declare.
+
+    - id: EV-3
+      question: "What is the average age of entities?"
+      complexity: complex
+      expected_kind: clarification
+      references: [tables.entity_attr]
+      notes: >
+        Same underlying issue as EV-2 (attr_value is untyped VARCHAR data,
+        not a typed column), but phrased as an open question about an
+        attribute ("age") whose real numeric type and intended aggregation
+        are not declared anywhere in the semantic layer. A conforming
+        consumer must ask which attribute/cast convention to use rather than
+        guess — entity_attr is sparse (each attribute present ~80% of the
+        time per entity), so even the population for "average" is ambiguous
+        without clarification.

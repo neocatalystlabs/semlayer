@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"w_warehouse_name\",\n    \"semantic_type\": \"name\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": null,\n    \"rationale\": \"Warehouse name identifier; descriptive text for warehouse entity\"\n  },\n  {\n    \"column\": \"w_warehouse_sq_ft\",\n    \"semantic_type\": \"quantity\",\n    \"entity_role\": \"measure\",\n    \"confidence\": 0.92,\n    \"enum_decodes\": null,\n    \"rationale\": \"Square footage measurement; numeric quantity of warehouse size\"\n  },\n  {\n    \"column\": \"w_street_number\",\n    \"semantic_type\": \"code\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.88,\n    \"enum_decodes\": null,\n    \"rationale\": \"Street address number component; part of physical address\"\n  },\n  {\n    \"column\": \"w_suite_number\",\n    \"semantic_type\": \"code\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.85,\n    \"enum_decodes\": null,\n    \"rationale\": \"Suite/unit identifier within building; address component\"\n  },\n  {\n    \"column\": \"w_county\",\n    \"semantic_type\": \"geo_region\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.93,\n    \"enum_decodes\": null,\n    \"rationale\": \"County geographic region; administrative subdivision\"\n  },\n  {\n    \"column\": \"w_gmt_offset\",\n    \"semantic_type\": \"rate\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.90,\n    \"enum_decodes\": null,\n    \"rationale\": \"GMT timezone offset; numeric rate relative to UTC\"\n  }\n]\n```",
+ "usage": {
+  "in": 1062,
+  "out": 463
+ }
+}

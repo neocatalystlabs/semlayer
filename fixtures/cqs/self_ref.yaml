@@ -1,0 +1,54 @@
+# Gold CQ suite for self_ref. Hand-authored; expected_sql is reviewed truth.
+cq_suite:
+  fixture: self_ref
+  version: 1
+  questions:
+    - id: SR-1
+      question: "What is the headcount by department?"
+      complexity: simple
+      expected_kind: rows
+      expected_sql:
+        duckdb: "SELECT dept, count(*) FROM employees GROUP BY 1 ORDER BY 1"
+      references: [metrics.headcount_by_dept]
+
+    - id: SR-2
+      question: "How many levels deep is the org chart?"
+      complexity: complex
+      expected_kind: scalar
+      expected_sql:
+        duckdb: >
+          WITH RECURSIVE depth(emp_id, lvl) AS (
+            SELECT emp_id, 1 FROM employees WHERE mgr_id IS NULL
+            UNION ALL
+            SELECT e.emp_id, d.lvl + 1
+            FROM employees e JOIN depth d ON e.mgr_id = d.emp_id
+          )
+          SELECT max(lvl) FROM depth
+      references: [hierarchies.org_chart]
+      notes: "Recursive CTE walking employees.mgr_id from the CEO (mgr_id IS NULL) down; fixture is 5 levels deep by construction."
+
+    - id: SR-3
+      question: "How many direct reports does the top manager (CEO) have?"
+      complexity: simple
+      expected_kind: scalar
+      expected_sql:
+        duckdb: >
+          SELECT count(*) FROM employees
+          WHERE mgr_id = (SELECT emp_id FROM employees WHERE mgr_id IS NULL)
+      references: [hierarchies.org_chart, tables.employees]
+
+    - id: SR-4
+      question: "How many distinct component parts (direct and indirect) roll up into part 1, and what is the total exploded quantity?"
+      complexity: complex
+      expected_kind: rows
+      expected_sql:
+        duckdb: >
+          WITH RECURSIVE expl(part_id, qty) AS (
+            SELECT child_part_id, qty FROM bom WHERE parent_part_id = 1
+            UNION ALL
+            SELECT b.child_part_id, e.qty * b.qty
+            FROM bom b JOIN expl e ON b.parent_part_id = e.part_id
+          )
+          SELECT count(*) AS n_component_edges, sum(qty) AS total_exploded_qty FROM expl
+      references: [hierarchies.bom_explosion, tables.bom]
+      notes: "BOM explosion via recursive CTE over the parent_part_id/child_part_id DAG; qty multiplies down each level."

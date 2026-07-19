@@ -1,0 +1,646 @@
+semantic_layer:
+  spec_version: 0.1.0
+  name: collision_heavy
+  description: ~25 tables with heavily overlapping small-integer id/code/status domains, seeding many
+    spurious inclusion-dependency FK candidates alongside 5 real FKs.
+  tables:
+  - name: customers
+    table_type: dimension
+    grain: one row per customer
+    source: main.customers
+    primary_key:
+    - customer_id
+    columns:
+    - name: customer_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: name
+      sql_type: VARCHAR
+      semantic_type: name
+      entity_role: dimension
+    - name: region_id
+      sql_type: INTEGER
+      semantic_type: code
+      entity_role: foreign_key
+      description: Small-domain code (1-10); collides in range with many unrelated columns.
+      foreign_key:
+        references: regions.region_id
+        relationship: many_to_one
+  - name: products
+    table_type: dimension
+    grain: one row per product
+    source: main.products
+    primary_key:
+    - product_id
+    columns:
+    - name: product_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: name
+      sql_type: VARCHAR
+      semantic_type: name
+      entity_role: dimension
+    - name: category_id
+      sql_type: INTEGER
+      semantic_type: code
+      entity_role: foreign_key
+      foreign_key:
+        references: categories.category_id
+        relationship: many_to_one
+  - name: departments
+    table_type: dimension
+    grain: one row per department
+    source: main.departments
+    primary_key:
+    - dept_id
+    columns:
+    - name: dept_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: dept_name
+      sql_type: VARCHAR
+      semantic_type: name
+      entity_role: dimension
+  - name: employees
+    table_type: dimension
+    grain: one row per employee
+    source: main.employees
+    primary_key:
+    - employee_id
+    columns:
+    - name: employee_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: dept_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: foreign_key
+      foreign_key:
+        references: departments.dept_id
+        relationship: many_to_one
+    - name: pay_grade
+      sql_type: INTEGER
+      semantic_type: code
+      entity_role: dimension
+  - name: orders
+    table_type: fact
+    grain: one row per order
+    source: main.orders
+    primary_key:
+    - order_id
+    columns:
+    - name: order_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+      aggregations:
+        allowed:
+        - count
+        - count_distinct
+        default: count
+    - name: customer_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: foreign_key
+      foreign_key:
+        references: customers.customer_id
+        relationship: many_to_one
+    - name: status_cd
+      sql_type: INTEGER
+      semantic_type: status_code
+      entity_role: dimension
+  - name: order_items
+    table_type: fact
+    grain: one row per order line item
+    source: main.order_items
+    primary_key:
+    - order_item_id
+    columns:
+    - name: order_item_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: order_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: foreign_key
+      foreign_key:
+        references: orders.order_id
+        relationship: many_to_one
+    - name: product_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: foreign_key
+      foreign_key:
+        references: products.product_id
+        relationship: many_to_one
+    - name: qty
+      sql_type: INTEGER
+      semantic_type: quantity
+      entity_role: measure
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        default: sum
+  - name: shipments
+    table_type: fact
+    grain: one row per shipment
+    source: main.shipments
+    primary_key:
+    - shipment_id
+    columns:
+    - name: shipment_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: order_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: foreign_key
+      foreign_key:
+        references: orders.order_id
+        relationship: many_to_one
+    - name: carrier_id
+      sql_type: INTEGER
+      semantic_type: code
+      entity_role: foreign_key
+      description: Small-domain code (1-8); trap target for reviews.rating, NOT a declared FK from reviews.
+      foreign_key:
+        references: carriers.carrier_id
+        relationship: many_to_one
+  - name: regions
+    table_type: dimension
+    grain: one row per region
+    source: main.regions
+    primary_key:
+    - region_id
+    columns:
+    - name: region_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: region_name
+      sql_type: VARCHAR
+      semantic_type: name
+      entity_role: dimension
+  - name: warehouses
+    table_type: dimension
+    grain: one row per warehouse
+    source: main.warehouses
+    primary_key:
+    - warehouse_id
+    columns:
+    - name: warehouse_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: warehouse_name
+      sql_type: VARCHAR
+      semantic_type: name
+      entity_role: dimension
+  - name: carriers
+    table_type: dimension
+    grain: one row per carrier
+    source: main.carriers
+    primary_key:
+    - carrier_id
+    columns:
+    - name: carrier_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: carrier_name
+      sql_type: VARCHAR
+      semantic_type: name
+      entity_role: dimension
+  - name: suppliers
+    table_type: dimension
+    grain: one row per supplier
+    source: main.suppliers
+    primary_key:
+    - supplier_id
+    columns:
+    - name: supplier_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: supplier_name
+      sql_type: VARCHAR
+      semantic_type: name
+      entity_role: dimension
+  - name: stores
+    table_type: dimension
+    grain: one row per store
+    source: main.stores
+    primary_key:
+    - store_id
+    columns:
+    - name: store_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: store_name
+      sql_type: VARCHAR
+      semantic_type: name
+      entity_role: dimension
+    - name: region_cd
+      sql_type: INTEGER
+      semantic_type: code
+      entity_role: foreign_key
+      foreign_key:
+        references: regions.region_id
+        relationship: many_to_one
+  - name: categories
+    table_type: dimension
+    grain: one row per category
+    source: main.categories
+    primary_key:
+    - category_id
+    columns:
+    - name: category_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: category_name
+      sql_type: VARCHAR
+      semantic_type: name
+      entity_role: dimension
+  - name: tax_codes
+    table_type: dimension
+    grain: one row per tax code
+    source: main.tax_codes
+    primary_key:
+    - tax_code_id
+    columns:
+    - name: tax_code_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: rate
+      sql_type: DECIMAL(5,4)
+      semantic_type: rate
+      entity_role: dimension
+  - name: currencies
+    table_type: dimension
+    grain: one row per currency
+    source: main.currencies
+    primary_key:
+    - currency_id
+    columns:
+    - name: currency_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: currency_code
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: dimension
+  - name: addresses
+    table_type: dimension
+    grain: one row per address
+    source: main.addresses
+    primary_key:
+    - address_id
+    columns:
+    - name: address_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: zone_cd
+      sql_type: INTEGER
+      semantic_type: code
+      entity_role: dimension
+    - name: street
+      sql_type: VARCHAR
+      semantic_type: pii_address
+      entity_role: dimension
+      pii: true
+  - name: inventory
+    table_type: fact
+    grain: one row per inventory record
+    source: main.inventory
+    primary_key:
+    - inventory_id
+    columns:
+    - name: inventory_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: warehouse_id
+      sql_type: INTEGER
+      semantic_type: code
+      entity_role: foreign_key
+      description: 'Not declared as a FK to warehouses.warehouse_id: naming/statistics agree but there
+        is no verified lineage or query-log corroboration in this fixture (SPEC.md corroboration discipline).'
+      foreign_key:
+        references: warehouses.warehouse_id
+        relationship: many_to_one
+    - name: qty
+      sql_type: INTEGER
+      semantic_type: quantity
+      entity_role: measure
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        default: sum
+  - name: returns
+    table_type: fact
+    grain: one row per return
+    source: main.returns
+    primary_key:
+    - return_id
+    columns:
+    - name: return_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: reason_cd
+      sql_type: INTEGER
+      semantic_type: code
+      entity_role: dimension
+      description: 'TRAP source: overlaps suppliers.supplier_id (1-20) but is not a supplier reference.'
+  - name: reviews
+    table_type: fact
+    grain: one row per review
+    source: main.reviews
+    primary_key:
+    - review_id
+    columns:
+    - name: review_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: rating
+      sql_type: INTEGER
+      semantic_type: quantity
+      entity_role: measure
+      description: 'TRAP source: overlaps carriers.carrier_id (1-8) but is not a carrier reference.'
+      aggregations:
+        allowed:
+        - avg
+        - min
+        - max
+        default: avg
+  - name: campaigns
+    table_type: dimension
+    grain: one row per campaign
+    source: main.campaigns
+    primary_key:
+    - campaign_id
+    columns:
+    - name: campaign_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: channel_cd
+      sql_type: INTEGER
+      semantic_type: code
+      entity_role: dimension
+      description: 'TRAP source: overlaps categories.category_id (1-20) but is not a category reference.'
+  - name: coupons
+    table_type: dimension
+    grain: one row per coupon
+    source: main.coupons
+    primary_key:
+    - coupon_id
+    columns:
+    - name: coupon_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: discount_pct_bucket
+      sql_type: INTEGER
+      semantic_type: code
+      entity_role: dimension
+      description: 'TRAP source: overlaps warehouses.warehouse_id (1-12) but is not a warehouse reference.'
+  - name: promotions
+    table_type: dimension
+    grain: one row per promotion
+    source: main.promotions
+    primary_key:
+    - promotion_id
+    columns:
+    - name: promotion_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: promo_type_cd
+      sql_type: INTEGER
+      semantic_type: code
+      entity_role: dimension
+  - name: tickets
+    table_type: fact
+    grain: one row per support ticket
+    source: main.tickets
+    primary_key:
+    - ticket_id
+    columns:
+    - name: ticket_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: priority_cd
+      sql_type: INTEGER
+      semantic_type: code
+      entity_role: foreign_key
+      description: 'TRAP source: overlaps regions.region_id (1-10) but is not a region reference.'
+      foreign_key:
+        references: priorities.priority_id
+        relationship: many_to_one
+  - name: payments
+    table_type: fact
+    grain: one row per payment
+    source: main.payments
+    primary_key:
+    - payment_id
+    columns:
+    - name: payment_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: method_cd
+      sql_type: INTEGER
+      semantic_type: code
+      entity_role: dimension
+  - name: priorities
+    table_type: dimension
+    grain: one row per priority level
+    source: main.priorities
+    primary_key:
+    - priority_id
+    columns:
+    - name: priority_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: priority_name
+      sql_type: VARCHAR
+      semantic_type: name
+      entity_role: dimension
+  - name: shoes
+    table_type: dimension
+    grain: one row per shoe SKU
+    source: main.shoes
+    primary_key:
+    - shoe_id
+    columns:
+    - name: shoe_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+    - name: shoe_size
+      sql_type: INTEGER
+      semantic_type: quantity
+      entity_role: dimension
+      description: 'TRAP source: overlaps departments.dept_id (1-50) but is not a department reference.'
+  relationships:
+  - name: orders_to_customers
+    from:
+      table: orders
+      columns:
+      - customer_id
+    to:
+      table: customers
+      columns:
+      - customer_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  - name: order_items_to_orders
+    from:
+      table: order_items
+      columns:
+      - order_id
+    to:
+      table: orders
+      columns:
+      - order_id
+    cardinality: many_to_one
+    join_type: inner
+    fanout_risk: true
+  - name: order_items_to_products
+    from:
+      table: order_items
+      columns:
+      - product_id
+    to:
+      table: products
+      columns:
+      - product_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  - name: employees_to_departments
+    from:
+      table: employees
+      columns:
+      - dept_id
+    to:
+      table: departments
+      columns:
+      - dept_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  - name: shipments_to_orders
+    from:
+      table: shipments
+      columns:
+      - order_id
+    to:
+      table: orders
+      columns:
+      - order_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+  - name: customers_region_id_to_regions
+    from:
+      table: customers
+      columns:
+      - region_id
+    to:
+      table: regions
+      columns:
+      - region_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  - name: stores_region_cd_to_regions
+    from:
+      table: stores
+      columns:
+      - region_cd
+    to:
+      table: regions
+      columns:
+      - region_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  - name: products_category_id_to_categories
+    from:
+      table: products
+      columns:
+      - category_id
+    to:
+      table: categories
+      columns:
+      - category_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  - name: shipments_carrier_id_to_carriers
+    from:
+      table: shipments
+      columns:
+      - carrier_id
+    to:
+      table: carriers
+      columns:
+      - carrier_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  - name: inventory_warehouse_id_to_warehouses
+    from:
+      table: inventory
+      columns:
+      - warehouse_id
+    to:
+      table: warehouses
+      columns:
+      - warehouse_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  - name: tickets_priority_cd_to_priorities
+    from:
+      table: tickets
+      columns:
+      - priority_cd
+    to:
+      table: priorities
+      columns:
+      - priority_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: false
+  repo_knowledge:
+    conventions:
+      notes:
+      - This warehouse has exactly 5 real foreign keys; every other pair of small-integer columns that
+        statistically look like an IND is a seeded trap (see header comment and generators/collision_heavy.py
+        TRAPS).
+      - 'High inclusion ratio alone is not sufficient corroboration for a FK: naming agreement and/or
+        lineage/query-log evidence is required (SPEC.md corroboration discipline, test-plan.md Layer 4).'

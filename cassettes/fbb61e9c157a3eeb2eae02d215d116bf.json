@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "59c0b72cdf42",
+ "response": "```json\n{\n  \"action\": \"refuse\",\n  \"sql\": null,\n  \"reason\": \"Missing ord_hdr table and customer segment dimension. Only deprecated ord_hdr_legacy available.\"\n}\n```",
+ "usage": {
+  "in": 5778,
+  "out": 53
+ }
+}

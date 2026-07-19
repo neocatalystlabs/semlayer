@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "a2ec036e2008",
+ "response": "[\n {\"id\": 0, \"correct\": true, \"useful\": true, \"issue\": \"\"},\n {\"id\": 1, \"correct\": true, \"useful\": true, \"issue\": \"\"},\n {\"id\": 2, \"correct\": true, \"useful\": true, \"issue\": \"\"},\n {\"id\": 3, \"correct\": true, \"useful\": true, \"issue\": \"\"},\n {\"id\": 4, \"correct\": true, \"useful\": true, \"issue\": \"\"},\n {\"id\": 5, \"correct\": false, \"useful\": true, \"issue\": \"unsupported 'order transactions' claim\"},\n {\"id\": 6, \"correct\": true, \"useful\": true, \"issue\": \"\"},\n {\"id\": 7, \"correct\": true, \"useful\": true, \"issue\": \"\"},\n {\"id\": 8, \"correct\": true, \"useful\": true, \"issue\": \"\"}\n]",
+ "usage": {
+  "in": 2337,
+  "out": 583
+ }
+}

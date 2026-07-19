@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "59c0b72cdf42",
+ "response": "```json\n{\n  \"action\": \"sql\",\n  \"sql\": \"SELECT customer_number, SUM(amount) as total_revenue FROM ord_hdr_legacy GROUP BY customer_number ORDER BY customer_number\",\n  \"reason\": null\n}\n```",
+ "usage": {
+  "in": 1690,
+  "out": 63
+ }
+}

@@ -1,0 +1,66 @@
+# Gold CQ suite for snapshot_noval. Hand-authored; expected_sql is reviewed truth.
+cq_suite:
+  fixture: snapshot_noval
+  version: 1
+  questions:
+    - id: SN-1
+      question: "How many customers are in the latest snapshot?"
+      complexity: simple
+      expected_kind: scalar
+      expected_sql:
+        duckdb: >
+          SELECT count(*) FROM cust_snapshot
+          WHERE snap_dt = (SELECT max(snap_dt) FROM cust_snapshot)
+      references: [tables.cust_snapshot]
+
+    - id: SN-2
+      question: "What is the total (latest) account balance across customers?"
+      complexity: simple
+      expected_kind: scalar
+      expected_sql:
+        duckdb: >
+          SELECT round(sum(account_balance), 2) FROM cust_snapshot
+          WHERE snap_dt = (SELECT max(snap_dt) FROM cust_snapshot)
+      wrong_sql:
+        duckdb: "SELECT round(sum(account_balance), 2) FROM cust_snapshot"
+      trap: snapshot_overcount
+      references: [metrics.latest_total_balance]
+      notes: >
+        THE snapshot_overcount canary: cust_snapshot is a full-copy daily snapshot
+        with no valid_from/valid_to columns. Summing account_balance across all
+        snap_dt rows (wrong_sql) over-counts by roughly the number of distinct
+        snapshot dates (30 in this fixture), because each customer's balance is
+        repeated on every date it didn't change. The gold answer pins to the
+        latest snap_dt only.
+
+    - id: SN-3
+      question: "What is the latest total account balance by customer tier?"
+      complexity: simple
+      expected_kind: rows
+      expected_sql:
+        duckdb: >
+          SELECT cust_tier, round(sum(account_balance), 2) AS balance
+          FROM cust_snapshot
+          WHERE snap_dt = (SELECT max(snap_dt) FROM cust_snapshot)
+          GROUP BY 1 ORDER BY 1
+      references: [metrics.latest_total_balance]
+
+    - id: SN-4
+      question: "How many accounts currently have active status?"
+      complexity: simple
+      expected_kind: scalar
+      expected_sql:
+        duckdb: "SELECT count(*) FROM acct_status WHERE is_current AND status = 'active'"
+      references: [tables.acct_status]
+      notes: "acct_status has no valid_from/valid_to; only is_current distinguishes current from superseded rows."
+
+    - id: SN-5
+      question: "What is the total lifetime order count across customers, as of the latest snapshot?"
+      complexity: simple
+      expected_kind: scalar
+      expected_sql:
+        duckdb: >
+          SELECT sum(lifetime_orders) FROM cust_snapshot
+          WHERE snap_dt = (SELECT max(snap_dt) FROM cust_snapshot)
+      references: [tables.cust_snapshot]
+      notes: "lifetime_orders is semi-additive across snap_dt like account_balance; must be pinned to the latest snapshot date."

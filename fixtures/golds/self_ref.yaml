@@ -1,0 +1,151 @@
+# Gold semantic layer for the self_ref fixture.
+# Hand-authored (no confidence fields = human truth). Exercises: kind: recursive
+# hierarchies over self-referential (employees) and DAG-edge (bom) structures,
+# cycle-safety, and a recursive-friendly headcount metric.
+semantic_layer:
+  spec_version: "0.1.0"
+  name: self_ref
+  description: "Recursive structures: a 5-level management tree (employees.mgr_id) and a 4-level bill-of-materials DAG (bom over parts)."
+  calendar:
+    timezone: UTC
+    week_start: monday
+  tables:
+    - name: employees
+      table_type: dimension
+      grain: "one row per employee"
+      source: main.employees
+      primary_key: [emp_id]
+      columns:
+        - name: emp_id
+          sql_type: INTEGER
+          semantic_type: identifier
+          entity_role: primary_key
+          aggregations:
+            allowed: [count, count_distinct]
+            default: count_distinct
+        - name: mgr_id
+          sql_type: INTEGER
+          semantic_type: identifier
+          entity_role: foreign_key
+          description: "Self-referential: NULL only for the CEO (root of the tree)."
+          foreign_key:
+            references: employees.emp_id
+            relationship: many_to_one
+        - name: dept
+          sql_type: VARCHAR
+          semantic_type: enum
+          entity_role: dimension
+          enum_values:
+            - {value: engineering, meaning: "Engineering", decode_source: human}
+            - {value: sales, meaning: "Sales", decode_source: human}
+            - {value: support, meaning: "Support", decode_source: human}
+            - {value: finance, meaning: "Finance", decode_source: human}
+            - {value: ops, meaning: "Operations", decode_source: human}
+        - name: salary
+          sql_type: "DECIMAL(10,2)"
+          semantic_type: monetary_value
+          entity_role: measure
+          pii: true
+          aggregations:
+            allowed: [sum, avg, min, max, count]
+            default: avg
+    - name: parts
+      table_type: dimension
+      grain: "one row per part"
+      source: main.parts
+      primary_key: [part_id]
+      columns:
+        - name: part_id
+          sql_type: INTEGER
+          semantic_type: identifier
+          entity_role: primary_key
+        - name: part_name
+          sql_type: VARCHAR
+          semantic_type: name
+          entity_role: dimension
+        - name: part_level
+          sql_type: INTEGER
+          semantic_type: quantity
+          entity_role: dimension
+          description: "1 = finished good .. 4 = raw component. Informational only; the DAG shape, not this column, is the source of truth for depth."
+    - name: bom
+      table_type: fact
+      grain: "one row per parent/child part edge"
+      source: main.bom
+      primary_key: [parent_part_id, child_part_id]
+      columns:
+        - name: parent_part_id
+          sql_type: INTEGER
+          semantic_type: identifier
+          entity_role: foreign_key
+          foreign_key:
+            references: parts.part_id
+            relationship: many_to_one
+        - name: child_part_id
+          sql_type: INTEGER
+          semantic_type: identifier
+          entity_role: foreign_key
+          foreign_key:
+            references: parts.part_id
+            relationship: many_to_one
+        - name: qty
+          sql_type: INTEGER
+          semantic_type: quantity
+          entity_role: measure
+          aggregations:
+            allowed: [sum, avg, min, max]
+            default: sum
+  relationships:
+    - name: employees_reports_to
+      from: {table: employees, columns: [mgr_id]}
+      to: {table: employees, columns: [emp_id]}
+      cardinality: many_to_one
+      join_type: left
+      fanout_risk: false
+      description: "Self-referential: an employee's manager is another row in the same table."
+    - name: bom_parent_to_parts
+      from: {table: bom, columns: [parent_part_id]}
+      to: {table: parts, columns: [part_id]}
+      cardinality: many_to_one
+      join_type: inner
+      fanout_risk: false
+    - name: bom_child_to_parts
+      from: {table: bom, columns: [child_part_id]}
+      to: {table: parts, columns: [part_id]}
+      cardinality: many_to_one
+      join_type: inner
+      fanout_risk: false
+  hierarchies:
+    - name: org_chart
+      kind: recursive
+      dimension_table: employees
+      recursive:
+        parent_column: mgr_id
+        child_column: emp_id
+      description: "Management hierarchy; CEO (mgr_id IS NULL) is the root. 5 levels deep in the fixture data."
+    - name: bom_explosion
+      kind: recursive
+      dimension_table: bom
+      recursive:
+        parent_column: parent_part_id
+        child_column: child_part_id
+      description: "Bill-of-materials explosion; a DAG (a part may have multiple parents), 4 levels deep, acyclic by construction."
+  metrics:
+    - name: headcount_by_dept
+      display_name: "Headcount by Department"
+      type: simple
+      measure: employees.emp_id
+      agg: count_distinct
+      dimensions: [employees.dept]
+      grain: employee
+  repo_knowledge:
+    routing:
+      - intent: "org chart / reporting-line traversal"
+        use: [employees]
+      - intent: "bill of materials explosion / where-used"
+        use: [bom, parts]
+    domains:
+      - name: people
+        tables: [employees]
+      - name: manufacturing
+        tables: [parts, bom]

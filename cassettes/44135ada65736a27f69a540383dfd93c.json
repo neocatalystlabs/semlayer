@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "59c0b72cdf42",
+ "response": "```json\n{\n  \"action\": \"sql\",\n  \"sql\": \"SELECT SUM(ol.line_amt) AS total_order_revenue FROM ord_hdr oh JOIN ord_ln ol ON oh.ord_id = ol.ord_id\",\n  \"reason\": \"Joins ord_hdr to ord_ln and sums line_amt without deduplication, capturing all line items across all orders.\"\n}\n```",
+ "usage": {
+  "in": 12743,
+  "out": 100
+ }
+}

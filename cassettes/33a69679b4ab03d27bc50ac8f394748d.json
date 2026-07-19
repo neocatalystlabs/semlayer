@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "a2ec036e2008",
+ "response": "[\n {\"id\": 0, \"correct\": true, \"useful\": true, \"issue\": \"\"},\n {\"id\": 1, \"correct\": true, \"useful\": false, \"issue\": \"mostly restates column name\"},\n {\"id\": 2, \"correct\": true, \"useful\": true, \"issue\": \"\"},\n {\"id\": 3, \"correct\": true, \"useful\": true, \"issue\": \"\"},\n {\"id\": 4, \"correct\": true, \"useful\": true, \"issue\": \"\"},\n {\"id\": 5, \"correct\": true, \"useful\": true, \"issue\": \"\"},\n {\"id\": 6, \"correct\": true, \"useful\": true, \"issue\": \"\"},\n {\"id\": 7, \"correct\": true, \"useful\": false, \"issue\": \"restates column name\"},\n {\"id\": 8, \"correct\": true, \"useful\": false, \"issue\": \"restates column name\"},\n {\"id\": 9, \"correct\": true, \"useful\": true, \"issue\": \"\"},\n {\"id\": 10, \"correct\": true, \"useful\": true, \"issue\": \"\"},\n {\"id\": 11, \"correct\": true, \"useful\": false, \"issue\": \"restates column name\"}\n]",
+ "usage": {
+  "in": 4040,
+  "out": 941
+ }
+}

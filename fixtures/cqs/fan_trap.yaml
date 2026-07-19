@@ -1,0 +1,95 @@
+# Gold CQ suite for fan_trap. Hand-authored; expected_sql is reviewed truth.
+cq_suite:
+  fixture: fan_trap
+  version: 1
+  questions:
+    - id: FT-1
+      question: "What was total revenue?"
+      complexity: simple
+      expected_kind: scalar
+      expected_sql:
+        duckdb: "SELECT round(sum(order_total), 2) FROM orders"
+      references: [metrics.total_revenue]
+
+    - id: FT-2
+      question: "What was total revenue by region?"
+      complexity: simple
+      expected_kind: rows
+      expected_sql:
+        duckdb: >
+          SELECT c.region, round(sum(o.order_total), 2) AS revenue
+          FROM orders o JOIN customers c ON o.customer_id = c.customer_id
+          GROUP BY 1 ORDER BY 1
+      references: [metrics.total_revenue, hierarchies.geography]
+
+    - id: FT-3
+      question: "What was total revenue for orders that have both payments and shipments recorded?"
+      complexity: complex
+      expected_kind: scalar
+      expected_sql:
+        duckdb: >
+          SELECT round(sum(order_total), 2) FROM (
+            SELECT DISTINCT o.order_id, o.order_total
+            FROM orders o
+            JOIN payments p ON o.order_id = p.order_id
+            JOIN shipments s ON o.order_id = s.order_id)
+      wrong_sql:
+        duckdb: >
+          SELECT round(sum(o.order_total), 2)
+          FROM orders o
+          JOIN payments p ON o.order_id = p.order_id
+          JOIN shipments s ON o.order_id = s.order_id
+      trap: fan_out
+      references: [metrics.total_revenue, relationships.payments_to_orders, relationships.shipments_to_orders]
+      notes: "THE fan-trap canary: naive join sum over-counts; symmetric aggregation recovers truth."
+
+    - id: FT-4
+      question: "What is the average order value?"
+      complexity: simple
+      expected_kind: scalar
+      expected_sql:
+        duckdb: "SELECT round(avg(order_total), 2) FROM orders"
+      references: [tables.orders]
+
+    - id: FT-5
+      question: "How many orders were placed each month?"
+      complexity: simple
+      expected_kind: rows
+      expected_sql:
+        duckdb: >
+          SELECT date_trunc('month', order_date) AS m, count(*)
+          FROM orders GROUP BY 1 ORDER BY 1
+      references: [metrics.order_count, hierarchies.order_time]
+
+    - id: FT-6
+      question: "What share of payment volume came through each payment method?"
+      complexity: complex
+      expected_kind: rows
+      expected_sql:
+        duckdb: >
+          SELECT method, round(sum(amount) / (SELECT sum(amount) FROM payments), 4) AS share
+          FROM payments GROUP BY 1 ORDER BY 1
+      references: [metrics.total_payments]
+
+    - id: FT-7
+      question: "Do payment amounts reconcile with order totals?"
+      complexity: complex
+      expected_kind: scalar
+      expected_sql:
+        duckdb: >
+          SELECT count(*) FROM orders o
+          JOIN (SELECT order_id, sum(amount) AS paid FROM payments GROUP BY 1) p USING (order_id)
+          WHERE abs(o.order_total - p.paid) > 0.01
+      notes: "Expected 0: split payments reconcile exactly."
+      references: [tables.orders, tables.payments]
+
+    - id: FT-8
+      question: "What was revenue per customer, using payments joined to shipments?"
+      complexity: complex
+      expected_kind: refusal
+      trap: fan_out
+      notes: >
+        A conforming consumer must refuse or reroute: routing knowledge says use
+        orders for revenue analysis; the payments x shipments path has no safe
+        aggregation strategy declared across that join pair.
+      references: [repo_knowledge.routing]

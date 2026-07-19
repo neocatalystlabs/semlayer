@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "59c0b72cdf42",
+ "response": "{\"action\": \"clarify\", \"sql\": null, \"reason\": \"Ambiguous: unclear how web_evt/sub_evt should combine with ord_hdr revenue per customer.\"}",
+ "usage": {
+  "in": 5431,
+  "out": 61
+ }
+}

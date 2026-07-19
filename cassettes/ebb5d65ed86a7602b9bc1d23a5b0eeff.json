@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"curr_cd\",\n    \"semantic_type\": \"code\",\n    \"entity_role\": \"primary_key\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": {\n      \"CAD\": \"Canadian Dollar\",\n      \"EUR\": \"Euro\",\n      \"GBP\": \"British Pound\",\n      \"USD\": \"US Dollar\"\n    },\n    \"rationale\": \"ISO 4217 currency code; unique, non-null, dimension table key\"\n  },\n  {\n    \"column\": \"curr_nm\",\n    \"semantic_type\": \"name\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": null,\n    \"rationale\": \"Full currency name; descriptive attribute in dimension table\"\n  }\n]\n```",
+ "usage": {
+  "in": 597,
+  "out": 209
+ }
+}

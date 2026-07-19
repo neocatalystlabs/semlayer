@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "59c0b72cdf42",
+ "response": "{\"action\":\"sql\",\"sql\":\"SELECT AVG(tot_amt) AS avg_order_value FROM ord_hdr WHERE sts_cd = 'C'\",\"reason\":null}",
+ "usage": {
+  "in": 5499,
+  "out": 65
+ }
+}

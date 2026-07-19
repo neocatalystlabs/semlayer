@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "26fea8ed3e9d",
+ "response": "```json\n{\n  \"table_description\": \"Records individual product returns from orders, capturing return date, reason, quantity, and refund amount per return transaction.\",\n  \"ai_context\": \"Join to ord_ln for order context and rtn_rsn_dim for return reason details. Filter by rtn_dt for date ranges. Each row is one return event.\",\n  \"table_type\": \"fact\",\n  \"columns\": [\n    {\n      \"name\": \"rtn_id\",\n      \"description\": \"Unique return transaction identifier; primary key.\"\n    },\n    {\n      \"name\": \"ord_ln_id\",\n      \"description\": \"Foreign key to order line; links return to original order item.\"\n    },\n    {\n      \"name\": \"rtn_dt\",\n      \"description\": \"Date return was processed; ranges Aug 2025\u2013Dec 2025.\"\n    },\n    {\n      \"name\": \"rtn_rsn_cd\",\n      \"description\": \"Return reason code: DEFECT, WRONG_ITEM, NLN (no longer needed), SIZE.\"\n    },\n    {\n      \"name\": \"rtn_qty\",\n      \"description\": \"Quantity of units returned; values 1\u20135.\"\n    },\n    {\n      \"name\": \"rtn_amt\",\n      \"description\": \"Refund amount in currency; typically matches returned quantity \u00d7 unit price.\"\n    }\n  ]\n}\n```",
+ "usage": {
+  "in": 950,
+  "out": 338
+ }
+}

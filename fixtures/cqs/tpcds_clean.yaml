@@ -1,0 +1,145 @@
+# Gold CQ suite for tpcds_clean. Hand-authored; expected_sql is reviewed truth.
+# All expected_sql verified against an in-memory DuckDB tpcds extension build
+# (INSTALL tpcds; LOAD tpcds; CALL dsdgen(sf=0.01)) — see fixtures/generators/tpcds_clean.py.
+cq_suite:
+  fixture: tpcds_clean
+  version: 1
+  questions:
+    - id: TC-1
+      question: "What was total store (brick-and-mortar) sales revenue?"
+      complexity: simple
+      expected_kind: scalar
+      expected_sql:
+        duckdb: "SELECT round(sum(ss_ext_sales_price), 2) FROM store_sales"
+      references: [metrics.total_store_sales_revenue, tables.store_sales]
+
+    - id: TC-2
+      question: "What was total web channel sales revenue?"
+      complexity: simple
+      expected_kind: scalar
+      expected_sql:
+        duckdb: "SELECT round(sum(ws_ext_sales_price), 2) FROM web_sales"
+      references: [tables.web_sales]
+
+    - id: TC-3
+      question: "What was total catalog channel sales revenue?"
+      complexity: simple
+      expected_kind: scalar
+      expected_sql:
+        duckdb: "SELECT round(sum(cs_ext_sales_price), 2) FROM catalog_sales"
+      references: [tables.catalog_sales]
+
+    - id: TC-4
+      question: "What was store sales revenue by item category?"
+      complexity: simple
+      expected_kind: rows
+      expected_sql:
+        duckdb: >
+          SELECT i.i_category, round(sum(ss.ss_ext_sales_price), 2) AS revenue
+          FROM store_sales ss JOIN item i ON ss.ss_item_sk = i.i_item_sk
+          GROUP BY 1 ORDER BY 1
+      references: [metrics.total_store_sales_revenue, hierarchies.product]
+
+    - id: TC-5
+      question: "What was store sales revenue by product class, within category?"
+      complexity: simple
+      expected_kind: rows
+      expected_sql:
+        duckdb: >
+          SELECT i.i_category, i.i_class, round(sum(ss.ss_ext_sales_price), 2) AS revenue
+          FROM store_sales ss JOIN item i ON ss.ss_item_sk = i.i_item_sk
+          GROUP BY 1, 2 ORDER BY 1, 2
+      references: [metrics.total_store_sales_revenue, hierarchies.product]
+      notes: "Exercises the full category -> class level of the product hierarchy, not just the top level."
+
+    - id: TC-6
+      question: "What was store sales revenue by customer state?"
+      complexity: simple
+      expected_kind: rows
+      expected_sql:
+        duckdb: >
+          SELECT ca.ca_state, round(sum(ss.ss_ext_sales_price), 2) AS revenue
+          FROM store_sales ss
+          JOIN customer c ON ss.ss_customer_sk = c.c_customer_sk
+          JOIN customer_address ca ON c.c_current_addr_sk = ca.ca_address_sk
+          GROUP BY 1 ORDER BY 1
+      references: [metrics.total_store_sales_revenue, hierarchies.customer_geography]
+
+    - id: TC-7
+      question: "What was store sales revenue by year and quarter?"
+      complexity: simple
+      expected_kind: rows
+      expected_sql:
+        duckdb: >
+          SELECT d.d_year, d.d_qoy, round(sum(ss.ss_ext_sales_price), 2) AS revenue
+          FROM store_sales ss JOIN date_dim d ON ss.ss_sold_date_sk = d.d_date_sk
+          GROUP BY 1, 2 ORDER BY 1, 2
+      references: [metrics.total_store_sales_revenue, hierarchies.calendar_time]
+      notes: "Quarterly rollup via date_dim.d_qoy, joined off ss_sold_date_sk."
+
+    - id: TC-8
+      question: "What was the store channel returns rate (return line items / sales line items)?"
+      complexity: simple
+      expected_kind: scalar
+      expected_sql:
+        duckdb: >
+          SELECT round(
+            (SELECT count(*) FROM store_returns)::DOUBLE /
+            (SELECT count(*) FROM store_sales), 6)
+      references: [metrics.returns_rate, metrics.store_returns_line_count, metrics.store_sales_line_count]
+
+    - id: TC-9
+      question: "What is the average current list price of items?"
+      complexity: simple
+      expected_kind: scalar
+      expected_sql:
+        duckdb: "SELECT round(avg(i_current_price), 2) FROM item"
+      references: [metrics.avg_item_price]
+
+    - id: TC-10
+      question: "What was total net profit by product class?"
+      complexity: simple
+      expected_kind: rows
+      expected_sql:
+        duckdb: >
+          SELECT i.i_class, round(sum(ss.ss_net_profit), 2) AS profit
+          FROM store_sales ss JOIN item i ON ss.ss_item_sk = i.i_item_sk
+          GROUP BY 1 ORDER BY 1
+      references: [metrics.total_net_profit, hierarchies.product]
+
+    - id: TC-11
+      question: "What was total sales revenue across all three channels (store, web, catalog) combined?"
+      complexity: complex
+      expected_kind: scalar
+      expected_sql:
+        duckdb: >
+          SELECT round(
+            (SELECT sum(ss_ext_sales_price) FROM store_sales) +
+            (SELECT sum(ws_ext_sales_price) FROM web_sales) +
+            (SELECT sum(cs_ext_sales_price) FROM catalog_sales), 2)
+      references: [tables.store_sales, tables.web_sales, tables.catalog_sales]
+      notes: "Multi-channel: sums each channel's revenue independently (no cross-channel join), avoiding any fan-out risk."
+
+    - id: TC-12
+      question: "What was combined revenue across all three sales channels, by customer state and year?"
+      complexity: complex
+      expected_kind: rows
+      expected_sql:
+        duckdb: >
+          SELECT ca.ca_state, d.d_year, round(sum(u.rev), 2) AS total_revenue
+          FROM (
+            SELECT ss_customer_sk AS cust_sk, ss_sold_date_sk AS date_sk, ss_ext_sales_price AS rev FROM store_sales
+            UNION ALL
+            SELECT ws_bill_customer_sk, ws_sold_date_sk, ws_ext_sales_price FROM web_sales
+            UNION ALL
+            SELECT cs_bill_customer_sk, cs_sold_date_sk, cs_ext_sales_price FROM catalog_sales
+          ) u
+          JOIN customer c ON u.cust_sk = c.c_customer_sk
+          JOIN customer_address ca ON c.c_current_addr_sk = ca.ca_address_sk
+          JOIN date_dim d ON u.date_sk = d.d_date_sk
+          GROUP BY 1, 2 ORDER BY 1, 2
+      references: [tables.store_sales, tables.web_sales, tables.catalog_sales, hierarchies.customer_geography, hierarchies.calendar_time]
+      notes: >
+        Multi-channel: a UNION ALL over the three channel fact tables (each at its own
+        line-item grain) before joining to shared customer/date dimensions, so no
+        channel's line items are double-counted against another channel's.

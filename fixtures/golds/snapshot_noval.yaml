@@ -1,0 +1,145 @@
+# Gold semantic layer for the snapshot_noval fixture.
+# Hand-authored (no confidence fields = human truth). Exercises: SCD
+# classification and over-count safety for snapshot tables that carry NO
+# validity-interval columns (no valid_from/valid_to) — only a snapshot date
+# partition key or a bare is_current flag.
+semantic_layer:
+  spec_version: "0.1.0"
+  name: snapshot_noval
+  description: >
+    snapshot_noval fixture: cust_snapshot is a daily full-copy snapshot
+    (snap_dt x cust_id, no validity columns); acct_status carries only an
+    is_current flag with no valid_from/valid_to at all.
+  ai_context: >
+    Both tables encode change-over-time without the columns that would
+    normally make it safe (valid_from/valid_to intervals). cust_snapshot
+    must be filtered to a single snap_dt before summing any measure or the
+    result over-counts by roughly the number of snapshot dates present,
+    because every unchanged value is repeated on every date. acct_status has
+    no interval at all, only a boolean current-row marker.
+  calendar:
+    timezone: UTC
+  tables:
+    - name: cust_snapshot
+      table_type: snapshot_scd2
+      grain: "one row per customer per snapshot date"
+      source: main.cust_snapshot
+      primary_key: [snap_dt, cust_id]
+      ai_context: >
+        Full-copy daily snapshot: every customer gets a row on every
+        snap_dt regardless of whether their attributes changed since the
+        prior date. There is no valid_from/valid_to interval — history must
+        be reconstructed by diffing consecutive snap_dt rows per cust_id,
+        and "current state" means filtering to MAX(snap_dt). Summing any
+        measure (e.g. account_balance) across all snap_dt rows over-counts
+        by approximately the number of distinct snapshot dates in the
+        table, because unchanged values are repeated on every date.
+      knowledge:
+        required_filters:
+          - expr: "snap_dt = (SELECT max(snap_dt) FROM cust_snapshot)"
+            reason: "cust_snapshot is a full-copy snapshot with no validity columns; without pinning to the latest snap_dt, aggregates sum the same customer's repeated state across every snapshot date and over-count by roughly the number of distinct dates present."
+            enforcement: advisory
+        usage_notes:
+          - "No valid_from/valid_to columns exist on this table. Point-in-time history must be reconstructed by comparing consecutive snap_dt rows per cust_id; there is no ASOF-joinable interval."
+          - "SUM(account_balance) over all snap_dt rows is not a meaningful total — it is not 'total balance held', it is 'balance summed once per customer per day observed'."
+      columns:
+        - name: snap_dt
+          sql_type: DATE
+          semantic_type: date
+          entity_role: dimension
+          ai_context: "Snapshot partition date, not an event date. Filter to a single value (typically the latest) before aggregating measures on this table."
+        - name: cust_id
+          sql_type: INTEGER
+          semantic_type: identifier
+          entity_role: dimension
+          canonical_entity: customer
+        - name: cust_tier
+          sql_type: VARCHAR
+          semantic_type: enum
+          entity_role: dimension
+          enum_values:
+            - {value: bronze, meaning: "bronze loyalty tier", decode_source: human}
+            - {value: silver, meaning: "silver loyalty tier", decode_source: human}
+            - {value: gold, meaning: "gold loyalty tier", decode_source: human}
+            - {value: platinum, meaning: "platinum loyalty tier", decode_source: human}
+        - name: account_balance
+          sql_type: "DECIMAL(14,2)"
+          semantic_type: monetary_value
+          entity_role: measure
+          ai_context: "Semi-additive across snap_dt (a state, not a flow): valid to sum across cust_id within one snap_dt, not valid to sum across snap_dt."
+          aggregations:
+            allowed: [sum, avg, min, max]
+            default: sum
+            semi_additive:
+              non_additive_dimension: snap_dt
+              window_choice: last
+        - name: lifetime_orders
+          sql_type: INTEGER
+          semantic_type: quantity
+          entity_role: measure
+          aggregations:
+            allowed: [sum, avg, min, max]
+            default: sum
+            semi_additive:
+              non_additive_dimension: snap_dt
+              window_choice: last
+    - name: acct_status
+      table_type: operational
+      grain: "one row per account version"
+      source: main.acct_status
+      primary_key: [account_id]
+      scd:
+        type: 2
+        is_current_flag: is_current
+      ai_context: >
+        Type-2-style account status history with only a bare is_current
+        boolean — no valid_from/valid_to interval columns are present, so
+        point-in-time ("what was the status on date X") queries cannot be
+        answered from this table; only "current status" (is_current = true)
+        and "any prior status" are recoverable.
+      knowledge:
+        usage_notes:
+          - "No valid_from/valid_to exist; point-in-time reconstruction is not possible from this table, only current-vs-superseded."
+      columns:
+        - name: account_id
+          sql_type: INTEGER
+          semantic_type: identifier
+          entity_role: primary_key
+        - name: cust_id
+          sql_type: INTEGER
+          semantic_type: identifier
+          entity_role: foreign_key
+          foreign_key:
+            references: cust_snapshot.cust_id
+            relationship: many_to_one
+        - name: status
+          sql_type: VARCHAR
+          semantic_type: status_code
+          entity_role: dimension
+          enum_values:
+            - {value: active, meaning: "account active", decode_source: human}
+            - {value: inactive, meaning: "account inactive", decode_source: human}
+            - {value: closed, meaning: "account closed", decode_source: human}
+        - name: is_current
+          sql_type: BOOLEAN
+          semantic_type: flag
+          entity_role: dimension
+  metrics:
+    - name: latest_total_balance
+      display_name: "Latest Total Account Balance"
+      type: simple
+      measure: cust_snapshot.account_balance
+      agg: sum
+      filter: "snap_dt = (SELECT max(snap_dt) FROM cust_snapshot)"
+      dimensions: [cust_snapshot.cust_tier]
+      grain: customer
+  repo_knowledge:
+    routing:
+      - intent: "current account balance / total balance held"
+        use: [cust_snapshot]
+        avoid:
+          - table: cust_snapshot
+            reason: "SUM(account_balance) without a snap_dt filter sums each customer's balance once per snapshot date observed, over-counting by roughly the number of distinct dates in the table"
+    domains:
+      - name: customer_360
+        tables: [cust_snapshot, acct_status]

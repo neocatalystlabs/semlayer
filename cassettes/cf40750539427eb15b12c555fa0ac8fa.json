@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"sm_code\",\n    \"semantic_type\": \"code\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": {\n      \"SEA\": \"Sea/Ocean shipping\",\n      \"SURFACE\": \"Surface/Ground shipping\",\n      \"AIR\": \"Air shipping\",\n      \"BIKE\": \"Bike/Courier shipping\"\n    },\n    \"rationale\": \"Shipping mode codes with 4 distinct values representing transport methods.\"\n  },\n  {\n    \"column\": \"sm_carrier\",\n    \"semantic_type\": \"name\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.92,\n    \"enum_decodes\": null,\n    \"rationale\": \"Carrier company names (FEDEX, DHL, AIRBORNE). 20 distinct values, unique.\"\n  },\n  {\n    \"column\": \"sm_contract\",\n    \"semantic_type\": \"code\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.75,\n    \"enum_decodes\": null,\n    \"rationale\": \"Contract identifiers; cryptic alphanumeric codes, 20 distinct unique values.\"\n  }\n]\n```",
+ "usage": {
+  "in": 879,
+  "out": 307
+ }
+}

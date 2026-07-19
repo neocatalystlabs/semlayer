@@ -1,0 +1,47 @@
+# Gold CQ suite for collision_heavy. Hand-authored; expected_sql is reviewed truth.
+cq_suite:
+  fixture: collision_heavy
+  version: 1
+  questions:
+    - id: CH-1
+      question: "How many employees are in each department?"
+      complexity: simple
+      expected_kind: rows
+      expected_sql:
+        duckdb: >
+          SELECT d.dept_name, count(*) AS n_employees
+          FROM employees e JOIN departments d ON e.dept_id = d.dept_id
+          GROUP BY 1 ORDER BY 1
+      references: [relationships.employees_to_departments]
+      notes: "Uses one of the 5 real FKs (employees.dept_id -> departments.dept_id)."
+
+    - id: CH-2
+      question: "What was total quantity ordered by product?"
+      complexity: simple
+      expected_kind: rows
+      expected_sql:
+        duckdb: >
+          SELECT p.product_id, p.name, sum(oi.qty) AS total_qty
+          FROM order_items oi JOIN products p ON oi.product_id = p.product_id
+          GROUP BY 1, 2 ORDER BY 1 LIMIT 10
+      references: [relationships.order_items_to_products]
+      notes: "Uses one of the 5 real FKs (order_items.product_id -> products.product_id)."
+
+    - id: CH-3
+      question: "What is the average product review rating, broken down by shipping carrier?"
+      complexity: complex
+      expected_kind: refusal
+      trap: false_fk
+      references: [tables.reviews, tables.carriers]
+      notes: >
+        Seeded trap: reviews.rating (a 1-5 star rating, domain 1-5) and
+        carriers.carrier_id (domain 1-8) have inclusion ratio 1.0 purely
+        because both are small contiguous integer ranges — there is no real
+        relationship, and this pairing is NOT declared anywhere in
+        `relationships` or as a column `foreign_key` in the gold semantic
+        layer (see collision_heavy.yaml header and generators/collision_heavy.py
+        TRAPS). A conforming consumer must refuse to join reviews to carriers
+        via rating = carrier_id, no matter how statistically convincing the
+        inclusion dependency looks; only the 5 documented real FKs
+        (orders->customers, order_items->orders, order_items->products,
+        employees->departments, shipments->orders) are valid join paths.

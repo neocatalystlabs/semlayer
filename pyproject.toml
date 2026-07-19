@@ -1,0 +1,91 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "semlayer"
+version = "0.1.0.dev0"
+description = "Open semantic layer format and inference engine for data warehouses"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.10"
+dependencies = [
+    "pyyaml>=6.0",
+    "jsonschema>=4.20",
+    "duckdb>=1.5",
+    "anthropic>=0.40",
+    "mcp>=1.0",
+]
+
+[project.optional-dependencies]
+warehouses = [
+    "snowflake-connector-python>=3.12",
+    "google-cloud-bigquery>=3.25",
+]
+dev = [
+    "pytest>=8.0",
+    "python-dotenv>=1.0",
+    "ruff>=0.15",
+    "mypy>=2.0",
+    "pip-audit>=2.10",
+]
+
+[project.scripts]
+semlayer = "semlayer.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src"]
+
+[tool.ruff.lint]
+select = [
+    "E", "F", "W",      # pycodestyle/pyflakes
+    "I",                # isort
+    "UP",               # pyupgrade
+    "B",                # bugbear
+    "C90",              # mccabe complexity
+    "PLR",              # pylint refactor (complexity/args/statements)
+    "RUF",              # ruff-native
+    "D",                # pydocstyle (public API why-docs)
+    "T20",              # no stray print in library code
+]
+ignore = [
+    "D203", "D213",     # docstring style conflicts (google convention)
+    "D107", "D105",     # init/magic docstrings
+    "PLR2004",          # magic-value comparisons (thresholds are documented constants)
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pylint]
+max-statements = 60
+max-args = 7
+max-branches = 14
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D", "PLR", "T20", "E501"]
+"fixtures/*" = ["D", "PLR", "T20", "E501", "C901"]
+"src/semlayer/cli.py" = ["T20"]          # the CLI prints by design
+"src/semlayer/benchmark.py" = ["T20"]
+# E501 inside a FROZEN prompt string (cassette-key bytes); cannot rewrap
+"src/semlayer/describe/run.py" = ["E501"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.mypy]
+python_version = "3.10"
+files = ["src"]
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+check_untyped_defs = true

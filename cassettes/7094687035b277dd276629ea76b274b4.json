@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"cr_order_number\",\n    \"semantic_type\": \"identifier\",\n    \"entity_role\": \"foreign_key\",\n    \"confidence\": 0.85,\n    \"enum_decodes\": null,\n    \"rationale\": \"Order reference; non-unique, links to orders table\"\n  },\n  {\n    \"column\": \"cr_return_tax\",\n    \"semantic_type\": \"monetary_value\",\n    \"entity_role\": \"measure\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": null,\n    \"rationale\": \"Tax amount on returned items; decimal currency format\"\n  },\n  {\n    \"column\": \"cr_refunded_cash\",\n    \"semantic_type\": \"monetary_value\",\n    \"entity_role\": \"measure\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": null,\n    \"rationale\": \"Cash refund amount; decimal currency format\"\n  },\n  {\n    \"column\": \"cr_store_credit\",\n    \"semantic_type\": \"monetary_value\",\n    \"entity_role\": \"measure\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": null,\n    \"rationale\": \"Store credit issued; decimal currency format\"\n  },\n  {\n    \"column\": \"cr_net_loss\",\n    \"semantic_type\": \"monetary_value\",\n    \"entity_role\": \"measure\",\n    \"confidence\": 0.90,\n    \"enum_decodes\": null,\n    \"rationale\": \"Net loss from return; calculated monetary measure\"\n  }\n]\n```",
+ "usage": {
+  "in": 1114,
+  "out": 395
+ }
+}

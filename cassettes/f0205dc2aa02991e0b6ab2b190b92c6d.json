@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"tbl_nm\",\n    \"semantic_type\": \"code\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": {\n      \"ord_hdr\": \"order header table\",\n      \"web_evt\": \"web event table\",\n      \"ord_ln\": \"order line table\",\n      \"cust_mstr\": \"customer master table\"\n    },\n    \"rationale\": \"Table name reference; low cardinality coded values identifying source tables\"\n  },\n  {\n    \"column\": \"chk_nm\",\n    \"semantic_type\": \"enum\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.98,\n    \"enum_decodes\": {\n      \"not_null_check\": \"validates non-null constraint\",\n      \"row_count_check\": \"validates row count threshold\",\n      \"range_check\": \"validates value range constraint\"\n    },\n    \"rationale\": \"Data quality check type; fixed set of check categories\"\n  }\n]\n```",
+ "usage": {
+  "in": 645,
+  "out": 263
+ }
+}

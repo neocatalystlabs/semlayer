@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"rating\",\n    \"semantic_type\": \"enum\",\n    \"entity_role\": \"measure\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": {\n      \"1\": \"1 star\",\n      \"2\": \"2 stars\",\n      \"3\": \"3 stars\",\n      \"4\": \"4 stars\",\n      \"5\": \"5 stars\"\n    },\n    \"rationale\": \"Integer 1-5 range with 5 distinct values; standard review rating scale.\"\n  }\n]\n```",
+ "usage": {
+  "in": 470,
+  "out": 143
+ }
+}

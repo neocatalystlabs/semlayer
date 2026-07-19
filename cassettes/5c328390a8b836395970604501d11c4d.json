@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "59c0b72cdf42",
+ "response": "{\"action\": \"sql\", \"sql\": \"SELECT date_trunc('month', ord_dt) AS calendar_month, SUM(tot_amt) AS total_order_revenue FROM ord_hdr WHERE sts_cd <> 'X' GROUP BY 1 ORDER BY 1\", \"reason\": null}",
+ "usage": {
+  "in": 5199,
+  "out": 150
+ }
+}

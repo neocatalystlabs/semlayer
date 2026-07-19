@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "59c0b72cdf42",
+ "response": "{\"action\": \"refuse\", \"sql\": null, \"reason\": \"Legacy tables lack defined status/revenue filters; ambiguous which records count as valid revenue.\"}",
+ "usage": {
+  "in": 3039,
+  "out": 650
+ }
+}

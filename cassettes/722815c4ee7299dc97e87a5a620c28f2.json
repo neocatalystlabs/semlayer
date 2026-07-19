@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "26fea8ed3e9d",
+ "response": "```json\n{\n  \"table_description\": \"Daily snapshot of customer state including tier classification, account balance, and lifetime order count across 600 customers over 30 days.\",\n  \"ai_context\": \"Join on cust_id to customer dimension. Filter by snap_dt for point-in-time analysis. Each (cust_id, snap_dt) pair represents one customer's daily state.\",\n  \"table_type\": \"snapshot_scd2\",\n  \"columns\": [\n    {\n      \"name\": \"snap_dt\",\n      \"description\": \"Snapshot date; ranges 2025-01-01 to 2025-01-06, 30 distinct values\"\n    },\n    {\n      \"name\": \"cust_id\",\n      \"description\": \"Customer identifier; 600 distinct customers, foreign key to customer dimension\"\n    },\n    {\n      \"name\": \"cust_tier\",\n      \"description\": \"Customer tier classification: gold, silver, platinum, or bronze\"\n    },\n    {\n      \"name\": \"account_balance\",\n      \"description\": \"Customer account balance in currency; 2,408 distinct values\"\n    },\n    {\n      \"name\": \"lifetime_orders\",\n      \"description\": \"Cumulative order count for customer; ranges 24\u201350 orders\"\n    }\n  ]\n}\n```",
+ "usage": {
+  "in": 822,
+  "out": 317
+ }
+}

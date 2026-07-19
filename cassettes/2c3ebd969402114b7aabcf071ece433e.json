@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "59c0b72cdf42",
+ "response": "{\"action\": \"refuse\", \"sql\": null, \"reason\": \"No table links marketing campaigns to revenue/orders in provided context.\"}",
+ "usage": {
+  "in": 5317,
+  "out": 45
+ }
+}

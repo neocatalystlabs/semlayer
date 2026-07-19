@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "59c0b72cdf42",
+ "response": "{\"action\": \"sql\", \"sql\": \"SELECT SUM(on_hand_qty) AS total_on_hand_qty FROM inv_snpsht;\", \"reason\": \"\"}",
+ "usage": {
+  "in": 3037,
+  "out": 61
+ }
+}

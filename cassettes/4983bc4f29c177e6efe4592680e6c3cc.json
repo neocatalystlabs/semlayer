@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"attr_name\",\n    \"semantic_type\": \"enum\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": {\n      \"signup_date\": \"Account creation timestamp\",\n      \"num_purchases\": \"Count of purchases\",\n      \"plan_tier\": \"Service plan level\",\n      \"age\": \"Customer age\",\n      \"last_login_ts\": \"Most recent login timestamp\",\n      \"country_code\": \"Geographic country code\",\n      \"email_opt_in\": \"Email subscription flag\",\n      \"support_tickets_open\": \"Count of open support tickets\",\n      \"account_balance\": \"Monetary account balance\"\n    },\n    \"rationale\": \"Attribute name column with 20 distinct values representing entity properties\"\n  },\n  {\n    \"column\": \"attr_value\",\n    \"semantic_type\": \"free_text\",\n    \"entity_role\": \"measure\",\n    \"confidence\": 0.70,\n    \"enum_decodes\": null,\n    \"rationale\": \"High cardinality (6307) values storing heterogeneous data; type depends on attr_name\"\n  }\n]\n```",
+ "usage": {
+  "in": 608,
+  "out": 292
+ }
+}

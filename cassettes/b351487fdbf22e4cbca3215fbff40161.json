@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "59c0b72cdf42",
+ "response": "{\"action\": \"sql\", \"sql\": \"SELECT pmt_mthd_cd, SUM(tot_amt) AS total_completed_revenue FROM ord_hdr WHERE sts_cd = 'C' GROUP BY pmt_mthd_cd ORDER BY total_completed_revenue DESC\", \"reason\": null}",
+ "usage": {
+  "in": 4882,
+  "out": 113
+ }
+}

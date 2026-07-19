@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "59c0b72cdf42",
+ "response": "{\"action\": \"sql\", \"sql\": \"SELECT curr_cd, COUNT(*) AS ord_count FROM ord_hdr GROUP BY curr_cd ORDER BY ord_count DESC;\", \"reason\": null}",
+ "usage": {
+  "in": 12825,
+  "out": 79
+ }
+}

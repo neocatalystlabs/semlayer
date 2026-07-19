@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "59c0b72cdf42",
+ "response": "{\"action\": \"sql\", \"sql\": \"SELECT cm.seg_cd, SUM(oh.tot_amt) AS tot_revenue FROM ord_hdr oh JOIN cust_mstr cm ON oh.cust_id = cm.cust_id AND oh.ord_dt >= cm.eff_start_dt AND (cm.eff_end_dt IS NULL OR oh.ord_dt <= cm.eff_end_dt) WHERE oh.sts_cd <> 'CANCELLED' GROUP BY cm.seg_cd\", \"reason\": null}",
+ "usage": {
+  "in": 3043,
+  "out": 623
+ }
+}

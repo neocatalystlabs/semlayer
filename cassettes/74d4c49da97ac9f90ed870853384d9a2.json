@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "59c0b72cdf42",
+ "response": "```json\n{\n  \"action\": \"sql\",\n  \"sql\": \"SELECT pmt_mthd_dim.pmt_mthd_desc, SUM(ord_hdr.tot_amt) as total_revenue FROM ord_hdr JOIN pmt_mthd_dim ON ord_hdr.pmt_mthd_cd = pmt_mthd_dim.pmt_mthd_cd WHERE ord_hdr.sts_cd = 'COMPLETED' GROUP BY pmt_mthd_dim.pmt_mthd_desc ORDER BY total_revenue DESC\",\n  \"reason\": null\n}\n```",
+ "usage": {
+  "in": 1685,
+  "out": 154
+ }
+}

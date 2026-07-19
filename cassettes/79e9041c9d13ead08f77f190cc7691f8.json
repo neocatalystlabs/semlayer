@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"p_response_target\",\n    \"semantic_type\": \"quantity\",\n    \"entity_role\": \"measure\",\n    \"confidence\": 0.6,\n    \"enum_decodes\": null,\n    \"rationale\": \"Numeric target metric for promotion response; constant value suggests aggregated measure.\"\n  },\n  {\n    \"column\": \"p_promo_name\",\n    \"semantic_type\": \"name\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.85,\n    \"enum_decodes\": null,\n    \"rationale\": \"Descriptive promotion name; low cardinality dimension with meaningful text values.\"\n  },\n  {\n    \"column\": \"p_purpose\",\n    \"semantic_type\": \"enum\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.5,\n    \"enum_decodes\": {\n      \"Unknown\": \"Purpose not specified or unknown\"\n    },\n    \"rationale\": \"Single constant value 'Unknown' suggests coded categorical field; likely enum with missing data.\"\n  }\n]\n```",
+ "usage": {
+  "in": 812,
+  "out": 268
+ }
+}

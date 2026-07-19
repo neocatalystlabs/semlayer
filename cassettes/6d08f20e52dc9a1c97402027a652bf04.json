@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"ca_street_number\",\n    \"semantic_type\": \"code\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.85,\n    \"enum_decodes\": null,\n    \"rationale\": \"Street address number component; numeric but categorical in context\"\n  },\n  {\n    \"column\": \"ca_suite_number\",\n    \"semantic_type\": \"code\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.9,\n    \"enum_decodes\": null,\n    \"rationale\": \"Suite/unit identifier within building; structured alphanumeric codes\"\n  },\n  {\n    \"column\": \"ca_county\",\n    \"semantic_type\": \"geo_region\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": null,\n    \"rationale\": \"County names; geographic region subdivision within US states\"\n  },\n  {\n    \"column\": \"ca_gmt_offset\",\n    \"semantic_type\": \"rate\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.88,\n    \"enum_decodes\": null,\n    \"rationale\": \"Time zone offset in hours; numeric rate relative to GMT/UTC\"\n  }\n]\n```",
+ "usage": {
+  "in": 999,
+  "out": 321
+ }
+}

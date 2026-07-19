@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"priority_cd\",\n    \"semantic_type\": \"enum\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": {\n      \"1\": \"Critical\",\n      \"2\": \"High\",\n      \"3\": \"Medium\",\n      \"4\": \"Low\",\n      \"5\": \"Minimal\"\n    },\n    \"rationale\": \"Integer code with 5 distinct values (1-5), typical priority scale pattern\"\n  }\n]\n```",
+ "usage": {
+  "in": 474,
+  "out": 135
+ }
+}

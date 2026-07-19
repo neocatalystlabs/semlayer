@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "59c0b72cdf42",
+ "response": "```json\n{\n  \"action\": \"sql\",\n  \"sql\": \"SELECT s.cntry_cd, SUM(oh.tot_amt) AS total_order_revenue FROM ord_hdr oh JOIN store_dim s ON oh.store_id = s.store_id WHERE oh.sts_cd <> 'X' GROUP BY s.cntry_cd ORDER BY s.cntry_cd\",\n  \"reason\": null\n}\n```",
+ "usage": {
+  "in": 18136,
+  "out": 110
+ }
+}
