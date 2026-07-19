@@ -220,3 +220,29 @@ def test_doc_cracks_statistics_proof_column():
     assert any(p["signal"] == "llm" for p in ym["provenance"])
     # describe stage consulted the docs and said so
     assert any(p["signal"] == "docs" for p in tables["mth_cust_agg"].get("provenance", []))
+
+
+def test_doc_promotion_corrects_confident_heuristic():
+    """sts_cd_dim.sts_desc types as status_code at 0.85 from the name rule —
+    above the escalation threshold, so the LLM never sees it. A doc naming
+    the column must promote it into escalation, and the correction must land
+    WITH a conflict recorded (doc-prompted overrides are never silent)."""
+    bundle = load_context([str(CTX_DIR / "messy_mart_wiki.md")])
+    llm = AnthropicProvider()
+    con = _messy_con()
+    try:
+        doc = infer(DuckDBSource(con), llm=llm, context=bundle)
+    except CassetteMiss as e:
+        pytest.skip(str(e))
+    finally:
+        con.close()
+    tables = {t["name"]: t for t in doc["semantic_layer"]["tables"]}
+    sd = next(c for c in tables["sts_cd_dim"]["columns"] if c["name"] == "sts_desc")
+    # mechanism assertions: promoted, corrected off the wrong answer, and the
+    # override is review-visible. (Exact label — name vs enum — is the
+    # LLM's claim; the conflict entry is what routes it to a human.)
+    assert sd["semantic_type"] != "status_code"
+    assert any(p["signal"] == "docs" and "re-escalated" in p["detail"]
+               for p in sd["provenance"])
+    assert any("doc-prompted re-escalation" in cf["detail"]
+               for cf in sd.get("conflicts", []))

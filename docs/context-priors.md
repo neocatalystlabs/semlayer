@@ -43,6 +43,16 @@ Measured example from our test suite: `yr_mth` holding `YYYYMM` integers
 types as `unknown` from statistics alone; one wiki paragraph explaining the
 format flips it to `date` — with the doc recorded in provenance.
 
+**Docs can also flag what statistics got confidently wrong.** Normally only
+low-confidence columns reach the LLM. A column your docs explicitly name
+(column + table in the same doc section) is *promoted* into that escalation
+regardless of confidence — so a doc saying "`sts_desc` is the human-readable
+label, not a code" gets a second look even though the heuristic was 85%
+sure. If the doc-informed answer differs from the decided one, the change is
+applied **with a conflict recorded** ("heuristic said status_code, llm+docs
+said …") so it lands in your review queue — a doc-prompted override is never
+silent. Requires LLM mode (`--no-llm` runs can't re-type columns from docs).
+
 ## Query logs: the summarize-to-doc recipe
 
 We don't ingest raw query logs in the beta (native query-log mining is

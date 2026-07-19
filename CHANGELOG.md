@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- **Reconciler: per-group verification.** Aggregate reconciliation now
+  verifies every mapped grouping per group (key-aligned for same-name group
+  columns; multiset for date-key↔date-column pairs) at ≥95% coverage within
+  0.2% relative tolerance — grand totals alone are never accepted. Evidence
+  rides in provenance ("40/40 store_id groups; 1095/1095 date groups").
+- **compile_metric: multi-hop joins.** Snowflaked dimensions are now
+  group-by-able across up to 3 N:1 hops; equal-length join-path ties
+  (role-playing dims, diamonds) refuse constructively as ambiguous.
+- **`--context` doc-promotion.** Columns explicitly named in your docs get a
+  doc-prompted second look even when the heuristic was confident; corrections
+  always land with a conflict recorded for review.
+
 ## v0.3.0-beta.1 (2026-07-19)
 
 - **`compile_metric`** (new MCP tool + `semlayer.compile`): compiles any

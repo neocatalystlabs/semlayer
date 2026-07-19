@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"rep_nm\",\n    \"semantic_type\": \"code\",\n    \"entity_role\": \"unique_key\",\n    \"confidence\": 0.85,\n    \"enum_decodes\": null,\n    \"rationale\": \"Unique identifier with 'rep' prefix + numeric code pattern; functions as natural key despite VARCHAR type.\"\n  }\n]\n```\n\n**Rationale notes:**\n- **semantic_type: code** \u2014 The values follow a consistent pattern (`rep REP00001`\u2026`rep REP00080`) that encodes a sales representative identifier, not a human-readable name.\n- **entity_role: unique_key** \u2014 `unique: true` and `n_distinct: 80` confirm one-to-one mapping; in a `sls_rep_dim` dimension table, this is the natural key for representatives.\n- **confidence: 0.85** \u2014 High confidence due to clear pattern and uniqueness, but the column name `rep_nm` (suggesting \"name\") conflicts with the actual coded format; observed data wins.\n- **enum_decodes: null** \u2014 The pattern is systematic (sequential numeric codes), not a discrete enumeration of meaningful labels.",
+ "usage": {
+  "in": 687,
+  "out": 281
+ }
+}

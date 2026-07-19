@@ -54,43 +54,100 @@ def _escalate(llm, ts: TableStats, doc: dict, no_sample_values: bool, context=No
     from semlayer.profile.llm_typing import escalate_table
 
     low = [c for c in doc["columns"] if c["confidence"] < ESCALATE_BELOW]
-    if not low:
+    promoted = _doc_promoted(context, ts.table.name, doc["columns"], low)
+    if not low and not promoted:
         return
     excerpts = None
     if context is not None and context.chunks:
         from semlayer.context import relevant_excerpts
         excerpts = relevant_excerpts(
             context.chunks, ts.table.name, [c.name for c in ts.table.columns]) or None
-    stats = [ts.columns[c["name"]] for c in low]
+    batch = low + promoted
+    stats = [ts.columns[c["name"]] for c in batch]
     verdicts = escalate_table(
         llm, ts.table.name, [c.name for c in ts.table.columns], stats,
         no_sample_egress=no_sample_values, doc_excerpts=excerpts,
     )
-    for c in low:
+    promoted_names = {c["name"] for c in promoted}
+    for c in batch:
         v = verdicts.get(c["name"])
         if not v:
             continue
-        prior_signal = c["provenance"][0]["signal"] if c["provenance"] else "statistic"
-        if v["semantic_type"] != c["semantic_type"] and prior_signal == "naming":
-            # LLM overriding a name-rule answer: record the disagreement so
-            # reviewers see both readings (conflicts envelope, SPEC.md)
-            c.setdefault("conflicts", []).append({
-                "between": ["naming", "llm"],
-                "detail": f"naming said {c['semantic_type']}, llm said {v['semantic_type']}",
-            })
-        c["semantic_type"] = v["semantic_type"]
-        c["entity_role"] = v["entity_role"]
-        c["confidence"] = round(v["confidence"], 2)
-        c["provenance"].append({"signal": "llm", "detail": v["rationale"]})
-        if v["semantic_type"].startswith("pii_"):
-            c["pii"] = True
-        if v["entity_role"] == "measure" and "aggregations" not in c:
-            c["aggregations"] = {"allowed": ["sum", "avg", "min", "max", "count"], "default": "sum"}
-        if v.get("enum_decodes"):
-            c["enum_values"] = [
-                {"value": k, "meaning": m, "decode_source": "llm_guess"}
-                for k, m in v["enum_decodes"].items()
-            ]
+        if c["name"] in promoted_names:
+            _apply_promoted_verdict(c, v)
+        else:
+            _apply_verdict(c, v)
+
+
+def _doc_promoted(context, table_name: str, cols: list[dict], low: list[dict]) -> list[dict]:
+    """Columns whose confident heuristic answer gets a doc-prompted second look.
+
+    Docs can flag what statistics can't. Requires column AND table tokens in
+    the same chunk — the same anti-cross-talk scoping as decode claims.
+    """
+    if context is None or not context.chunks:
+        return []
+    low_names = {c["name"] for c in low}
+    tn = table_name.lower()
+    out = []
+    for c in cols:
+        if c["name"] in low_names:
+            continue
+        if any(c["name"].lower() in ch.tokens and tn in ch.tokens
+               for ch in context.chunks):
+            out.append(c)
+    return out
+
+
+def _apply_verdict(c: dict, v: dict) -> None:
+    prior_signal = c["provenance"][0]["signal"] if c["provenance"] else "statistic"
+    if v["semantic_type"] != c["semantic_type"] and prior_signal == "naming":
+        # LLM overriding a name-rule answer: record the disagreement so
+        # reviewers see both readings (conflicts envelope, SPEC.md)
+        c.setdefault("conflicts", []).append({
+            "between": ["naming", "llm"],
+            "detail": f"naming said {c['semantic_type']}, llm said {v['semantic_type']}",
+        })
+    _apply_core(c, v)
+
+
+def _apply_core(c: dict, v: dict) -> None:
+    c["semantic_type"] = v["semantic_type"]
+    c["entity_role"] = v["entity_role"]
+    c["confidence"] = round(v["confidence"], 2)
+    c["provenance"].append({"signal": "llm", "detail": v["rationale"]})
+    if v["semantic_type"].startswith("pii_"):
+        c["pii"] = True
+    if v["entity_role"] == "measure" and "aggregations" not in c:
+        c["aggregations"] = {"allowed": ["sum", "avg", "min", "max", "count"], "default": "sum"}
+    if v.get("enum_decodes"):
+        c["enum_values"] = [
+            {"value": k, "meaning": m, "decode_source": "llm_guess"}
+            for k, m in v["enum_decodes"].items()
+        ]
+
+
+def _apply_promoted_verdict(c: dict, v: dict) -> None:
+    """Apply a verdict to a doc-promoted column (heuristic was CONFIDENT).
+
+    A correction always lands in the conflicts envelope for review — a
+    doc-prompted override of a decided answer is never silent. Agreement
+    corroborates without confidence churn.
+    """
+    if v["semantic_type"] == c["semantic_type"]:
+        c["provenance"].append(
+            {"signal": "docs", "detail": "doc-prompted re-check corroborated the heuristic"})
+        return
+    prior_signal = c["provenance"][0]["signal"] if c["provenance"] else "statistic"
+    prior = f"{c['semantic_type']} (conf {c['confidence']})"
+    c.setdefault("conflicts", []).append({
+        "between": [prior_signal, "llm"],
+        "detail": f"doc-prompted re-escalation: heuristic said {prior}, "
+                  f"llm+docs said {v['semantic_type']}",
+    })
+    c["provenance"].append(
+        {"signal": "docs", "detail": "re-escalated: column named in context docs"})
+    _apply_core(c, v)
 
 
 def _table_doc(ts: TableStats, no_sample_values: bool) -> dict:

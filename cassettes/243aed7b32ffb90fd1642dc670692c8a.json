@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"store_id\",\n    \"semantic_type\": \"code\",\n    \"entity_role\": \"foreign_key\",\n    \"confidence\": 0.92,\n    \"enum_decodes\": null,\n    \"rationale\": \"Store identifier with ST prefix; joins to store_dim. Not a categorical enum.\"\n  },\n  {\n    \"column\": \"curr_cd\",\n    \"semantic_type\": \"code\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": {\n      \"USD\": \"United States Dollar\",\n      \"EUR\": \"Euro\",\n      \"GBP\": \"British Pound\",\n      \"CAD\": \"Canadian Dollar\"\n    },\n    \"rationale\": \"ISO 4217 currency codes; 4 distinct values, no nulls.\"\n  },\n  {\n    \"column\": \"src_sys_id\",\n    \"semantic_type\": \"code\",\n    \"entity_role\": \"metadata\",\n    \"confidence\": 0.88,\n    \"enum_decodes\": {\n      \"CRM1\": \"CRM system 1\",\n      \"CRM2\": \"CRM system 2\",\n      \"LEGACY\": \"Legacy system\"\n    },\n    \"rationale\": \"Source system identifier; 3 distinct values. Metadata, not business dimension.\"\n  },\n  {\n    \"column\": \"sts_cd\",\n    \"semantic_type\": \"status_code\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.96,\n    \"enum_decodes\": {\n      \"P\": \"Pending\",\n      \"C\": \"Completed\",\n      \"X\": \"Refunded\"\n    },\n    \"rationale\": \"Order status; documented codes P/C/X with business meaning. Finance excludes X.\"\n  }\n]\n```",
+ "usage": {
+  "in": 1139,
+  "out": 453
+ }
+}

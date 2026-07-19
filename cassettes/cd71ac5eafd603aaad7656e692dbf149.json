@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "26fea8ed3e9d",
+ "response": "```json\n{\n  \"table_description\": \"Inventory snapshot capturing on-hand and on-order quantities by store, product, and date across 2,500 records spanning 984 distinct dates.\",\n  \"ai_context\": \"Join to date_dim, store_dim, prod_ref via date_key, store_id, prod_id. Grain: one row per store-product-date combination. No SCD2 markers detected; treat as point-in-time snapshot.\",\n  \"table_type\": \"snapshot_scd2\",\n  \"columns\": [\n    {\n      \"name\": \"snpsht_id\",\n      \"description\": \"Unique snapshot record identifier; primary key.\"\n    },\n    {\n      \"name\": \"date_key\",\n      \"description\": \"Foreign key to date_dim; snapshot date in YYYYMMDD format (2023\u20132024 range).\"\n    },\n    {\n      \"name\": \"store_id\",\n      \"description\": \"Foreign key to store_dim; store identifier (e.g., ST0006). 40 distinct stores across 5 countries.\"\n    },\n    {\n      \"name\": \"prod_id\",\n      \"description\": \"Foreign key to prod_ref; product identifier (e.g., P000039). 399 distinct products.\"\n    },\n    {\n      \"name\": \"on_hand_qty\",\n      \"description\": \"Integer quantity of inventory physically on hand at store on snapshot date.\"\n    },\n    {\n      \"name\": \"on_order_qty\",\n      \"description\": \"Integer quantity of inventory on order (in transit or pending receipt) as of snapshot date.\"\n    }\n  ]\n}\n```\n\n**Note:** Heuristic labeled this `snapshot_scd2`, but evidence shows no version/effective-date/end-date columns typical of SCD2. Treat as a **periodic snapshot** (one row per store-product-date grain) rather than slowly-changing dimension. Reference doc excerpt appears mismatched (mentions daily sales aggregate, not inventory); observed statistics take precedence.",
+ "usage": {
+  "in": 1271,
+  "out": 481
+ }
+}

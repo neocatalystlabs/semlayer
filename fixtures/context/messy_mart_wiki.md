@@ -11,7 +11,15 @@ job. `yr_mth` is the year-month period key in `YYYYMM` format (for example
 ## Order status codes
 
 `ord_hdr.sts_cd` values: P = Pending, C = Completed, X = Refunded.
-Finance reporting excludes X orders from revenue.
+Finance reporting excludes X orders from revenue. The decode dimension
+`sts_cd_dim` carries `sts_desc`, the human-readable status name for each
+code — a label, not a code itself.
+
+## Daily sales aggregate
+
+`dly_sls_agg` is refreshed nightly after the warehouse load completes.
+`store_id` is the store identifier, joining to `store_dim` — it is a key,
+not a categorical code.
 
 ## SKU cross-reference
 

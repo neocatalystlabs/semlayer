@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"file_nm\",\n    \"semantic_type\": \"name\",\n    \"entity_role\": \"unique_key\",\n    \"confidence\": 0.92,\n    \"enum_decodes\": null,\n    \"rationale\": \"Unique file identifier with structured naming pattern (file_NNNN.csv); serves as natural key for load records.\"\n  }\n]\n```",
+ "usage": {
+  "in": 739,
+  "out": 102
+ }
+}

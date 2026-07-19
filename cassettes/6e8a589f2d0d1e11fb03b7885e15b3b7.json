@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "26fea8ed3e9d",
+ "response": "```json\n{\n  \"table_description\": \"Operational log of file load events with load identifiers, source system, load dates, row counts, and success/failure status.\",\n  \"ai_context\": \"Join on src_sys_id to source system dimension. Filter by sts_cd for SUCCESS/FAILED analysis. Each load_id is unique; use load_dt for time-range queries.\",\n  \"table_type\": \"operational\",\n  \"columns\": [\n    {\n      \"name\": \"load_id\",\n      \"description\": \"Unique identifier for each file load event.\"\n    },\n    {\n      \"name\": \"file_nm\",\n      \"description\": \"Name of the loaded file; unique per load event.\"\n    },\n    {\n      \"name\": \"src_sys_id\",\n      \"description\": \"Source system identifier (CRM1, CRM2, LEGACY); foreign key to source system dimension.\"\n    },\n    {\n      \"name\": \"load_dt\",\n      \"description\": \"Date when the file was loaded into the warehouse.\"\n    },\n    {\n      \"name\": \"row_cnt\",\n      \"description\": \"Number of rows processed in the file load.\"\n    },\n    {\n      \"name\": \"sts_cd\",\n      \"description\": \"Load status code: SUCCESS or FAILED.\"\n    }\n  ]\n}\n```\n\n**Rationale:**  \nThis is an **operational** table, not SCD2. Evidence: 120 rows with 120 distinct load_ids and file names (no versioning/effective dating), single load_dt per load, and no valid_from/valid_to columns. The reference doc describes order statuses (ord_hdr.sts_cd: P/C/X), which does not match this table's sts_cd values (SUCCESS/FAILED). The observed sample values override the inapplicable reference excerpt.",
+ "usage": {
+  "in": 1152,
+  "out": 439
+ }
+}

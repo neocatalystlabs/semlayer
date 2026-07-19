@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"store_id\",\n    \"semantic_type\": \"identifier\",\n    \"entity_role\": \"foreign_key\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": null,\n    \"rationale\": \"Store identifier joining to store_dim; structured code (ST####) with 40 distinct values, no nulls.\"\n  }\n]\n```",
+ "usage": {
+  "in": 675,
+  "out": 101
+ }
+}

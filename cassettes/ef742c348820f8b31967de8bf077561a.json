@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "26fea8ed3e9d",
+ "response": "```json\n{\n  \"table_description\": \"Dimension table containing currency codes, names, and USD conversion rates for four major currencies: CAD, EUR, GBP, USD.\",\n  \"ai_context\": \"Join on curr_cd to ord_hdr for multi-currency order analysis. to_usd_rate enables currency normalization. Static lookup; no time-variance.\",\n  \"table_type\": \"dimension\",\n  \"columns\": [\n    {\n      \"name\": \"curr_cd\",\n      \"description\": \"Currency code (primary key): CAD, EUR, GBP, USD\"\n    },\n    {\n      \"name\": \"curr_nm\",\n      \"description\": \"Full currency name: Canadian Dollar, Euro, British Pound, US Dollar\"\n    },\n    {\n      \"name\": \"to_usd_rate\",\n      \"description\": \"Exchange rate to USD (e.g., 1.27 CAD = 1 USD)\"\n    }\n  ]\n}\n```",
+ "usage": {
+  "in": 728,
+  "out": 235
+ }
+}
