@@ -16,7 +16,7 @@ semlayer drift layer.yaml snowflake  # catch schema changes (cron- and CI-friend
 
 ## Why
 
-AI agents fail on real warehouses: SOTA models score **21.3%** on enterprise schemas (Spider 2.0) vs ~91% on clean academic ones. The fix is a semantic layer — but every existing tool (dbt, LookML, Cube, Snowflake semantic views) makes humans write it by hand, and it goes stale the day someone runs an `ALTER TABLE`.
+AI agents fail on real warehouses: frontier models solved just **21.3%** of Spider 2.0's enterprise-warehouse tasks at publication (vs ~91% on the earlier academic Spider 1.0) — and even today's best agentic scaffolds only reach ~30%. The fix is a semantic layer — but every existing tool (dbt, LookML, Cube, Snowflake semantic views) makes humans write it by hand, and it goes stale the day someone runs an `ALTER TABLE`.
 
 On our messy-warehouse benchmark (cryptic names, zero declared constraints, hidden business rules), an agent using the inferred layer answers **53% of business questions correctly vs 34% from the raw schema (+54% relative)** — and the errors it fixes are the *silent* kind: raw-schema "total revenue" happily sums cancelled orders. [Full benchmark, including where we DON'T help →](docs/benchmark.md)
 
