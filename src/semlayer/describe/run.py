@@ -32,8 +32,11 @@ amt=amount, cd=code). Describe every column you are given. State enum
 meanings only when decodes are provided or values make them obvious."""
 
 
-def _evidence(t: dict, stats, neighbors: dict[str, str], no_samples: bool) -> str:
+def _evidence(t: dict, stats, neighbors: dict[str, str], no_samples: bool,
+              context=None) -> str:
     ts = stats[t["name"]]
+    from semlayer.context import dictionary_for_table, relevant_excerpts
+    dict_entries = dictionary_for_table(context.dictionary, t["name"]) if context else {}
     cols = []
     for c in t["columns"]:
         cs = ts.columns[c["name"]]
@@ -47,6 +50,9 @@ def _evidence(t: dict, stats, neighbors: dict[str, str], no_samples: bool) -> st
             d["enum_decodes"] = {e["value"]: e["meaning"] for e in c["enum_values"]}
         if not no_samples and cs.top_values:
             d["sample_values"] = [v for v, _ in cs.top_values[:6]]
+        entry = dict_entries.get(c["name"].lower())
+        if entry is not None:
+            d["doc_description"] = entry.description[:200]
         cols.append(d)
     ev = {
         "table": t["name"],
@@ -57,12 +63,25 @@ def _evidence(t: dict, stats, neighbors: dict[str, str], no_samples: bool) -> st
     }
     if neighbors:
         ev["joined_neighbor_tables"] = neighbors
+    if context and context.chunks:
+        excerpts = relevant_excerpts(context.chunks, t["name"],
+                                     [c["name"] for c in t["columns"]])
+        if excerpts:
+            ev["reference_docs"] = {
+                "note": ("customer-provided documentation; treat as PRIOR, not "
+                         "truth — observed statistics win on conflict"),
+                "excerpts": excerpts,
+            }
     return json.dumps(ev, indent=1)
 
 
 def describe_source(doc: dict, stats: dict, llm, no_samples: bool = False,
-                    passes: int = 2) -> dict:
-    """Describe every table via iterative context propagation (see module docstring)."""
+                    passes: int = 2, context=None) -> dict:
+    """Describe every table via iterative context propagation (see module docstring).
+
+    `context` (v0.2): a semlayer.context.ContextBundle of knowledge-doc priors;
+    relevant excerpts and dictionary descriptions ride into the evidence.
+    """
     tables = doc["semantic_layer"]["tables"]
     rels = doc["semantic_layer"].get("relationships", [])
     neigh_map: dict[str, set[str]] = {}
@@ -81,23 +100,31 @@ def describe_source(doc: dict, stats: dict, llm, no_samples: bool = False,
                              if descriptions.get(n)}
                 if not neighbors and t.get("description"):
                     continue  # isolated table: pass 1 result is final
-            raw = llm.complete(SYSTEM, _evidence(t, stats, neighbors, no_samples))
+            ev = _evidence(t, stats, neighbors, no_samples, context=context)
+            raw = llm.complete(SYSTEM, ev)
             parsed = _parse(raw)
             if not parsed:
                 continue
-            t["description"] = parsed.get("table_description", t.get("description", ""))
-            if parsed.get("ai_context"):
-                t["ai_context"] = parsed["ai_context"]
+            if pass_n == 0 and '"reference_docs"' in ev:
+                t.setdefault("provenance", []).append(
+                    {"signal": "docs", "detail": "context docs in describe evidence"})
+            _apply_parsed(t, parsed, pass_n)
             descriptions[t["name"]] = t["description"]
-            _apply_table_type(t, parsed.get("table_type"))
-            by_name = {c["name"]: c for c in t["columns"]}
-            for cd in parsed.get("columns", []):
-                c = by_name.get(cd.get("name"))
-                if c is not None and cd.get("description"):
-                    c["description"] = cd["description"][:200]
-            prov = {"signal": "llm", "detail": f"describe pass {pass_n + 1}"}
-            t.setdefault("provenance", []).append(prov)
     return doc
+
+
+def _apply_parsed(t: dict, parsed: dict, pass_n: int) -> None:
+    t["description"] = parsed.get("table_description", t.get("description", ""))
+    if parsed.get("ai_context"):
+        t["ai_context"] = parsed["ai_context"]
+    _apply_table_type(t, parsed.get("table_type"))
+    by_name = {c["name"]: c for c in t["columns"]}
+    for cd in parsed.get("columns", []):
+        c = by_name.get(cd.get("name"))
+        if c is not None and cd.get("description"):
+            c["description"] = cd["description"][:200]
+    prov = {"signal": "llm", "detail": f"describe pass {pass_n + 1}"}
+    t.setdefault("provenance", []).append(prov)
 
 
 def _apply_table_type(t: dict, llm_type: str | None) -> None:

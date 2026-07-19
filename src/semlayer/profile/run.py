@@ -23,8 +23,12 @@ def profile_source(source, no_sample_values: bool = False, llm=None) -> dict:
     return doc
 
 
-def profile_with_stats(source, no_sample_values: bool = False, llm=None):
-    """Returns (document, stats_by_table) — Link consumes both."""
+def profile_with_stats(source, no_sample_values: bool = False, llm=None, context=None):
+    """Returns (document, stats_by_table) — Link consumes both.
+
+    `context` (v0.2): a semlayer.context.ContextBundle; relevant prose excerpts
+    join the typing-escalation evidence as priors.
+    """
     tables_meta = source.list_tables()
     out_tables = []
     stats_by_table: dict = {}
@@ -33,12 +37,12 @@ def profile_with_stats(source, no_sample_values: bool = False, llm=None):
         stats_by_table[t.name] = ts
         doc = _table_doc(ts, no_sample_values)
         if llm is not None:
-            _escalate(llm, ts, doc, no_sample_values)
+            _escalate(llm, ts, doc, no_sample_values, context=context)
         out_tables.append(doc)
     model = "none/heuristic" if llm is None else f"{llm.model}/escalation"
     return {
         "semantic_layer": {
-            "spec_version": "0.1.0",
+            "spec_version": "0.1.1",
             "name": "profiled",
             "generated_by": {"engine": ENGINE_VERSION, "model": model},
             "tables": out_tables,
@@ -46,16 +50,21 @@ def profile_with_stats(source, no_sample_values: bool = False, llm=None):
     }, stats_by_table
 
 
-def _escalate(llm, ts: TableStats, doc: dict, no_sample_values: bool) -> None:
+def _escalate(llm, ts: TableStats, doc: dict, no_sample_values: bool, context=None) -> None:
     from semlayer.profile.llm_typing import escalate_table
 
     low = [c for c in doc["columns"] if c["confidence"] < ESCALATE_BELOW]
     if not low:
         return
+    excerpts = None
+    if context is not None and context.chunks:
+        from semlayer.context import relevant_excerpts
+        excerpts = relevant_excerpts(
+            context.chunks, ts.table.name, [c.name for c in ts.table.columns]) or None
     stats = [ts.columns[c["name"]] for c in low]
     verdicts = escalate_table(
         llm, ts.table.name, [c.name for c in ts.table.columns], stats,
-        no_sample_egress=no_sample_values,
+        no_sample_egress=no_sample_values, doc_excerpts=excerpts,
     )
     for c in low:
         v = verdicts.get(c["name"])

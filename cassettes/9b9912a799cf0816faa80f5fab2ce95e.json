@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"yr_mth\",\n    \"semantic_type\": \"date\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": null,\n    \"rationale\": \"Year-month period key; documentation specifies YYYYMM format as date period, not quantity.\"\n  }\n]\n```\n\n**Note:** The observed top_values show `YYYY-MM` format (e.g. `2025-10`), which differs slightly from the documented `YYYYMM` format. Both are unambiguously date periods. Confidence is high despite this minor format discrepancy, as the semantic intent is clear and consistent with the 36 distinct values spanning Jan 2023\u2013Dec 2025.",
+ "usage": {
+  "in": 717,
+  "out": 188
+ }
+}

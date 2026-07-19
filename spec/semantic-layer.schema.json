@@ -44,7 +44,7 @@
       "additionalProperties": false,
       "properties": {
         "signal": {
-          "enum": ["statistic", "inclusion_dependency", "functional_dependency", "naming", "llm", "query_log", "catalog_prior", "etl_lineage", "view_ddl", "format_metadata", "human"]
+          "enum": ["statistic", "inclusion_dependency", "functional_dependency", "naming", "llm", "query_log", "catalog_prior", "etl_lineage", "view_ddl", "format_metadata", "docs", "human"]
         },
         "detail": {"type": "string"}
       }

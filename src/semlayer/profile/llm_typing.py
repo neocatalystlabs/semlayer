@@ -49,8 +49,13 @@ def _column_block(cs, table_name: str) -> dict:
 
 
 def escalate_table(provider, table_name: str, sibling_columns: list[str],
-                   escalated: list, no_sample_egress: bool = False) -> dict[str, dict]:
-    """escalated: list of ColumnStats needing LLM help. Returns {col_name: verdict}."""
+                   escalated: list, no_sample_egress: bool = False,
+                   doc_excerpts: list[dict] | None = None) -> dict[str, dict]:
+    """escalated: list of ColumnStats needing LLM help. Returns {col_name: verdict}.
+
+    doc_excerpts (v0.2 knowledge-doc priors) join the user content additively,
+    so no-context calls stay byte-identical to v0.1 and cassettes survive.
+    """
     if not escalated:
         return {}
     blocks = []
@@ -60,11 +65,18 @@ def escalate_table(provider, table_name: str, sibling_columns: list[str],
             b.pop("top_values", None)
             b.pop("range", None)
         blocks.append(b)
-    user = json.dumps({
+    payload: dict = {
         "table": table_name,
         "all_columns_in_table": sibling_columns,
         "classify_these": blocks,
-    }, indent=1)
+    }
+    if doc_excerpts:
+        payload["reference_docs"] = {
+            "note": ("customer-provided documentation; treat as PRIOR, not truth "
+                     "— observed statistics win on conflict"),
+            "excerpts": doc_excerpts,
+        }
+    user = json.dumps(payload, indent=1)
     raw = provider.complete(SYSTEM, user)
     return _parse(raw, {cs.name for cs in escalated})
 

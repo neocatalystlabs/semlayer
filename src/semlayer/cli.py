@@ -38,6 +38,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-llm", action="store_true", help="Deterministic dry-run (no LLM calls)")
     p.add_argument("--no-sample-egress", action="store_true",
                    help="Never include cell values in LLM prompts")
+    p.add_argument("--context", action="append", metavar="PATH",
+                   help="Knowledge docs as inference priors: files, dirs, or globs of "
+                        ".md/.txt/.rst/.html prose or .csv/.tsv data dictionaries "
+                        "(repeatable). Doc text IS sent to the LLM — don't pass secrets. "
+                        "Docs never override data: contradictions land in review.")
 
     p = sub.add_parser("review", help="Review inferred claims (terminal queue)")
     p.add_argument("doc", help="semantic layer YAML path")
@@ -117,8 +122,19 @@ def _cmd_infer(args: argparse.Namespace) -> int:
         from semlayer.llm.provider import AnthropicProvider
 
         llm = AnthropicProvider()
+    context = None
+    if args.context:
+        from semlayer.context import load_context
+
+        context = load_context(args.context)
+        print(f"context: {len(context.chunks)} doc sections, "
+              f"{len(context.dictionary)} dictionary rows")
     src = open_source_from_uri(args.source)
-    doc, report = infer_with_report(src, llm=llm, no_sample_egress=args.no_sample_egress)
+    doc, report = infer_with_report(src, llm=llm, no_sample_egress=args.no_sample_egress,
+                                    context=context)
+    if context:
+        report["context"] = {"chunks": len(context.chunks),
+                             "dictionary_rows": len(context.dictionary)}
     Path(args.out + ".report.json").write_text(json.dumps(report, indent=1))
     result = validate_document(doc)
     _save_doc(args.out, doc)

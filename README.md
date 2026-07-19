@@ -7,7 +7,8 @@ Point it at your warehouse. It profiles every column, discovers the foreign keys
 ```bash
 pip install -e ".[warehouses]"
 semlayer init snowflake            # generates the minimal-grant setup script
-semlayer infer snowflake -o layer.yaml
+semlayer infer snowflake -o layer.yaml \
+  --context ./docs/ --context ./etl-repo/CLAUDE.md   # optional: your wikis/dictionaries as priors
 semlayer review layer.yaml         # accept/reject what the engine inferred
 semlayer mcp layer.yaml            # serve it to Claude, Cursor, or any MCP client
 semlayer drift layer.yaml snowflake  # catch schema changes (cron- and CI-friendly)
@@ -29,6 +30,7 @@ On our messy-warehouse benchmark (cryptic names, zero declared constraints, hidd
 | **Business rules** | "these aggregate tables reconcile only when `sts_cd <> 'X'`" — found by hypothesis-testing, scoped to revenue metrics, never to counts |
 | **Metrics, routing, deprecation** | revenue/count metrics with contract-legal filters; "use `ord_hdr`, avoid `ord_hdr_legacy` (superseded)" |
 | **Descriptions** | every table + column, LLM-written from evidence via join-graph context propagation, judged 0.82–0.89 correct+useful by an independent model |
+| **Your docs as priors** | `--context` ingests data dictionaries, wiki exports, CLAUDE.md files — and *tells you where they're wrong*: doc-vs-data contradictions go to review, never silent override ([guide](docs/context-priors.md)) |
 
 Everything lands with `confidence`, `provenance` (which signals produced it), and `lifecycle` (`inferred → reviewed → certified`, plus `deprecated`/`orphaned`), governed by a [normative consumer contract](spec/SPEC.md) that makes silent misuse — summing across a fan-out, joining SCD2 at current-row, filtering on guessed decodes — *non-conforming*, not merely unwise.
 
@@ -43,7 +45,7 @@ Everything lands with `confidence`, `provenance` (which signals produced it), an
 ## Honest scope (v0.1 beta)
 
 - **Best on messy warehouses.** On clean, well-named schemas our benchmark shows raw DDL is already sufficient — we publish that negative result rather than hide it. If your warehouse is tidy TPC-DS, you may not need us.
-- Warehouses: **Snowflake, BigQuery, DuckDB**. Exporter: **dbt** (losses reported, never silent). LLM: Anthropic API (Bedrock/Vertex routing is next).
+- Warehouses: **Snowflake, BigQuery, DuckDB** (+ Iceberg on S3 via the [DuckDB bridge](docs/iceberg-bridge.md)). Exporter: **dbt** (losses reported, never silent). LLM: Anthropic API (Bedrock/Vertex routing is next).
 - Not included: hosted service, ontology enrichment (it failed our own ablation gate — [receipts](docs/ablation-m5.md)), LookML/RDF exporters.
 - The eval harness ships in this repo — fixtures, gold layers, competency questions, benchmark runner. **Run our numbers yourself**: `python fixtures/build.py && pytest tests/ -q`.
 

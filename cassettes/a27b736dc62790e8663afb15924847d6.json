@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "26fea8ed3e9d",
+ "response": "```json\n{\n  \"table_description\": \"Monthly customer spending aggregates refreshed on the 2nd of each month, spanning 36 months across 1,484 customers with total spend and order counts.\",\n  \"ai_context\": \"Join to cust_mstr on cust_id. Filter by yr_mth (YYYY-MM format) for period analysis. Treat yr_mth as date period, not numeric. Orders capped at 4 per month.\",\n  \"table_type\": \"aggregate\",\n  \"columns\": [\n    {\n      \"name\": \"yr_mth\",\n      \"description\": \"Year-month period key in YYYY-MM format (e.g., 2024-05). Treat as date period, never as quantity.\"\n    },\n    {\n      \"name\": \"cust_id\",\n      \"description\": \"Customer identifier. Foreign key to cust_mstr.cust_id.\"\n    },\n    {\n      \"name\": \"tot_spend_amt\",\n      \"description\": \"Total customer spending amount in currency for the month, decimal to 2 places.\"\n    },\n    {\n      \"name\": \"ord_cnt\",\n      \"description\": \"Count of orders placed by customer in the month. Range: 1\u20134 orders.\"\n    }\n  ]\n}\n```",
+ "usage": {
+  "in": 854,
+  "out": 311
+ }
+}

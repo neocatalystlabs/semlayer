@@ -1,0 +1,5 @@
+table,column,description
+dept_dim,dept_cd,Two-letter department code assigned by merchandising
+cust_addr,line1,Street address line 1 (contains PII)
+etl_log,rows_in,Count of rows read by the ETL job
+etl_log,rows_out,Count of rows written by the ETL job

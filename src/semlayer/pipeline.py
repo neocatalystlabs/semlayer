@@ -13,17 +13,24 @@ from semlayer.profile.run import profile_with_stats
 logger = logging.getLogger(__name__)
 
 
-def infer(source, llm=None, no_sample_egress: bool = False) -> dict:
+def infer(source, llm=None, no_sample_egress: bool = False, context=None) -> dict:
     """Run Profile -> Link -> Describe (if llm given) -> Enrich and return the document."""
-    doc, _report = infer_with_report(source, llm=llm, no_sample_egress=no_sample_egress)
+    doc, _report = infer_with_report(source, llm=llm, no_sample_egress=no_sample_egress,
+                                     context=context)
     return doc
 
 
-def infer_with_report(source, llm=None, no_sample_egress: bool = False) -> tuple[dict, dict]:
+def infer_with_report(source, llm=None, no_sample_egress: bool = False,
+                      context=None) -> tuple[dict, dict]:
     """`infer` plus the per-run observability report (BETA Q2).
 
     The report is the CLI's metrics surface: stage wall-clock, table/column
     counts, and LLM spend — content-free, safe to attach to beta feedback.
+
+    `context` (v0.2): a semlayer.context.ContextBundle of knowledge-doc priors.
+    Prose excerpts ride into typing/describe evidence; CSV dictionaries seed
+    descriptions; doc decode claims reconcile post-enrich (conflicts on
+    contradiction — priors, never truth).
     """
     report: dict = {"stages": {}, "counts": {}}
 
@@ -36,11 +43,18 @@ def infer_with_report(source, llm=None, no_sample_egress: bool = False) -> tuple
         return result
 
     doc, stats = _timed("profile", lambda: profile_with_stats(
-        source, no_sample_values=no_sample_egress, llm=llm))
+        source, no_sample_values=no_sample_egress, llm=llm, context=context))
+    if context is not None and context.dictionary:
+        from semlayer.context import apply_dictionary
+        apply_dictionary(doc, context.dictionary)
     _timed("link", lambda: link_source(source, doc, stats, llm=llm))
     if llm is not None:
-        _timed("describe", lambda: describe_source(doc, stats, llm, no_samples=no_sample_egress))
+        _timed("describe", lambda: describe_source(
+            doc, stats, llm, no_samples=no_sample_egress, context=context))
     _timed("enrich", lambda: enrich_source(source, doc, stats))
+    if context is not None and context.chunks:
+        from semlayer.context import apply_doc_decodes
+        apply_doc_decodes(doc, context.chunks)
     doc.pop("_link_audit", None)
     sl = doc["semantic_layer"]
     report["counts"] = {
