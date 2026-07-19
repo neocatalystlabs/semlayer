@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>semlayer — the semantic layer that infers itself</title>
+<meta name="description" content="Open-source engine that infers a semantic layer from your data warehouse: undeclared foreign keys, status-code decodes, hidden business rules — with confidence, provenance, and review on every claim. Served to AI agents over MCP.">
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1a1a2e; --muted: #566; --accent: #6b47dc;
+    --card: #f6f4fb; --code-bg: #16161f; --code-fg: #e8e6f0; --border: #e3e0ef;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101018; --fg: #e8e6f0; --muted: #9a97b3; --accent: #9d82f0;
+      --card: #1a1a26; --code-bg: #0b0b12; --code-fg: #d8d6e8; --border: #2a2a3a;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: var(--bg); color: var(--fg); line-height: 1.6;
+    max-width: 46rem; margin: 0 auto; padding: 4rem 1.25rem 3rem;
+  }
+  h1 { font-size: 2.4rem; letter-spacing: -0.02em; }
+  h1 span { color: var(--accent); }
+  .tagline { font-size: 1.2rem; color: var(--muted); margin: 0.5rem 0 2rem; }
+  p { margin-bottom: 1rem; }
+  .stat {
+    background: var(--card); border-left: 3px solid var(--accent);
+    padding: 0.9rem 1.1rem; border-radius: 4px; margin: 1.5rem 0;
+  }
+  .stat strong { color: var(--accent); }
+  pre {
+    background: var(--code-bg); color: var(--code-fg); border-radius: 6px;
+    padding: 1rem 1.2rem; overflow-x: auto; margin: 1.5rem 0;
+    font-family: "SF Mono", Consolas, Menlo, monospace; font-size: 0.85rem;
+    line-height: 1.55;
+  }
+  pre .c { color: #7d7a99; }
+  a { color: var(--accent); }
+  .cta {
+    display: inline-block; background: var(--accent); color: #fff;
+    padding: 0.65rem 1.3rem; border-radius: 6px; text-decoration: none;
+    font-weight: 600; margin: 0.5rem 1rem 0.5rem 0;
+  }
+  .cta.alt { background: transparent; color: var(--accent); border: 1.5px solid var(--accent); }
+  ul { margin: 0 0 1rem 1.3rem; }
+  li { margin-bottom: 0.4rem; }
+  .footer {
+    margin-top: 3rem; padding-top: 1.2rem; border-top: 1px solid var(--border);
+    font-size: 0.85rem; color: var(--muted);
+  }
+  .footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+
+<h1>sem<span>layer</span></h1>
+<p class="tagline">The open-source semantic layer that infers itself — skip the quarter of hand-writing dbt YAML.</p>
+
+<p>Point it at your warehouse. It profiles every column, discovers the foreign
+keys nobody declared, decodes the status columns, and recovers the business
+rules hiding in your aggregate tables — verified against your own data, with
+<strong>confidence, provenance, and a review queue on every claim</strong>.
+Then any AI agent consumes the result over MCP.</p>
+
+<div class="stat">
+On our messy-warehouse benchmark, an agent answers <strong>53% of business
+questions correctly vs 34%</strong> from the raw schema (+54% relative).
+On clean, well-named schemas it doesn't help — <strong>we publish that
+negative result too</strong>. The full eval suite ships in the repo.
+</div>
+
+<pre><code>pip install -e ".[warehouses]"      <span class="c"># Snowflake, BigQuery, DuckDB (+ Iceberg)</span>
+semlayer infer snowflake -o layer.yaml --context ./docs/
+semlayer review layer.yaml           <span class="c"># accept/reject what it inferred</span>
+semlayer mcp layer.yaml              <span class="c"># serve it to Claude, Cursor, any agent</span></code></pre>
+
+<p>
+<a class="cta" href="https://github.com/neocatalystlabs/semlayer">GitHub →</a>
+<a class="cta alt" href="https://github.com/neocatalystlabs/semlayer#readme">Read the benchmark</a>
+</p>
+
+<ul>
+  <li><strong>Free &amp; complete</strong>: Apache-2.0 CLI, runs in your environment with your keys — no caps, no signup. A paid hosted control plane (continuous re-inference, team review, dashboards) comes later; the CLI stays fully functional.</li>
+  <li><strong>Honest by construction</strong>: every claim carries its evidence; statistics alone never auto-accept a foreign key; doc-vs-data contradictions go to review, never silently believed.</li>
+  <li><strong>Design partners wanted</strong>: got a messy warehouse and an AI initiative? <a href="mailto:hello@semlayer.dev">hello@semlayer.dev</a></li>
+</ul>
+
+<p class="footer">
+semlayer · Apache-2.0 · a Neocatalyst Labs project ·
+<a href="https://github.com/neocatalystlabs/semlayer">github.com/neocatalystlabs/semlayer</a>
+</p>
+
+</body>
+</html>
