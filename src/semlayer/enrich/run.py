@@ -308,11 +308,13 @@ def _record_measure_filter_note(f: dict, t: dict, filt: str) -> None:
 
 
 def _aggregate_entry(
-    t: dict, f: dict, agg_m: str, fact_m: str, group_cols: list[str], filt: str
+    t: dict, f: dict, agg_m: str, fact_m: str, group_cols: list[str], filt: str,
+    evidence: str = ""
 ) -> dict:
-    """Build the aggregate_tables entry once a measure pair reconciles."""
+    """Build the aggregate_tables entry once a measure pair reconciles per group."""
     where = f" WHERE {filt}" if filt else ""
     excl = f" excluding {filt}" if filt else ""
+    ev = f" ({evidence})" if evidence else ""
     return {
         "table": t["name"], "aggregates": f["name"],
         "grain": group_cols,
@@ -320,10 +322,10 @@ def _aggregate_entry(
         "mapping_source": "heuristic",
         "routing": {"rule": f"pre-aggregated {fact_m} by {', '.join(group_cols)}",
                     "status": "advisory"},
-        "consistency": {"method": "deterministic_window", "status": "consistent"},
+        "consistency": {"method": "per_group_reconciliation", "status": "consistent"},
         "lifecycle": "inferred", "confidence": 0.75,
         "provenance": [{"signal": "statistic",
-                        "detail": f"reconciles with {f['name']}.{fact_m}{excl}"}],
+                        "detail": f"reconciles per-group with {f['name']}.{fact_m}{excl}{ev}"}],
     }
 
 
@@ -334,12 +336,14 @@ def _reconcile_candidate(
 
     On success, record any discovered filter and return the aggregate_tables entry.
     """
-    filt = _reconcile(source, qualify, stats, cand)
-    if filt is None:
+    result = _reconcile(source, qualify, stats, cand)
+    if result is None:
         return None
+    filt, evidence = result
     if filt:
         _record_measure_filter_note(cand.fact_t, cand.agg_t, filt)
-    return _aggregate_entry(cand.agg_t, cand.fact_t, cand.agg_m, cand.fact_m, group_cols, filt)
+    return _aggregate_entry(cand.agg_t, cand.fact_t, cand.agg_m, cand.fact_m,
+                            group_cols, filt, evidence)
 
 
 def _match_fact_for_aggregate(source, qualify, stats, t: dict, f: dict,
@@ -386,42 +390,93 @@ def _detect_aggregates(source, sl, stats) -> list[dict]:
     return out
 
 
-def _reconcile(source, qualify, stats, cand: _AggCandidate) -> str | None:
-    """Try SUM(fact.measure) grouped == agg values, then test exclusion hypotheses.
+# Per-group reconciliation thresholds (council D7: grand totals are not
+# proof — offsetting per-group errors pass them; every group must match).
+_REL_TOL = 0.002      # 0.2% relative per group
+_ABS_TOL = 0.02       # floor for tiny groups (values rounded to 2dp in SQL)
+_MIN_COVERAGE = 0.95  # fraction of groups that must match
+_MAX_GROUPS = 50_000  # aggregate tables are small; guardrail, not a sampler
 
-    On mismatch, test excluding each status-enum value (business-rule
-    discovery). Returns "" on a clean reconciliation, the discovered
-    exclusion filter on a mismatch that resolves, or None if no
-    reconciliation is found.
+
+def _close(a: float, f: float) -> bool:
+    return abs(a - f) <= max(_ABS_TOL, _REL_TOL * abs(a))
+
+
+def _group_sums(source, table_q: str, key_col: str, m_col: str,
+                filter_sql: str = "") -> dict | None:
+    w = f" WHERE {filter_sql}" if filter_sql else ""
+    q = (f'SELECT "{key_col}", round(sum("{m_col}"),2) FROM {table_q}{w} '
+         f"GROUP BY 1 LIMIT {_MAX_GROUPS}")
+    rows = source.query(q)
+    if len(rows) >= _MAX_GROUPS:
+        return None  # too big to verify honestly -> treat as unverified
+    return {r[0]: float(r[1]) for r in rows if r[1] is not None}
+
+
+def _keyed_match(agg: dict, fact: dict) -> tuple[int, int]:
+    keys = set(agg) | set(fact)
+    matched = sum(1 for k in keys
+                  if k in agg and k in fact and _close(agg[k], fact[k]))
+    return matched, len(keys)
+
+
+def _multiset_match(agg: dict, fact: dict) -> tuple[int, int]:
+    # date-key <-> date-column groupings aren't directly joinable (int keys vs
+    # dates); the sorted per-group sums must still agree as multisets
+    a, f = sorted(agg.values()), sorted(fact.values())
+    total = max(len(a), len(f))
+    matched = sum(1 for x, y in zip(a, f, strict=False) if _close(x, y))
+    return matched, total
+
+
+def _verify_groups(source, aq: str, fq: str, cand: _AggCandidate,
+                   filter_sql: str) -> tuple[bool, str]:
+    """Per-group verification across every mapped grouping.
+
+    Returns (ok, evidence) where evidence reads
+    "40/40 store_id groups; 90/90 date groups within 0.2%".
+    """
+    parts = []
+    pairs = ([(a, f, _keyed_match) for a, f in cand.gmap.items()]
+             + [(a, f, _multiset_match) for a, f in cand.date_pairs])
+    for agg_col, fact_col, match in pairs:
+        agg_sums = _group_sums(source, aq, agg_col, cand.agg_m)
+        fact_sums = _group_sums(source, fq, fact_col, cand.fact_m, filter_sql)
+        if not agg_sums or not fact_sums:
+            return False, "unverifiable grouping"
+        matched, total = match(agg_sums, fact_sums)
+        if total == 0 or matched / total < _MIN_COVERAGE:
+            return False, f"{matched}/{total} {agg_col} groups"
+        parts.append(f"{matched}/{total} {agg_col} groups")
+    return bool(parts), "; ".join(parts) + f" within {_REL_TOL:.1%}"
+
+
+def _reconcile(source, qualify, stats, cand: _AggCandidate) -> tuple[str, str] | None:
+    """Per-group reconciliation with exclusion-hypothesis testing.
+
+    Verifies SUM(fact.measure) against the aggregate per group; on mismatch
+    tests excluding each status-enum value (business-rule discovery).
+    Returns (filter, evidence): filter "" on clean reconciliation or the
+    discovered exclusion (e.g. "sts_cd <> 'X'"); evidence is the per-group
+    coverage string carried into provenance. None if nothing reconciles.
+    Every mapped grouping must match per group at >=95% coverage — grand
+    totals alone are never accepted (offsetting group errors pass them).
     """
     a_ts, f_ts = stats[cand.agg_t["name"]].table, stats[cand.fact_t["name"]].table
     aq, fq = qualify(a_ts.schema, a_ts.name), qualify(f_ts.schema, f_ts.name)
-    if cand.gmap:
-        _, g_fact = next(iter(cand.gmap.items()))
-    elif cand.date_pairs:
-        _, g_fact = cand.date_pairs[0]
-    else:
+    if not cand.gmap and not cand.date_pairs:
         return None
-
-    def total(filter_sql: str = "") -> float | None:
-        w = f" WHERE {filter_sql}" if filter_sql else ""
-        q = (f'SELECT round(sum(s),2) FROM '
-             f'(SELECT "{g_fact}", sum("{cand.fact_m}") s FROM {fq}{w} GROUP BY 1) x')
-        return source.query(q)[0][0]
-
-    agg_total = source.query(f'SELECT round(sum("{cand.agg_m}"),2) FROM {aq}')[0][0]
-    if agg_total is None:
-        return None
-    clean_total = total()
-    if clean_total is not None and abs(float(clean_total) - float(agg_total)) < 0.05:
-        return ""
+    ok, evidence = _verify_groups(source, aq, fq, cand, "")
+    if ok:
+        return "", evidence
     status_cols = [c for c in cand.fact_t["columns"] if c.get("semantic_type") == "status_code"]
     for sc in status_cols:
         cs = stats[cand.fact_t["name"]].columns[sc["name"]]
         for v, _n in cs.top_values[:6]:
-            t2 = total(f"\"{sc['name']}\" <> '{v}'")
-            if t2 is not None and abs(float(t2) - float(agg_total)) < 0.05:
-                return f"{sc['name']} <> '{v}'"
+            filt = f"\"{sc['name']}\" <> '{v}'"
+            ok, evidence = _verify_groups(source, aq, fq, cand, filt)
+            if ok:
+                return f"{sc['name']} <> '{v}'", evidence
     return None
 
 

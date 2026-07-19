@@ -446,7 +446,7 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "method": {"enum": ["deterministic_window", "sampled", "none"]},
+            "method": {"enum": ["deterministic_window", "per_group_reconciliation", "sampled", "none"]},
             "last_verified": {"type": "string", "format": "date-time"},
             "status": {"enum": ["consistent", "divergent", "unverified"]}
           }
