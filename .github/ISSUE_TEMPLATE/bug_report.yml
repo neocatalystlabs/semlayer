@@ -1,0 +1,24 @@
+name: Bug report
+description: Something broke or produced a wrong inference
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+    validations: {required: true}
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options: [Crash/error, Wrong inference (confidently wrong), Wrong inference (low confidence), Docs/UX, Other]
+    validations: {required: true}
+  - type: textarea
+    id: repro
+    attributes:
+      label: What happened, and how to reproduce
+      description: |
+        For wrong inferences: the claim it made, why it's wrong, and (if
+        shareable) an anonymized shape of the schema pattern — wrong
+        inferences become new test fixtures.
+    validations: {required: true}

@@ -1,0 +1,57 @@
+name: Beta feedback
+description: Structured feedback after running semlayer on a real warehouse
+labels: [beta-feedback]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing! Please attach `<your-output>.report.json`
+        (written next to your semantic layer file — it contains only
+        timings/counts/spend, no schema content).
+  - type: dropdown
+    id: warehouse
+    attributes:
+      label: Warehouse
+      options: [Snowflake, BigQuery, DuckDB, Other]
+    validations: {required: true}
+  - type: input
+    id: scale
+    attributes:
+      label: Tables / columns inferred
+      placeholder: "e.g. 180 tables / 2,400 columns"
+    validations: {required: true}
+  - type: input
+    id: time_to_model
+    attributes:
+      label: Time from `init` to a reviewed model (minutes)
+    validations: {required: true}
+  - type: input
+    id: acceptance
+    attributes:
+      label: Review queue — % of inferred claims accepted unchanged
+      placeholder: "e.g. 41 of 52 = 79%"
+    validations: {required: true}
+  - type: textarea
+    id: wrong
+    attributes:
+      label: What did it get WRONG that mattered?
+      description: The most valuable field on this form. Specifics welcome.
+    validations: {required: true}
+  - type: textarea
+    id: surprised
+    attributes:
+      label: What surprised you (positively or negatively)?
+  - type: dropdown
+    id: adopt
+    attributes:
+      label: Would you adopt this over your platform's native auto-generator (Snowflake Autopilot / Databricks Genie / dbt codegen)?
+      options: ["Yes", "No", "Maybe — depends (explain below)", "No native option available to me"]
+    validations: {required: true}
+  - type: textarea
+    id: adopt_why
+    attributes:
+      label: Why / why not?
+  - type: textarea
+    id: blocker
+    attributes:
+      label: The one missing thing blocking production use?
