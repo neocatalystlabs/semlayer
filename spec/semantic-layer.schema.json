@@ -479,6 +479,15 @@
           "description": "Valid dimension references: 'table.column', 'hierarchy.level', or 'hierarchy.*'."
         },
         "grain": {"type": "string"},
+        "agg_time_dimension": {
+          "type": "string",
+          "description": "'table.column' (or bare base-table column) date/timestamp used for time bucketing/windows. Compilers MUST refuse time-scoped requests on metrics lacking this rather than guess a date column."
+        },
+        "synonyms": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Alternate names for natural-language lookup (e.g. 'revenue', 'sales'). Hand- or docs-populated; consumers use for search only, never for identity."
+        },
         "fanout_safety": {"$ref": "#/$defs/fanout_safety"}
       }
     },

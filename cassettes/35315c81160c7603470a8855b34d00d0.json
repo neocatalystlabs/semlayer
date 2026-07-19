@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "1d25ef67b201",
+ "response": "[{\"id\": 0, \"verdict\": \"accept\", \"reason\": \"Clear metric total_tot_sls_amt, unambiguous.\"},\n{\"id\": 1, \"verdict\": \"accept\", \"reason\": \"Clear metric ord_hdr_count, unambiguous.\"},\n{\"id\": 2, \"verdict\": \"reject\", \"reason\": \"Completed status conflicts: sts_cd_dim maps C to Cancelled, not Complete.\"},\n{\"id\": 3, \"verdict\": \"accept\", \"reason\": \"Clear metric ord_rtn_count, unambiguous.\"},\n{\"id\": 4, \"verdict\": \"accept\", \"reason\": \"Clear metric total_mrr_amt, unambiguous.\"},\n{\"id\": 5, \"verdict\": \"accept\", \"reason\": \"Clear metric total_line_amt, unambiguous.\"},\n{\"id\": 6, \"verdict\": \"reject\", \"reason\": \"Completed vs non-cancelled ambiguous given conflicting status code mapping.\"},\n{\"id\": 7, \"verdict\": \"reject\", \"reason\": \"Completed line amount term ambiguous due to status code conflict.\"},\n{\"id\": 8, \"verdict\": \"accept\", \"reason\": \"Straightforward ratio of total order amount to order count.\"},\n{\"id\": 9, \"verdict\": \"reject\", \"reason\": \"No completed line item count metric exists, only amount metric.\"},\n{\"id\": 10, \"verdict\": \"reject\", \"reason\": \"Vague comparison across mismatched grains/entities, undefined methodology.\"},\n{\"id\": 11, \"verdict\": \"accept\", \"reason\": \"Straightforward ratio of MRR to subscription event count.\"}]",
+ "usage": {
+  "in": 5302,
+  "out": 1807
+ }
+}

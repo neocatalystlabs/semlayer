@@ -100,7 +100,8 @@ def search(doc: dict, query: str, limit: int = 10) -> list[dict]:
                                         "semantic_type": c.get("semantic_type"),
                                         "description": (c.get("description") or "")[:80]}))
     for m in sl.get("metrics", []):
-        hay_m = f"{m['name']} {m.get('display_name', '')}".lower()
+        hay_m = " ".join([m["name"], m.get("display_name", ""),
+                          *m.get("synonyms", [])]).lower()
         mscore = sum(2 for w in toks if w in hay_m)
         if mscore:
             scored.append((mscore + 1, {"kind": "metric", "name": m["name"],
@@ -113,6 +114,9 @@ def list_metrics(doc: dict) -> list[dict]:
     """List defined metrics: name, measure, aggregation, filter, lifecycle."""
     return [{"name": m["name"], "type": m["type"], "measure": m.get("measure"),
              "agg": m.get("agg"), "filter": m.get("filter"),
+             "numerator": m.get("numerator"), "denominator": m.get("denominator"),
+             "agg_time_dimension": m.get("agg_time_dimension"),
+             "synonyms": m.get("synonyms"),
              "lifecycle": m.get("lifecycle", "inferred"), "confidence": m.get("confidence")}
             for m in doc["semantic_layer"].get("metrics", [])]
 
@@ -170,5 +174,23 @@ def build_server(doc: dict):
     def route_intent(intent: str) -> str:
         """Which tables to use (and avoid) for an analytical intent."""
         return json.dumps(routing(doc, intent), default=str)
+
+    @srv.tool()
+    def compile_metric(name: str, group_by: str = "", time_grain: str = "",
+                       time_start: str = "", time_end: str = "",
+                       filter: str = "", dialect: str = "duckdb") -> str:
+        """Compile a metric to correct SQL (joins, filters, time bucketing).
+
+        group_by: comma-separated columns. On refusal the response lists
+        legal alternatives — retry with those or ask the user; do NOT
+        hand-assemble SQL for a refused request.
+        """
+        from semlayer.compile import compile_metric as _compile
+        result = _compile(doc, name,
+                          group_by=[g.strip() for g in group_by.split(",") if g.strip()],
+                          time_grain=time_grain or None,
+                          time_start=time_start or None, time_end=time_end or None,
+                          extra_filter=filter or None, dialect=dialect)
+        return json.dumps(result, default=str)
 
     return srv

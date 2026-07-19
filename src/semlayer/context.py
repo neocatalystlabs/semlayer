@@ -358,6 +358,39 @@ def _claims_for_column(chunks: list[DocChunk], column: str) -> list[tuple[str, s
     return out
 
 
+# ratio claims: "name = table.col / table.col" (explicit refs only — free-text
+# operand resolution is Phase B; a wrong guess here would compile to a wrong number)
+_RATIO_RE = re.compile(
+    r"([a-z][a-z0-9_ ]{2,40}?)\s*=\s*([a-z_][\w]*\.[\w]+)\s*/\s*([a-z_][\w]*\.[\w]+)",
+    re.IGNORECASE)
+
+
+def apply_doc_ratios(doc: dict, chunks: list[DocChunk]) -> None:
+    """Docs-declared ratio metrics (Phase A), review-gated.
+
+    Explicit 'name = t.col / t.col' claims become ratio metrics with docs
+    provenance. Operands must resolve to modeled columns; unresolvable
+    claims are skipped, never guessed.
+    """
+    sl = doc["semantic_layer"]
+    cols = {f"{t['name']}.{c['name']}" for t in sl["tables"] for c in t["columns"]}
+    existing = {m["name"] for m in sl.get("metrics", [])}
+    for ch in chunks:
+        for m in _RATIO_RE.finditer(ch.text):
+            name = re.sub(r"\W+", "_", m.group(1).strip().lower()).strip("_")
+            num, den = m.group(2), m.group(3)
+            if num not in cols or den not in cols or name in existing:
+                continue
+            existing.add(name)
+            sl.setdefault("metrics", []).append({
+                "name": name, "type": "ratio",
+                "numerator": num, "denominator": den,
+                "lifecycle": "inferred", "confidence": 0.6,
+                "provenance": [{"signal": "docs",
+                                "detail": f"declared in {ch.source}"[:160]}],
+            })
+
+
 def _same_meaning(a: str, b: str) -> bool:
     a, b = a.lower().strip(), b.lower().strip()
     return a == b or a in b or b in a

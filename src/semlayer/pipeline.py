@@ -53,8 +53,9 @@ def infer_with_report(source, llm=None, no_sample_egress: bool = False,
             doc, stats, llm, no_samples=no_sample_egress, context=context))
     _timed("enrich", lambda: enrich_source(source, doc, stats))
     if context is not None and context.chunks:
-        from semlayer.context import apply_doc_decodes
+        from semlayer.context import apply_doc_decodes, apply_doc_ratios
         apply_doc_decodes(doc, context.chunks)
+        apply_doc_ratios(doc, context.chunks)
     doc.pop("_link_audit", None)
     sl = doc["semantic_layer"]
     report["counts"] = {

@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.3.0-beta.1 (2026-07-19)
+
+- **`compile_metric`** (new MCP tool + `semlayer.compile`): compiles any
+  declared metric to correct SQL — N:1 joins, business-rule filters, and
+  time bucketing applied automatically. Refusals are constructive: illegal
+  group-bys, time requests on metrics without a time dimension, and filters
+  on unmodeled columns are refused *with the legal alternatives enumerated*
+  (consumer protocol: SPEC.md §2.10). Dialect-aware time grains
+  (DuckDB/Snowflake/BigQuery).
+- **Time is first-class on metrics**: Enrich now emits `agg_time_dimension`
+  per metric (business date preferred; metadata/load timestamps never
+  qualify; date-key tables resolve through their date dimension).
+- **Declared ratio metrics**: `type: ratio` compiles (same-base-table,
+  Phase A); explicit `name = table.col / table.col` claims in `--context`
+  docs land as review-gated ratio metrics with `docs` provenance.
+- **Metric `synonyms`** (spec 0.2.0, MINOR): alternate names for
+  natural-language lookup, wired into MCP search.
+- **dbt exporter** now emits ratio metrics (MetricFlow `type_params`).
+- Provider robustness: one automatic retry with a larger budget when a
+  thinking-enabled model returns no text.
+
 ## v0.2.0-beta.1 (2026-07-18)
 
 - **Knowledge-doc priors** (`--context`): feed data dictionaries, wiki

@@ -11,7 +11,7 @@ from __future__ import annotations
 from semlayer.profile.stats import TableStats, profile_table
 from semlayer.profile.typing_rules import classify
 
-ENGINE_VERSION = "0.1.0.dev0"
+ENGINE_VERSION = "0.3.0.dev0"
 
 
 ESCALATE_BELOW = 0.7  # tier-1 confidence under this goes to the LLM (if provided)
@@ -42,7 +42,7 @@ def profile_with_stats(source, no_sample_values: bool = False, llm=None, context
     model = "none/heuristic" if llm is None else f"{llm.model}/escalation"
     return {
         "semantic_layer": {
-            "spec_version": "0.1.1",
+            "spec_version": "0.2.0",
             "name": "profiled",
             "generated_by": {"engine": ENGINE_VERSION, "model": model},
             "tables": out_tables,

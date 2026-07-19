@@ -207,13 +207,43 @@ def _count_metric(t: dict, pk: str | None, seen: set) -> dict | None:
     }
 
 
+def _time_dimension_for(t: dict, sl: dict) -> str | None:
+    """Best time column for a table's metrics.
+
+    Own business date first, then a date on an N:1-joined dimension
+    (typically the date dim). Metadata timestamps (load/audit columns) never
+    qualify — bucketing revenue by crt_dt is exactly the silent error
+    compile_metric exists to prevent.
+    """
+    own = [c for c in t["columns"]
+           if c.get("semantic_type") in ("date", "timestamp_event")
+           and c.get("entity_role") != "metadata"]
+    if own:
+        own.sort(key=lambda c: 0 if c["semantic_type"] == "date" else 1)
+        return f"{t['name']}.{own[0]['name']}"
+    tables = {x["name"]: x for x in sl["tables"]}
+    for r in sl.get("relationships", []):
+        if r["from"]["table"] != t["name"]:
+            continue
+        if r["cardinality"] not in ("many_to_one", "one_to_one"):
+            continue
+        dim = tables.get(r["to"]["table"])
+        if dim is None:
+            continue
+        d = next((c for c in dim["columns"] if c.get("semantic_type") == "date"), None)
+        if d is not None:
+            return f"{dim['name']}.{d['name']}"
+    return None
+
+
 def _metric_candidates(sl) -> list[dict]:
     """Derive simple metrics.
 
     sum() over monetary measures (plus a status-filtered "completed" variant
     where a clean decode exists) and count() over each fact table's primary key.
+    Each metric carries agg_time_dimension when a trustworthy time column exists.
     """
-    metrics = []
+    metrics: list[dict] = []
     seen: set = set()
     for t in sl["tables"]:
         eligible = t.get("table_type") in ("fact", "aggregate", "unknown")
@@ -221,10 +251,15 @@ def _metric_candidates(sl) -> list[dict]:
             continue
         pk = (t.get("primary_key") or [None])[0]
         status_col = _status_col_for_metrics(t)
+        time_dim = _time_dimension_for(t, sl)
+        before = len(metrics)
         metrics.extend(_monetary_metrics(t, status_col, seen))
         count_metric = _count_metric(t, pk, seen)
         if count_metric is not None:
             metrics.append(count_metric)
+        if time_dim is not None:
+            for m in metrics[before:]:
+                m["agg_time_dimension"] = time_dim
     return metrics
 
 

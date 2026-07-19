@@ -64,6 +64,26 @@ Filters (metric or ad hoc) MUST NOT be built on enum values whose only `decode_s
 
 `common_queries[]` entries with `verified: false` are advisory context. They are raw SQL outside the metric-safety contract (§2.2–2.3 do not apply to them); consumers SHOULD prefer compiling through metrics.
 
+### 2.10 Metric compilation & refusal protocol
+
+Consumers SHOULD obtain metric SQL via a conforming compiler (e.g. the
+`compile_metric` tool) rather than assembling it from the definition — the
+compiler applies metric filters, join paths, and time bucketing that manual
+assembly gets silently wrong.
+
+A conforming compiler MUST refuse (never guess) when: the requested group-by
+is not on the metric's base table or an N:1-reachable dimension; a
+time-scoped request targets a metric with no `agg_time_dimension`; an ad hoc
+filter references unmodeled columns; or the metric/base table is
+`deprecated`/`orphaned`. Every refusal MUST be constructive: it names the
+reason and enumerates legal alternatives.
+
+On refusal, a consumer MUST NOT silently fall back to self-assembled SQL over
+the same tables. Conforming behavior is: retry within the enumerated legal
+options, or surface the refusal reason to the human. Time-scoped questions
+answered without a compiled time dimension MUST carry a caveat naming the
+date column that was assumed.
+
 ## 3. Producer rules (normative)
 
 1. Metrics MUST reference only modeled objects (measures, declared dimensions/levels) — never raw SQL against unmodeled columns.

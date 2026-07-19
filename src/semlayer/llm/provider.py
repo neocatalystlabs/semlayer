@@ -126,6 +126,10 @@ class AnthropicProvider:
             # newer models dropped the temperature param; cassettes still pin outputs
             msg = client.messages.create(**kwargs)
         text = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
+        if not text and max_tokens < 8000:
+            # models with default thinking can spend the whole budget on
+            # thinking blocks; one retry with headroom recovers the text
+            return self._call_live(system, user, max_tokens * 4)
         if not text:
             raise LLMError(f"model {self.model} returned no text content",
                            hint="response contained only non-text blocks")

@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "1d25ef67b201",
+ "response": "[{\"id\": 0, \"verdict\": \"accept\", \"reason\": \"Matches total_tot_sls_amt metric directly.\"},\n{\"id\": 1, \"verdict\": \"accept\", \"reason\": \"Matches ord_hdr_count metric directly.\"},\n{\"id\": 2, \"verdict\": \"accept\", \"reason\": \"Matches total_line_amt_completed metric directly.\"},\n{\"id\": 3, \"verdict\": \"accept\", \"reason\": \"Matches ord_rtn_count metric directly.\"},\n{\"id\": 4, \"verdict\": \"accept\", \"reason\": \"Matches total_mrr_amt metric directly.\"},\n{\"id\": 5, \"verdict\": \"accept\", \"reason\": \"Matches total_rtn_amt metric directly.\"},\n{\"id\": 6, \"verdict\": \"reject\", \"reason\": \"Completion rate by value is undefined/ambiguous derived metric.\"},\n{\"id\": 7, \"verdict\": \"accept\", \"reason\": \"Matches total_line_amt and ord_ln_count metrics.\"},\n{\"id\": 8, \"verdict\": \"reject\", \"reason\": \"Different grains; vague 'spending patterns' undefined.\"},\n{\"id\": 9, \"verdict\": \"reject\", \"reason\": \"Average order value not a modeled metric; ambiguous derivation.\"},\n{\"id\": 10, \"verdict\": \"reject\", \"reason\": \"Vague 'relationship' between unrelated metrics, undefined comparison.\"},\n{\"id\": 11, \"verdict\": \"accept\", \"reason\": \"Derivable ratio from total_line_amt and completed variant.\"}]",
+ "usage": {
+  "in": 3866,
+  "out": 1243
+ }
+}

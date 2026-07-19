@@ -67,7 +67,7 @@ def skeptic_verify(skeptic_llm, doc: dict, questions: list[dict]) -> list[dict]:
             "questions": [{"id": j, "question": q["question"]} for j, q in enumerate(chunk)],
         }
         raw = skeptic_llm.complete(
-            SKEPTIC_SYSTEM, json.dumps(payload, default=str), max_tokens=1500,
+            SKEPTIC_SYSTEM, json.dumps(payload, default=str), max_tokens=4000,
         )
         m = re.search(r"\[.*\]", raw, re.DOTALL)
         verdicts = {}

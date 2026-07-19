@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "1d25ef67b201",
+ "response": "[{\"id\": 0, \"verdict\": \"accept\", \"reason\": \"Clear aggregate from dly_sls_agg table.\"}, {\"id\": 1, \"verdict\": \"accept\", \"reason\": \"Clear count from ord_hdr table.\"}, {\"id\": 2, \"verdict\": \"reject\", \"reason\": \"Undefined 'completed' status term.\"}]",
+ "usage": {
+  "in": 586,
+  "out": 211
+ }
+}

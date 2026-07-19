@@ -81,16 +81,23 @@ def _export_tables(sl: dict, losses: list[str]) -> list[dict]:
 
 
 def _export_metrics(sl: dict, losses: list[str]) -> list[dict]:
-    """Export simple metrics (v1 dbt target); record non-simple metric types as losses."""
+    """Export simple + ratio metrics (MetricFlow shapes); other types are losses."""
     metrics = []
     for m in sl.get("metrics", []):
-        if m.get("type") != "simple":
-            losses.append(
-                f"metric {m['name']}: type {m.get('type')} not exported (v1 exports simple)"
-            )
+        if m.get("type") == "simple":
+            entry = {"name": m["name"], "type": "simple",
+                     "label": m.get("display_name", m["name"]),
+                     "type_params": {"measure": m["measure"].split(".", 1)[1]}}
+        elif m.get("type") == "ratio":
+            entry = {"name": m["name"], "type": "ratio",
+                     "label": m.get("display_name", m["name"]),
+                     "type_params": {
+                         "numerator": m["numerator"].split(".", 1)[1],
+                         "denominator": m["denominator"].split(".", 1)[1]}}
+        else:
+            losses.append(f"metric {m['name']}: type {m.get('type')} not exported "
+                          "(exports simple + ratio)")
             continue
-        entry = {"name": m["name"], "type": "simple", "label": m.get("display_name", m["name"]),
-                 "type_params": {"measure": m["measure"].split(".", 1)[1]}}
         if m.get("filter"):
             entry["filter"] = m["filter"]
         metrics.append(entry)
