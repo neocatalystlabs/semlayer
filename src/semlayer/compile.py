@@ -28,14 +28,16 @@ _SQL_WORDS = {"and", "or", "not", "in", "like", "is", "null", "between",
 
 
 class _Ctx:
-    """Compile state: metric + document indexes + accumulated joins."""
+    """Compile state: metric + document indexes + join paths + accumulated joins."""
 
     def __init__(self, sl: dict, metric: dict, base: str, dialect: str):
         self.sl, self.metric, self.base, self.dialect = sl, metric, base, dialect
         self.tables = {t["name"]: t for t in sl["tables"]}
-        self.reach = _reachable(sl, self.tables, base)
+        self.paths, self.ambiguous = _join_paths(sl, self.tables, base)
+        self.reach = _reachable(self.tables, base, self.paths)
         self.legal = sorted(self.reach)
-        self.joins: dict[str, tuple] = {}   # dim table -> (from_cols, to_cols)
+        # dim table -> (parent table, parent cols, dim cols), insertion-ordered
+        self.joins: dict[str, tuple] = {}
         self.time_col: str | None = None
 
 
@@ -108,47 +110,75 @@ def _value_expression(ctx: _Ctx) -> str | dict:
 
 # ------------------------------------------------------- reachability map --
 
-def _reachable(sl: dict, tables: dict, base: str) -> dict[str, str]:
+MAX_HOPS = 3
+
+
+def _join_paths(sl: dict, tables: dict, base: str) -> tuple[dict, set]:
+    """BFS the N:1-only relationship graph from `base` (depth-capped).
+
+    Returns (paths, ambiguous): paths maps each reachable table to its edge
+    list [(parent, parent_cols, table_cols, table), ...]; SHORTEST path wins.
+    Tables reached by two distinct equally-short paths (role-playing dims,
+    true diamonds) land in `ambiguous` — grouping through them is refused
+    rather than silently picking a path (SPEC 2.6 disambiguation applied to
+    compilation).
+    """
+    edges: dict[str, list] = {}
+    for r in sl.get("relationships", []):
+        if r["cardinality"] in ("many_to_one", "one_to_one"):
+            edges.setdefault(r["from"]["table"], []).append(
+                (r["to"]["table"], r["from"]["columns"], r["to"]["columns"]))
+    paths: dict[str, list] = {}
+    depth: dict[str, int] = {base: 0}
+    ambiguous: set[str] = set()
+    frontier = [base]
+    for d in range(1, MAX_HOPS + 1):
+        nxt = []
+        for parent in frontier:
+            for to_t, fcols, tcols in edges.get(parent, []):
+                t = tables.get(to_t)
+                if to_t == base or t is None or t.get("lifecycle") in ("deprecated", "orphaned"):
+                    continue
+                if to_t in depth:
+                    if depth[to_t] == d:
+                        ambiguous.add(to_t)  # equally-short second path
+                    continue
+                depth[to_t] = d
+                paths[to_t] = [*paths.get(parent, []), (parent, fcols, tcols, to_t)]
+                nxt.append(to_t)
+        frontier = nxt
+    return paths, ambiguous
+
+
+def _reachable(tables: dict, base: str, paths: dict) -> dict[str, str]:
     """Legal group-by columns: 'table.column' -> owning table.
 
-    Base-table non-measure columns plus non-measure columns of dimensions one
-    N:1 hop away. Depth is capped at one hop in Phase A so every emitted join
-    is a directly-inferred relationship, never a composed path.
+    Base-table non-measure columns plus non-measure columns of every
+    unambiguously N:1-reachable table (multi-hop; snowflaked dims included).
     """
     legal: dict[str, str] = {}
-    for c in tables[base]["columns"]:
-        if c.get("entity_role") != "measure":
-            legal[f"{base}.{c['name']}"] = base
-    for r in sl.get("relationships", []):
-        if r["from"]["table"] != base:
-            continue
-        if r["cardinality"] not in ("many_to_one", "one_to_one"):
-            continue
-        dim = r["to"]["table"]
-        t = tables.get(dim)
-        if t is None or t.get("lifecycle") in ("deprecated", "orphaned"):
-            continue
-        for c in t["columns"]:
+    for owner in [base, *paths.keys()]:
+        for c in tables[owner]["columns"]:
             if c.get("entity_role") != "measure":
-                legal[f"{dim}.{c['name']}"] = dim
+                legal[f"{owner}.{c['name']}"] = owner
     return legal
 
 
-def _join_edge(sl: dict, base: str, dim: str) -> tuple | None:
-    for r in sl.get("relationships", []):
-        if (r["from"]["table"] == base and r["to"]["table"] == dim
-                and r["cardinality"] in ("many_to_one", "one_to_one")):
-            return (r["from"]["columns"], r["to"]["columns"])
-    return None
-
-
 def _require_join(ctx: _Ctx, owner: str) -> dict | None:
-    if owner == ctx.base or owner in ctx.joins:
+    if owner == ctx.base:
         return None
-    edge = _join_edge(ctx.sl, ctx.base, owner)
-    if edge is None:
-        return _refuse(f"no N:1 join edge from {ctx.base} to {owner}", ctx.legal)
-    ctx.joins[owner] = edge
+    if owner in ctx.ambiguous:
+        return _refuse(
+            f"'{owner}' is reachable from {ctx.base} via multiple equally-short "
+            f"join paths — ambiguous; group by the intermediate table's own "
+            f"column instead (e.g. the code column carrying the relationship)",
+            ctx.legal)
+    path = ctx.paths.get(owner)
+    if path is None:
+        return _refuse(f"no N:1 join path from {ctx.base} to {owner}", ctx.legal)
+    for parent, fcols, tcols, to_t in path:
+        if to_t not in ctx.joins:
+            ctx.joins[to_t] = (parent, fcols, tcols)
     return None
 
 
@@ -252,8 +282,8 @@ def _emit(ctx: _Ctx, cols: list[str], time_expr: str | None,
         group.append(qual)
     select.append(f"{value_sql} AS {ctx.metric['name']}")
     sql = f"SELECT {', '.join(select)}\nFROM {ctx.base}"
-    for dim, (fcols, tcols) in ctx.joins.items():
-        on = " AND ".join(f"{ctx.base}.{f} = {dim}.{t}" for f, t in zip(fcols, tcols, strict=False))
+    for dim, (parent, fcols, tcols) in ctx.joins.items():
+        on = " AND ".join(f"{parent}.{f} = {dim}.{t}" for f, t in zip(fcols, tcols, strict=False))
         sql += f"\nLEFT JOIN {dim} ON {on}"
     if where:
         sql += "\nWHERE " + " AND ".join(where)

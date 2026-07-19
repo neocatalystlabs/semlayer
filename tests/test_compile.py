@@ -162,3 +162,96 @@ def test_dbt_export_includes_ratio():
     ratios = [m for m in payload["metrics"] if m["type"] == "ratio"]
     assert ratios and "numerator" in ratios[0]["type_params"]
     assert not any("type ratio not exported" in loss for loss in losses)
+
+
+# ------------------------------------------------------------- multi-hop --
+
+def _line_metric():
+    return next(m for m in DOC["semantic_layer"]["metrics"]
+                if m["type"] == "simple" and m["measure"].startswith("ord_ln.")
+                and not m.get("filter"))
+
+
+def test_two_hop_snowflaked_dimension_parity():
+    m = _line_metric()
+    col = m["measure"].split(".", 1)[1]
+    out = compile_metric(DOC, m["name"], group_by=["dept_dim.dept_cd"])
+    assert "sql" in out, out
+    got = dict(_rows(out["sql"]))
+    want = dict(_rows(
+        f"SELECT d.dept_cd, SUM(l.{col}) FROM ord_ln l "
+        "LEFT JOIN prod_ref p ON l.prod_id = p.prod_id "
+        "LEFT JOIN dept_dim d ON p.dept_cd = d.dept_cd GROUP BY 1"))
+    assert got == want
+
+
+def test_three_hop_chain_parity():
+    m = _line_metric()
+    col = m["measure"].split(".", 1)[1]
+    out = compile_metric(DOC, m["name"], group_by=["whs_dim.whs_id"])
+    assert "sql" in out, out
+    assert out["sql"].index("JOIN ord_hdr") < out["sql"].index("JOIN store_dim") \
+        < out["sql"].index("JOIN whs_dim")
+    got = dict(_rows(out["sql"]))
+    want = dict(_rows(
+        f"SELECT w.whs_id, SUM(l.{col}) FROM ord_ln l "
+        "LEFT JOIN ord_hdr h ON l.ord_id = h.ord_id "
+        "LEFT JOIN store_dim s ON h.store_id = s.store_id "
+        "LEFT JOIN whs_dim w ON s.whs_id = w.whs_id GROUP BY 1"))
+    assert got == want
+
+
+def test_shortest_path_beats_longer_diamond():
+    # dept_dim from ord_ln: direct prod_ref->dept_dim (2 hops) wins over
+    # prod_ref->category_dim->dept_dim (3 hops); NOT ambiguous
+    m = _line_metric()
+    out = compile_metric(DOC, m["name"], group_by=["dept_dim.dept_cd"])
+    assert "sql" in out and "category_dim" not in out["sql"]
+
+
+def test_equal_length_paths_refuse_as_ambiguous():
+    sl = {"tables": [
+        {"name": "ord", "columns": [
+            {"name": "a_id", "entity_role": "foreign_key"},
+            {"name": "b_id", "entity_role": "foreign_key"},
+            {"name": "amt", "entity_role": "measure"}]},
+        {"name": "a", "columns": [{"name": "a_id", "entity_role": "primary_key"},
+                                  {"name": "d_id", "entity_role": "foreign_key"}]},
+        {"name": "b", "columns": [{"name": "b_id", "entity_role": "primary_key"},
+                                  {"name": "d_id", "entity_role": "foreign_key"}]},
+        {"name": "dim", "columns": [{"name": "d_id", "entity_role": "primary_key"},
+                                    {"name": "label", "entity_role": "dimension"}]},
+    ], "metrics": [{"name": "total_amt", "type": "simple",
+                    "measure": "ord.amt", "agg": "sum"}],
+        "relationships": [
+        {"name": "r1", "from": {"table": "ord", "columns": ["a_id"]},
+         "to": {"table": "a", "columns": ["a_id"]}, "cardinality": "many_to_one"},
+        {"name": "r2", "from": {"table": "ord", "columns": ["b_id"]},
+         "to": {"table": "b", "columns": ["b_id"]}, "cardinality": "many_to_one"},
+        {"name": "r3", "from": {"table": "a", "columns": ["d_id"]},
+         "to": {"table": "dim", "columns": ["d_id"]}, "cardinality": "many_to_one"},
+        {"name": "r4", "from": {"table": "b", "columns": ["d_id"]},
+         "to": {"table": "dim", "columns": ["d_id"]}, "cardinality": "many_to_one"},
+    ]}
+    out = compile_metric({"semantic_layer": sl}, "total_amt", group_by=["dim.label"])
+    assert out.get("refused") and "ambiguous" in out["reason"]
+
+
+def test_role_playing_dim_refuses():
+    sl = {"tables": [
+        {"name": "ord", "columns": [
+            {"name": "ord_dt_key", "entity_role": "foreign_key"},
+            {"name": "ship_dt_key", "entity_role": "foreign_key"},
+            {"name": "amt", "entity_role": "measure"}]},
+        {"name": "date_dim", "columns": [{"name": "date_key", "entity_role": "primary_key"},
+                                         {"name": "cal_dt", "entity_role": "dimension"}]},
+    ], "metrics": [{"name": "total_amt", "type": "simple",
+                    "measure": "ord.amt", "agg": "sum"}],
+        "relationships": [
+        {"name": "r1", "from": {"table": "ord", "columns": ["ord_dt_key"]},
+         "to": {"table": "date_dim", "columns": ["date_key"]}, "cardinality": "many_to_one"},
+        {"name": "r2", "from": {"table": "ord", "columns": ["ship_dt_key"]},
+         "to": {"table": "date_dim", "columns": ["date_key"]}, "cardinality": "many_to_one"},
+    ]}
+    out = compile_metric({"semantic_layer": sl}, "total_amt", group_by=["date_dim.cal_dt"])
+    assert out.get("refused") and "ambiguous" in out["reason"]
