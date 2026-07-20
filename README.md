@@ -42,7 +42,7 @@ Everything lands with `confidence`, `provenance` (which signals produced it), an
 - **Read-only, minimal-grant**: `semlayer init` generates the grant script; the nightly test suite proves the reader persona cannot write.
 - **Telemetry**: anonymous command counts spooled *locally only* — nothing leaves your machine in this release; opt out with `SEMLAYER_TELEMETRY=off`. ([details](SECURITY.md))
 
-## Honest scope (v0.1 beta)
+## Honest scope (beta)
 
 - **Best on messy warehouses.** On clean, well-named schemas our benchmark shows raw DDL is already sufficient — we publish that negative result rather than hide it. If your warehouse is tidy TPC-DS, you may not need us.
 - Warehouses: **Snowflake, BigQuery, DuckDB** (+ Iceberg on S3 via the [DuckDB bridge](docs/iceberg-bridge.md)). Exporter: **dbt** (losses reported, never silent). LLM: Anthropic API (Bedrock/Vertex routing is next).

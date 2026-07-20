@@ -4,10 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "semlayer"
-version = "0.3.0b1"
+version = "0.3.0b2"
 description = "Open semantic layer format and inference engine for data warehouses"
 readme = "README.md"
 license = {text = "Apache-2.0"}
+authors = [{name = "Neocatalyst Labs", email = "hello@semlayer.dev"}]
 requires-python = ">=3.10"
 dependencies = [
     "pyyaml>=6.0",
@@ -29,6 +30,11 @@ dev = [
     "mypy>=2.0",
     "pip-audit>=2.10",
 ]
+
+[project.urls]
+Homepage = "https://semlayer.dev"
+Repository = "https://github.com/neocatalystlabs/semlayer"
+Changelog = "https://github.com/neocatalystlabs/semlayer/blob/main/CHANGELOG.md"
 
 [project.scripts]
 semlayer = "semlayer.cli:main"
