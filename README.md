@@ -49,6 +49,10 @@ Everything lands with `confidence`, `provenance` (which signals produced it), an
 - Not included: hosted service, ontology enrichment (it failed our own ablation gate — [receipts](docs/ablation-m5.md)), LookML/RDF exporters.
 - The eval harness ships in this repo — fixtures, gold layers, competency questions, benchmark runner. **Run our numbers yourself**: `python fixtures/build.py && pytest tests/ -q`.
 
+## Beta feedback
+
+Running the beta? File the [**Beta feedback** form](https://github.com/neocatalystlabs/semlayer/issues/new/choose) (attach the `*.report.json` the CLI writes next to your output — timings and counts only, never your schema or data), or email [hello@semlayer.dev](mailto:hello@semlayer.dev) for anything sensitive.
+
 ## Layout
 
 [`spec/`](spec/) format schema + consumer contract · [`src/semlayer/`](src/semlayer/) the engine · [`fixtures/`](fixtures/) 9 eval warehouses + golds + CQ suites · [`docs/`](docs/) benchmark, cost model, spike reports · [`ARCHITECTURE.md`](ARCHITECTURE.md) how it works

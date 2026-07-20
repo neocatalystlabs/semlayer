@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Design-partner beta — talk to us directly
+    url: mailto:hello@semlayer.dev
+    about: Anything sensitive, or if you'd rather not file publicly.
+  - name: semlayer.dev
+    url: https://semlayer.dev
+    about: Project home.
