@@ -118,7 +118,8 @@ class AnthropicProvider:
         kwargs: dict = {"model": self.model, "max_tokens": max_tokens, "system": system,
                         "messages": [{"role": "user", "content": user}]}
         try:
-            msg = client.messages.create(temperature=0, **kwargs)
+            # extra_body: anthropic>=1.0 dropped temperature from the typed signature
+            msg = client.messages.create(**kwargs, extra_body={"temperature": 0})
         except anthropic.BadRequestError as e:
             if "temperature" not in str(e):
                 raise LLMError(f"Anthropic API rejected the request: {e}",
