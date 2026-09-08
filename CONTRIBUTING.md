@@ -22,6 +22,19 @@ mypy                            # zero errors
 pytest tests/ -q                # all tests AND eval floors green
 ```
 
+## Optional: live warehouse tests
+
+CI runs the BigQuery live tier nightly. The Snowflake live tests are not run
+in CI (no project-maintained Snowflake account) and skip automatically without
+credentials. To run them against your own account:
+
+```bash
+# .env: SNOWFLAKE_ACCOUNT, SNOWFLAKE_READER_USER/PASSWORD, SNOWFLAKE_ADMIN_USER/PASSWORD,
+#       SNOWFLAKE_WAREHOUSE, SNOWFLAKE_DATABASE
+python fixtures/mirror_snowflake.py fan_trap   # one-time: mirror the fixture
+pytest tests/test_snowflake_live.py -q
+```
+
 ## The rules that are different here
 
 1. **Eval floors are contracts.** Accuracy targets live in test files with the

@@ -4,11 +4,11 @@ name: Nightly (live)
 # secrets (GOOGLE_*, ANTHROPIC_API_KEY); jobs skip cleanly when absent so
 # forks stay green.
 #
-# Snowflake live tier disabled 2026-09-08: the trial account backing
-# SNOWFLAKE_* secrets expired (trial ended, warehouses suspended), so the
-# reader fixture in test_snowflake_live.py hard-fails at connect time
-# instead of skipping. Re-enable by adding test_snowflake_live.py back to
-# the pytest line below once a live Snowflake account is provisioned.
+# Snowflake live tests (tests/test_snowflake_live.py) are not run in CI —
+# the project does not maintain a Snowflake account. Run them against your
+# own account: set SNOWFLAKE_* in .env, mirror the fixture with
+# `python fixtures/mirror_snowflake.py fan_trap`, then
+# `pytest tests/test_snowflake_live.py -q`. See CONTRIBUTING.md.
 
 on:
   schedule:
