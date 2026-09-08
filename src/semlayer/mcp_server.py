@@ -176,7 +176,7 @@ def build_server(doc: dict):
         return json.dumps(routing(doc, intent), default=str)
 
     @srv.tool()
-    def compile_metric(name: str, group_by: str = "", time_grain: str = "",  # noqa: PLR0913 — tool schema is intentionally flat
+    def compile_metric(name: str, group_by: str = "", time_grain: str = "",  # noqa: PLR0913, PLR0917 — tool schema is intentionally flat
                        time_start: str = "", time_end: str = "",
                        filter: str = "", dialect: str = "duckdb",
                        calendar: str = "") -> str:

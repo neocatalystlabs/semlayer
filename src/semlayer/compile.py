@@ -41,7 +41,7 @@ class _Ctx:
         self.time_col: str | None = None
 
 
-def compile_metric(doc: dict, name: str, group_by: list[str] | None = None,  # noqa: PLR0913 — flat signature mirrors the MCP tool schema
+def compile_metric(doc: dict, name: str, group_by: list[str] | None = None,  # noqa: PLR0913, PLR0917 — flat signature mirrors the MCP tool schema
                    time_grain: str | None = None, time_start: str | None = None,
                    time_end: str | None = None, extra_filter: str | None = None,
                    dialect: str = "duckdb", calendar: str | None = None) -> dict:
