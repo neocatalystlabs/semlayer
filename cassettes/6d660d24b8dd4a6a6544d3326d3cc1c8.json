@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "4df9b8e6e218",
+ "response": "{\"action\": \"sql\", \"sql\": \"SELECT d.yr_nbr, d.mth_nbr, d.mth_nm, SUM(a.tot_sls_amt) AS tot_sls_amt FROM dly_sls_agg a JOIN date_dim d ON a.agg_dt_key = d.date_key GROUP BY d.yr_nbr, d.mth_nbr, d.mth_nm ORDER BY d.yr_nbr, d.mth_nbr\", \"reason\": \"\"}",
+ "usage": {
+  "in": 3310,
+  "out": 195
+ }
+}

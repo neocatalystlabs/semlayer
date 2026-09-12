@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "semlayer"
-version = "0.3.0b2"
+version = "0.4.0b1"
 description = "Open semantic layer format and inference engine for data warehouses"
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -16,6 +16,7 @@ dependencies = [
     "duckdb>=1.5",
     "anthropic>=0.40",
     "mcp>=1.0,<2",  # 2.x renamed FastMCP -> MCPServer and changed the tool API
+    "sqlglot>=25",  # semantic SQL linter (MIT)
 ]
 
 [project.optional-dependencies]

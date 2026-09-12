@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "4df9b8e6e218",
+ "response": "{\"action\":\"sql\",\"sql\":\"SELECT SUM(tot_amt) AS total_revenue FROM ord_hdr WHERE sts_cd <> 'X'\",\"reason\":\"ord_hdr_legacy is deprecated; using ord_hdr with required sts_cd<>'X' filter instead.\"}",
+ "usage": {
+  "in": 7029,
+  "out": 105
+ }
+}

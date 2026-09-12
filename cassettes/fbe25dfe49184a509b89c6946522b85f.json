@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "4df9b8e6e218",
+ "response": "{\"action\":\"sql\",\"sql\":\"SELECT strftime(ord_dt, '%Y-%m') AS cal_month, SUM(tot_amt) AS total_revenue FROM ord_hdr WHERE sts_cd <> 'X' GROUP BY cal_month ORDER BY cal_month;\",\"reason\":\"Sum tot_amt by month, excluding cancelled orders per required_filter.\"}",
+ "usage": {
+  "in": 8656,
+  "out": 310
+ }
+}

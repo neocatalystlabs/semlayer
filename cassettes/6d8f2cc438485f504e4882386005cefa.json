@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "4df9b8e6e218",
+ "response": "{\"action\": \"sql\", \"sql\": \"SELECT sts_cd, COUNT(ord_id) AS ord_cnt FROM ord_hdr GROUP BY sts_cd ORDER BY sts_cd;\", \"reason\": \"Counts don't require the sts_cd<>'X' amount filter; grouping by status shows all.\"}",
+ "usage": {
+  "in": 6896,
+  "out": 113
+ }
+}

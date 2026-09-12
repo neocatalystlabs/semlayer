@@ -105,10 +105,25 @@ def _value_expression(ctx: _Ctx) -> str | dict:
             return _refuse("cross-table ratio compilation is not yet supported "
                            "(Phase B); numerator and denominator must share a "
                            "base table", ctx.legal)
-        return (f"CAST(SUM({num_t}.{num_c}) AS DOUBLE) / "
-                f"NULLIF(SUM({den_t}.{den_c}), 0)")
+        num_agg = _AGG_SQL[_default_agg(ctx, num_t, num_c)].format(f"{num_t}.{num_c}")
+        den_agg = _AGG_SQL[_default_agg(ctx, den_t, den_c)].format(f"{den_t}.{den_c}")
+        return f"CAST({num_agg} AS DOUBLE) / NULLIF({den_agg}, 0)"
     return _refuse(f"metric type '{m['type']}' compilation is not yet supported; "
                    "consume the definition from get_metrics instead", ctx.legal)
+
+
+def _default_agg(ctx: _Ctx, table: str, col: str) -> str:
+    """A ratio term aggregates by its column's declared default (a PK counts, an amount sums)."""
+    t = ctx.tables.get(table) or {}
+    c = next((x for x in t.get("columns", []) if x["name"] == col), None)
+    if c is None:
+        return "sum"
+    agg = (c.get("aggregations") or {}).get("default")
+    if agg in _AGG_SQL:
+        return agg
+    if c.get("entity_role") in ("primary_key", "unique_key"):
+        return "count"
+    return "sum"
 
 
 # ------------------------------------------------------- reachability map --

@@ -167,9 +167,17 @@ def test_dbt_export_includes_ratio():
 # ------------------------------------------------------------- multi-hop --
 
 def _line_metric():
+    """The plain line-revenue metric. It carries ord_hdr's cancelled-exclusion rule,
+    inherited because SUM(line_amt) per order reconciles with tot_amt (Phase 3)."""
     return next(m for m in DOC["semantic_layer"]["metrics"]
-                if m["type"] == "simple" and m["measure"].startswith("ord_ln.")
-                and not m.get("filter"))
+                if m["type"] == "simple" and m["measure"] == "ord_ln.line_amt"
+                and "completed" not in m["name"])
+
+
+def _line_where(m: dict) -> str:
+    """The metric's own filter, rewritten for the hand-written query's `l` alias."""
+    f = m.get("filter")
+    return f" WHERE {f.replace('ord_ln.', 'l.')}" if f else ""
 
 
 def test_two_hop_snowflaked_dimension_parity():
@@ -181,7 +189,7 @@ def test_two_hop_snowflaked_dimension_parity():
     want = dict(_rows(
         f"SELECT d.dept_cd, SUM(l.{col}) FROM ord_ln l "
         "LEFT JOIN prod_ref p ON l.prod_id = p.prod_id "
-        "LEFT JOIN dept_dim d ON p.dept_cd = d.dept_cd GROUP BY 1"))
+        f"LEFT JOIN dept_dim d ON p.dept_cd = d.dept_cd{_line_where(m)} GROUP BY 1"))
     assert got == want
 
 
@@ -197,7 +205,7 @@ def test_three_hop_chain_parity():
         f"SELECT w.whs_id, SUM(l.{col}) FROM ord_ln l "
         "LEFT JOIN ord_hdr h ON l.ord_id = h.ord_id "
         "LEFT JOIN store_dim s ON h.store_id = s.store_id "
-        "LEFT JOIN whs_dim w ON s.whs_id = w.whs_id GROUP BY 1"))
+        f"LEFT JOIN whs_dim w ON s.whs_id = w.whs_id{_line_where(m)} GROUP BY 1"))
     assert got == want
 
 

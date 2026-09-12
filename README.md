@@ -11,6 +11,7 @@ semlayer infer snowflake -o layer.yaml \
   --context ./docs/ --context ./etl-repo/CLAUDE.md   # optional: your wikis/dictionaries as priors
 semlayer review layer.yaml         # accept/reject what the engine inferred
 semlayer mcp layer.yaml            # serve it to Claude, Cursor, or any MCP client
+semlayer lint layer.yaml query.sql  # check any SQL (yours or an agent's) against the layer
 semlayer drift layer.yaml snowflake  # catch schema changes (cron- and CI-friendly)
 ```
 
@@ -18,7 +19,7 @@ semlayer drift layer.yaml snowflake  # catch schema changes (cron- and CI-friend
 
 AI agents fail on real warehouses: frontier models solved just **21.3%** of Spider 2.0's enterprise-warehouse tasks at publication (vs ~91% on the earlier academic Spider 1.0) — and even today's best agentic scaffolds only reach ~30%. The fix is a semantic layer — but every existing tool (dbt, LookML, Cube, Snowflake semantic views) makes humans write it by hand, and it goes stale the day someone runs an `ALTER TABLE`.
 
-On our messy-warehouse benchmark (cryptic names, zero declared constraints, hidden business rules), an agent using the inferred layer answers **53% of business questions correctly vs 34% from the raw schema (+54% relative)** — and the errors it fixes are the *silent* kind: raw-schema "total revenue" happily sums cancelled orders. [Full benchmark, including where we DON'T help →](docs/benchmark.md)
+On our messy-warehouse benchmark (cryptic names, zero declared constraints, hidden business rules), an agent using the inferred layer answers **87% of business questions correctly vs 42% from the raw schema (+107% relative), 89% when it also runs the layer's SQL linter** — and the errors it fixes are the *silent* kind: raw-schema "total revenue" happily sums cancelled orders; a fan-out join quietly triples a total. [Full benchmark, methodology changes included, and where we DON'T help →](docs/benchmark.md)
 
 ## What gets inferred
 
@@ -27,7 +28,9 @@ On our messy-warehouse benchmark (cryptic names, zero declared constraints, hidd
 | **Semantic types + roles** | `sts_cd` → status code; `tot_amt` → monetary measure with sum/avg aggregations; PII flagged recall-first |
 | **Keys & joins** | 104/104 undeclared FKs on TPC-DS-style naming, F1 = 1.0 on our messy fixture — with **zero** of the seeded false-FK traps accepted (statistics alone never auto-include; naming + LLM must corroborate) |
 | **Enum decodes** | `C=Completed, X=Cancelled` — joined from the decode dimension the engine itself discovered |
-| **Business rules** | "these aggregate tables reconcile only when `sts_cd <> 'X'`" — found by hypothesis-testing, scoped to revenue metrics, never to counts |
+| **Business rules** | "these aggregate tables reconcile only when `sts_cd <> 'X'`" — found by hypothesis-testing, scoped to revenue metrics (`scope: measures`), never to counts; inherited by a child fact only when its line amounts provably sum to the parent's total |
+| **Grain, SCD2, ratios** | "one row per ord_id"; `cust_mstr` is SCD2 with `eff_start_dt`/`eff_end_dt`/`is_curr_flg` and an as-of join rule; `avg_tot_amt_per_order` = revenue / orders |
+| **SQL linting** | `check_sql` (MCP) / `semlayer lint` (CLI): deterministic checks of any SQL against the layer — missing required filters, fan-out sums, deprecated tables, SCD2 without a validity window, hallucinated columns, vacuous correlated subqueries — each with a fix hint |
 | **Metrics, routing, deprecation** | revenue/count metrics with contract-legal filters; "use `ord_hdr`, avoid `ord_hdr_legacy` (superseded)" |
 | **Descriptions** | every table + column, LLM-written from evidence via join-graph context propagation, judged 0.82–0.89 correct+useful by an independent model |
 | **Your docs as priors** | `--context` ingests data dictionaries, wiki exports, CLAUDE.md files — and *tells you where they're wrong*: doc-vs-data contradictions go to review, never silent override ([guide](docs/context-priors.md)) |

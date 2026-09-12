@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "4df9b8e6e218",
+ "response": "{\"action\":\"sql\",\"sql\":\"SELECT cm.seg_cd, SUM(oh.tot_amt) AS tot_revenue\\nFROM ord_hdr oh\\nJOIN cust_mstr cm\\n  ON cm.cust_id = oh.cust_id\\n  AND oh.ord_dt >= cm.eff_start_dt\\n  AND (cm.eff_end_dt IS NULL OR oh.ord_dt < cm.eff_end_dt)\\nWHERE oh.sts_cd <> 'CANCELLED'\\nGROUP BY cm.seg_cd\",\"reason\":\"Aggregated non-cancelled order revenue by as-of customer segment via SCD2 join.\"}",
+ "usage": {
+  "in": 3311,
+  "out": 489
+ }
+}

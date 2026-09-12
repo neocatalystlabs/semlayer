@@ -1,6 +1,51 @@
 # Changelog
 
-## Unreleased
+## v0.4.0-beta.1 (unreleased)
+
+Spec `0.3.0` (MINOR: one new optional field, one new contract section).
+
+- **Semantic SQL linter** (`semlayer.lint`, new runtime dependency
+  `sqlglot`, MIT). Deterministic, no LLM: `parse_error`, `unknown_table`,
+  `unknown_column`, `correlated_reference` (an unqualified column that
+  silently resolves to the outer query — the vacuous `IN (SELECT …)`),
+  `deprecated_table`, `missing_required_filter` (scope-aware),
+  `fanout_aggregate`, `scd2_without_validity`. Every finding carries a fix
+  hint. Surfaces: `check_sql` MCP tool (server instructions ask agents to
+  run it before executing), `semlayer lint <doc> [file|-]` (exit 2 on
+  errors, 1 on warnings — CI-friendly), and a lint-fed repair round in the
+  benchmark answerer (`semantic+lint` condition). SPEC.md §2.11.
+- **`required_filter.scope`** (`all` | `measures`): a rule that applies to
+  amount aggregations but not to event counts is now structured, not prose.
+  Reconciliation-discovered rules are emitted this way. SPEC.md §2.2.
+- **Rule propagation to child facts.** A parent fact's measure-scoped rule
+  is inherited by a child fact only when `SUM(child.measure)` per FK key
+  reconciles with the parent's measure (≥95% of keys within 0.2%); the
+  evidence rides in the filter's `reason`. Unverified inheritance emits
+  nothing.
+- **SCD2 mechanics inferred.** `snapshot_scd2` tables get a `scd` block
+  (valid_from / valid_to / current flag / natural key) from their validity
+  columns, plus an as-of usage rule; `grain` is stated in words from the
+  primary key.
+- **Ratio metrics.** `avg_<measure>_per_<entity>` (SUM / COUNT(pk)) on
+  every fact, carrying discovered rules; `compile_metric` aggregates ratio
+  terms by their column's default (a key counts); the validator accepts
+  `table.column` ratio terms (compile/export already did).
+- **Search and context.** `semantic_search` expands warehouse
+  abbreviations, stems, and ranks staging/deprecated tables below canonical
+  ones; the agent context renders grain, SCD mechanics, join cardinality
+  and fan-out warnings, filters before notes, only question-relevant
+  metrics; deprecated tables render as a stub with columns withheld.
+- **Benchmark methodology v2** (docs/benchmark.md): result scoring is
+  projection-tolerant (extra/reordered columns, scalar in any column of a
+  single row, midnight timestamps as dates, dictionary labels resolved to
+  codes); eight messy_mart questions whose wording contradicted their gold
+  SQL were reworded to the gold (MM-5, MM-9, MM-24, MM-25, MM-28, MM-29,
+  MM-32, MM-33 — MM-9's gold also lost an unrequested count column). Both apply to
+  every condition; before/after under both methodologies is published.
+- Ontology non-inferiority is reported by the CQ harness, no longer
+  asserted (the condition is internal-only and sits at the band's edge).
+
+### Previously unreleased (now in this release)
 
 - **Reconciler: per-group verification.** Aggregate reconciliation now
   verifies every mapped grouping per group (key-aligned for same-name group

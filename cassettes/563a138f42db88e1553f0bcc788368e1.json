@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "4df9b8e6e218",
+ "response": "{\"action\":\"sql\",\"sql\":\"SELECT SUM(oh.tot_amt) AS total_revenue_with_returns FROM ord_hdr oh WHERE oh.sts_cd <> 'X' AND oh.ord_id IN (SELECT ol.ord_id FROM ord_ln ol WHERE ol.ord_ln_id IN (SELECT ort.ord_ln_id FROM ord_rtn ort))\",\"reason\":\"Sum tot_amt per order (no fan-out) for orders with >=1 returned line, excluding cancelled orders per required filter.\"}",
+ "usage": {
+  "in": 8114,
+  "out": 414
+ }
+}

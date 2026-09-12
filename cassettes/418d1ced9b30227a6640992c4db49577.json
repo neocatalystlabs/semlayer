@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "4df9b8e6e218",
+ "response": "{\"action\":\"sql\",\"sql\":\"SELECT SUM(oh.tot_amt) AS total_revenue\\nFROM ord_hdr oh\\nWHERE EXISTS (\\n  SELECT 1\\n  FROM ord_ln ol\\n  JOIN ord_rtn r ON r.ord_ln_id = ol.ord_ln_id\\n  WHERE ol.ord_id = oh.ord_id\\n)\",\"reason\":\"Sum tot_amt per order (no fan-out) for orders with >=1 returned line item.\"}",
+ "usage": {
+  "in": 3308,
+  "out": 338
+ }
+}

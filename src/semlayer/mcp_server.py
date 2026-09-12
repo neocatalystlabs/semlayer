@@ -55,7 +55,7 @@ def get_table(doc: dict, name: str) -> dict:
     if t is None:
         return {"error": f"unknown table '{name}'"}
     out = {k: t[k] for k in ("name", "description", "ai_context", "table_type",
-                             "grain", "source", "primary_key", "freshness",
+                             "grain", "scd", "source", "primary_key", "freshness",
                              "lifecycle", "confidence") if k in t}
     if t.get("lifecycle") in ("deprecated", "orphaned"):
         out["UNUSABLE"] = True
@@ -79,30 +79,85 @@ def get_table(doc: dict, name: str) -> dict:
     return out
 
 
+_NOISE_TYPES = ("staging", "operational", "log", "control", "metadata", "audit", "etl")
+
+
+def _stem(w: str) -> str:
+    """Cheap English stemmer for plural/singular agreement (customers == customer)."""
+    if len(w) > 4 and w.endswith("ies"):
+        return w[:-3] + "y"
+    if len(w) > 4 and w.endswith(("sses", "shes", "ches", "xes")):
+        return w[:-2]
+    if len(w) > 3 and w.endswith("s") and not w.endswith("ss"):
+        return w[:-1]
+    return w
+
+
+# search-only expansions on top of the Link stage's shared table (kept separate so
+# FK naming scores are untouched)
+_SEARCH_ABBREV = {
+    "tot": "total", "cnt": "count", "nm": "name", "desc": "description", "flg": "flag",
+    "hdr": "header", "ln": "line", "rsn": "reason", "pmt": "payment", "mthd": "method",
+    "typ": "type", "snpsht": "snapshot", "inv": "inventory", "promo": "promotion",
+    "curr": "currency", "seg": "segment", "actv": "active", "dly": "daily", "yr": "year",
+    "num": "number", "ref": "reference", "attr": "attribute", "ext": "external",
+    "avg": "average",
+}
+
+
+def _tokens(text: str) -> set[str]:
+    """Tokenize, expand warehouse abbreviations (cust -> customer), and stem."""
+    from semlayer.link.candidates import ABBREV
+    out = set()
+    for w in re.split(r"[\W_]+", (text or "").lower()):
+        if w:
+            out.add(_stem(_SEARCH_ABBREV.get(w, ABBREV.get(w, w))))
+    return out
+
+
+def _type_penalty(t: dict) -> int:
+    """Rank canonical fact/dimension tables above staging/operational/log tables on equal hits."""
+    pen = 0
+    tt = (t.get("table_type") or "")
+    if any(k in tt for k in _NOISE_TYPES) or t["name"].startswith(("stg_", "tmp_", "etl_")):
+        pen += 2
+    if t.get("lifecycle") in ("deprecated", "orphaned"):
+        pen += 3
+    return pen
+
+
 def search(doc: dict, query: str, limit: int = 10) -> list[dict]:
-    """Keyword-search tables, columns, and metrics; ranked by keyword hits."""
-    toks = [w for w in re.split(r"\W+", query.lower()) if w]
+    """Keyword-search tables, columns, and metrics.
+
+    Ranking: abbreviation-expanded, stemmed token overlap (name hits weigh
+    more than description hits); staging/operational and deprecated tables
+    are ranked below canonical tables with the same hits.
+    """
+    toks = _tokens(query)
     scored = []
     sl = doc["semantic_layer"]
     for t in sl["tables"]:
-        hay_t = " ".join([t["name"], t.get("description", ""), t.get("ai_context", "")]).lower()
-        score = sum(2 for w in toks if w in t["name"].lower()) + sum(1 for w in toks if w in hay_t)
+        name_t = _tokens(t["name"])
+        desc_t = _tokens(" ".join([t.get("description") or "", t.get("ai_context") or ""]))
+        score = 3 * len(toks & name_t) + len(toks & desc_t)
         if score:
+            score -= _type_penalty(t)
             scored.append((score, {"kind": "table", "name": t["name"],
                                    "description": (t.get("description") or "")[:100],
                                    "lifecycle": t.get("lifecycle", "inferred")}))
         for c in t["columns"]:
-            hay_c = " ".join([c["name"], c.get("description", "") or ""]).lower()
-            cscore = (sum(2 for w in toks if w in c["name"].lower())
-                      + sum(1 for w in toks if w in hay_c))
+            cname_t = _tokens(c["name"])
+            cdesc_t = _tokens(c.get("description") or "")
+            cscore = 2 * len(toks & cname_t) + len(toks & cdesc_t)
             if cscore:
+                cscore -= _type_penalty(t)
                 scored.append((cscore, {"kind": "column", "name": f"{t['name']}.{c['name']}",
                                         "semantic_type": c.get("semantic_type"),
                                         "description": (c.get("description") or "")[:80]}))
     for m in sl.get("metrics", []):
-        hay_m = " ".join([m["name"], m.get("display_name", ""),
-                          *m.get("synonyms", [])]).lower()
-        mscore = sum(2 for w in toks if w in hay_m)
+        hay_m = _tokens(" ".join([m["name"], m.get("display_name") or "",
+                                  *(m.get("synonyms") or [])]))
+        mscore = 2 * len(toks & hay_m)
         if mscore:
             scored.append((mscore + 1, {"kind": "metric", "name": m["name"],
                                         "measure": m.get("measure"), "filter": m.get("filter")}))
@@ -142,7 +197,8 @@ def build_server(doc: dict):
     srv = FastMCP("semlayer",
                   instructions="Semantic layer for this warehouse. Start with "
                                "semantic_search or list_domains; use get_table before writing SQL. "
-                               "ALWAYS apply required_filters; never use UNUSABLE objects; caveat "
+                               "ALWAYS apply required_filters; never use UNUSABLE objects; run "
+                               "check_sql on every query before executing it; caveat "
                                "answers built on lifecycle=inferred elements.")
 
     @srv.tool()
@@ -174,6 +230,18 @@ def build_server(doc: dict):
     def route_intent(intent: str) -> str:
         """Which tables to use (and avoid) for an analytical intent."""
         return json.dumps(routing(doc, intent), default=str)
+
+    @srv.tool()
+    def check_sql(sql: str, dialect: str = "duckdb") -> str:
+        """Lint SQL you wrote against the semantic layer BEFORE running it.
+
+        Deterministic checks: unknown tables/columns, correlated references,
+        deprecated tables, missing required filters, fan-out aggregates,
+        SCD2 joins without a validity window. Fix every error and warning
+        (each finding carries a fix hint), then re-check.
+        """
+        from semlayer.lint import lint_sql
+        return json.dumps(lint_sql(doc, sql, dialect=dialect), default=str)
 
     @srv.tool()
     def compile_metric(name: str, group_by: str = "", time_grain: str = "",  # noqa: PLR0913, PLR0917 — tool schema is intentionally flat

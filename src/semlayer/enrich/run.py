@@ -42,8 +42,11 @@ def enrich_source(source, doc: dict, stats: dict) -> dict:
     if aggs:
         sl["aggregate_tables"] = aggs
     _apply_discovered_filters_to_metrics(sl)
+    _propagate_parent_filters(source, sl, stats)
     _domains_and_routing(sl, aggs)
     _snapshot_filters(sl, stats)
+    _infer_grain(sl)
+    _infer_scd(sl)
     return doc
 
 
@@ -268,6 +271,49 @@ def _count_metric(t: dict, pk: str | None, seen: set) -> dict | None:
     }
 
 
+def _entity_word(table: str) -> str:
+    """Singular business noun for a table name: ord_hdr -> order, store_sales -> store_sale."""
+    from semlayer.link.candidates import ABBREV
+    extra = {"ln": "line", "hdr": "header", "dtl": "detail", "evt": "event", "txn": "transaction"}
+    toks = [extra.get(w, ABBREV.get(w, w)) for w in re.split(r"[_\W]+", table.lower()) if w]
+    toks = [w for w in toks if w not in ("hdr", "header", "fact", "tbl", "table", "dtl", "detail")]
+    if not toks:
+        return table
+    return "_".join(toks).rstrip("s")
+
+
+def _ratio_metrics(t: dict, pk: str | None, own: list[dict], seen: set) -> list[dict]:
+    """Average <measure> per <entity>: SUM(measure) / COUNT(pk) on the same fact.
+
+    The one derived metric every warehouse asks for ("average order value")
+    and the one compile_metric can already emit safely (same base table).
+    Inherits the measure metric's filter later, with it.
+    """
+    if not pk:
+        return []
+    entity = _entity_word(t["name"])
+    out = []
+    for m in own:
+        if m.get("type") != "simple" or m.get("agg") != "sum" or "completed" in m["name"]:
+            continue
+        col = m["measure"].split(".", 1)[1]
+        name = f"avg_{col}_per_{entity}"
+        if name in seen:
+            continue
+        seen.add(name)
+        out.append({
+            "name": name, "type": "ratio",
+            "numerator": m["measure"], "denominator": f"{t['name']}.{pk}",
+            "display_name": f"Average {col} per {entity}",
+            "synonyms": [f"average {col} per {entity}", f"{col} per {entity}",
+                         f"average {entity} value"],
+            "grain": t.get("grain", ""), "lifecycle": "inferred", "confidence": 0.6,
+            "provenance": [{"signal": "statistic",
+                            "detail": f"SUM({col}) / COUNT({pk}) on {t['name']}"}],
+        })
+    return out
+
+
 def _time_dimension_for(t: dict, sl: dict) -> str | None:
     """Best time column for a table's metrics.
 
@@ -318,6 +364,7 @@ def _metric_candidates(sl) -> list[dict]:
         count_metric = _count_metric(t, pk, seen)
         if count_metric is not None:
             metrics.append(count_metric)
+            metrics.extend(_ratio_metrics(t, pk, metrics[before:], seen))
         if time_dim is not None:
             for m in metrics[before:]:
                 m["agg_time_dimension"] = time_dim
@@ -359,13 +406,15 @@ def _record_measure_filter_note(f: dict, t: dict, filt: str) -> None:
 
     Measure-scoped: blanket table filters corrupt count questions.
     """
-    note = (f"revenue/amount aggregations over {f['name']} conventionally use "
-            f"{filt} (discovered: {t['name']} reconciles only with it); "
-            f"event COUNTS include all rows")
-    notes = f.setdefault("knowledge", {}).setdefault("usage_notes", [])
-    if note not in notes:
-        notes.append(note)
-    f["knowledge"].setdefault("_pending_metric_filter", []).append(filt)
+    f.setdefault("knowledge", {}).setdefault("_pending_metric_filter", []).append(filt)
+    rfs = f["knowledge"].setdefault("required_filters", [])
+    if not any(r["expr"] == filt for r in rfs):
+        rfs.append({
+            "expr": filt, "enforcement": "required", "scope": "measures",
+            "reason": (f"amount aggregations over {f['name']} must exclude these rows: "
+                       f"{t['name']} reconciles with {f['name']} only under this filter "
+                       f"(discovered by per-group reconciliation); counts include all rows"),
+        })
 
 
 def _aggregate_entry(
@@ -552,8 +601,10 @@ def _apply_discovered_filters_to_metrics(sl) -> None:
             continue
         filt = pend[0]
         for m in sl.get("metrics", []):
-            if (m.get("measure", "").startswith(t["name"] + ".")
-                    and m.get("agg") in ("sum", "avg") and not m.get("filter")):
+            simple = (m.get("measure", "").startswith(t["name"] + ".")
+                      and m.get("agg") in ("sum", "avg"))
+            ratio = m.get("type") == "ratio" and m.get("numerator", "").startswith(t["name"] + ".")
+            if (simple or ratio) and not m.get("filter"):
                 m["filter"] = filt
                 m.setdefault("provenance", []).append(
                     {"signal": "statistic",
@@ -653,6 +704,156 @@ def _domains_and_routing(sl, aggs) -> None:
         rk["domains"] = domains
     if rk:
         sl["repo_knowledge"] = rk
+
+
+# ------------------------------------------------------ filter propagation
+def _propagate_parent_filters(source, sl, stats) -> None:
+    """A parent fact's measure-scoped rule reaches its child fact when the data proves it.
+
+    ord_hdr excludes cancelled orders from revenue; ord_ln rows for those
+    orders still exist. If SUM(child.measure) per parent key reconciles with
+    parent.measure (>=95% of keys within 0.2%), the child measure IS the
+    parent's measure decomposed, so the rule is inherited as a semi-join
+    required filter and applied to the child's sum/ratio metrics.
+    Without that proof nothing is inherited: whether e.g. RETURN amounts on
+    cancelled orders count is a business question the data has not answered.
+    """
+    tables = {t["name"]: t for t in sl["tables"]}
+    qualify = getattr(source, "qualify", lambda s, n: f'"{s}"."{n}"')
+    for r in sl.get("relationships", []):
+        if r.get("cardinality") != "many_to_one":
+            continue
+        child, parent = tables.get(r["from"]["table"]), tables.get(r["to"]["table"])
+        if not child or not parent or child.get("table_type") != "fact":
+            continue
+        if parent.get("table_type") != "fact":
+            continue
+        rules = [f for f in parent.get("knowledge", {}).get("required_filters", [])
+                 if f.get("scope") == "measures" and f.get("enforcement") == "required"]
+        if not rules:
+            continue
+        _inherit_rules(source, qualify, stats, sl, child, parent, r, rules)
+
+
+def _inherit_rules(source, qualify, stats, sl, child: dict, parent: dict,  # noqa: PLR0913
+                   r: dict, rules: list[dict]) -> None:
+    """Attach the parent's measure rules to one child fact when per-key reconciliation proves it."""
+    fk, pk = r["from"]["columns"][0], r["to"]["columns"][0]
+    verified = _child_measures_reconcile(source, qualify, stats, child, parent, fk, pk)
+    if not verified:
+        return
+    evidence = (f"SUM({verified[0]}) per {fk} reconciles with {parent['name']}.{verified[1]} "
+                f"({verified[2]})")
+    rfs = child.setdefault("knowledge", {}).setdefault("required_filters", [])
+    for f in rules:
+        expr = f["expr"] if isinstance(f["expr"], str) else next(iter(f["expr"].values()))
+        semi = f"{child['name']}.{fk} IN (SELECT {pk} FROM {parent['name']} WHERE {expr})"
+        if any(x["expr"] == semi for x in rfs):
+            continue
+        rfs.append({"expr": semi, "scope": "measures", "enforcement": "required",
+                    "reason": f"inherited from {parent['name']} ({expr}): {evidence}"})
+        child.setdefault("provenance", []).append(
+            {"signal": "statistic",
+             "detail": f"required filter inherited from {parent['name']} via {fk} -> {pk}"})
+        _apply_inherited_filter(sl, child["name"], parent["name"], fk, semi)
+
+
+def _apply_inherited_filter(sl, child: str, parent: str, fk: str, semi: str) -> None:
+    for m in sl.get("metrics", []):
+        owns = (m.get("measure", "").startswith(child + ".")
+                or m.get("numerator", "").startswith(child + "."))
+        if owns and m.get("agg", "sum") in ("sum", "avg") and not m.get("filter"):
+            m["filter"] = semi
+            m.setdefault("provenance", []).append(
+                {"signal": "statistic", "detail": f"inherits {parent}'s rule via {fk}"})
+
+
+def _child_measures_reconcile(source, qualify, stats, child: dict, parent: dict,
+                              fk: str, pk: str) -> tuple[str, str, str] | None:
+    """(child_measure, parent_measure, evidence) if a child measure sums to the parent's per key."""
+    c_ts, p_ts = stats[child["name"]].table, stats[parent["name"]].table
+    cq, pq = qualify(c_ts.schema, c_ts.name), qualify(p_ts.schema, p_ts.name)
+    c_meas = [c["name"] for c in child["columns"]
+              if c.get("entity_role") == "measure" and c.get("semantic_type") == "monetary_value"]
+    p_meas = [c["name"] for c in parent["columns"]
+              if c.get("entity_role") == "measure" and c.get("semantic_type") == "monetary_value"]
+    for cm in c_meas:
+        sums = _group_sums(source, cq, fk, cm)
+        if not sums:
+            continue
+        for pm in p_meas:
+            rows = source.query(f'SELECT "{pk}", round("{pm}", 2) FROM {pq} LIMIT {_MAX_GROUPS}')
+            pvals = {k: float(v) for k, v in rows if k is not None and v is not None}
+            common = [k for k in sums if k in pvals]
+            if len(common) < 20:
+                continue
+            matched = sum(1 for k in common if _close(pvals[k], float(sums[k])))
+            if matched / len(common) >= _MIN_COVERAGE:
+                return cm, pm, f"{matched}/{len(common)} {fk} keys within {_REL_TOL:.1%}"
+    return None
+
+
+# ------------------------------------------------------------ grain / scd
+_SCD_FROM = ("eff_start_dt", "valid_from", "eff_from_dt", "start_dt", "effective_from",
+             "valid_from_dt")
+_SCD_TO = ("eff_end_dt", "valid_to", "eff_to_dt", "end_dt", "effective_to", "valid_to_dt")
+_SCD_CURR = ("is_curr_flg", "is_current", "is_curr", "current_flag", "curr_flg",
+             "is_active_version")
+
+
+def _infer_grain(sl) -> None:
+    """State each table's grain in words, derived from its primary key (never guessed)."""
+    for t in sl["tables"]:
+        if t.get("grain"):
+            continue
+        pk = t.get("primary_key") or []
+        if not pk:
+            continue
+        if t.get("table_type") == "snapshot_scd2":
+            t["grain"] = f"one row per {', '.join(pk)} (one row per version of each entity)"
+        elif t.get("table_type") == "aggregate":
+            t["grain"] = f"one row per {', '.join(pk)} (pre-aggregated)"
+        else:
+            t["grain"] = f"one row per {', '.join(pk)}"
+
+
+def _infer_scd(sl) -> None:
+    """Populate `scd` (type 2 mechanics) on tables classified snapshot_scd2 from validity columns.
+
+    Naming heuristic only; the block is what compile/lint/consumers use to
+    build as-of joins instead of a plain current-row join.
+    """
+    for t in sl["tables"]:
+        if t.get("table_type") != "snapshot_scd2" or t.get("scd"):
+            continue
+        names = {c["name"].lower(): c["name"] for c in t["columns"]}
+        vf = next((names[n] for n in _SCD_FROM if n in names), None)
+        vt = next((names[n] for n in _SCD_TO if n in names), None)
+        cf = next((names[n] for n in _SCD_CURR if n in names), None)
+        if not (vf and vt):
+            continue
+        scd = {"type": 2, "valid_from": vf, "valid_to": vt}
+        if cf:
+            scd["is_current_flag"] = cf
+        pk = set(t.get("primary_key") or [])
+        nk = sorted((c["name"] for c in t["columns"]
+                     if c["name"] not in pk and c["name"].lower().endswith("_id")
+                     and c.get("entity_role") in ("natural_key", "unique_key",
+                                                  "foreign_key", "dimension")),
+                    key=lambda n: (n.lower() not in ("cust_id", "customer_id"),
+                                   not n.lower().startswith(t["name"][:4].lower()), n))
+        if nk:
+            scd["natural_key"] = nk[:1]
+        t["scd"] = scd
+        notes = t.setdefault("knowledge", {}).setdefault("usage_notes", [])
+        rule = (f"SCD type 2: multiple rows per entity. For attributes as of a fact's date, join "
+                f"ON key AND fact_date BETWEEN {vf} AND COALESCE({vt}, DATE '9999-12-31'); "
+                + (f"use {cf} = 1 only for 'current' questions; " if cf else "")
+                + "count entities with COUNT(DISTINCT key), not COUNT(*)")
+        if rule not in notes:
+            notes.append(rule)
+        detail = f"scd2 validity columns {vf}/{vt}" + (f", current flag {cf}" if cf else "")
+        t.setdefault("provenance", []).append({"signal": "naming", "detail": detail})
 
 
 # -------------------------------------------------------- snapshot filters

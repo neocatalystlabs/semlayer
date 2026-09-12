@@ -84,8 +84,8 @@ def test_mcp_progressive_disclosure_sizes(doc):
     tables = mcp_server.list_tables(doc)
     assert len(json.dumps(tables)) < 12000, "table list must stay summary-sized"
     detail = mcp_server.get_table(doc, "ord_hdr")
-    assert "columns" in detail and "usage_notes" in detail
-    assert any("sts_cd <> 'X'" in n for n in detail["usage_notes"])
+    assert "columns" in detail and "required_filters" in detail
+    assert any("sts_cd <> 'X'" in f["expr"] for f in detail["required_filters"])
 
 
 def test_mcp_deprecated_marked_unusable(doc):

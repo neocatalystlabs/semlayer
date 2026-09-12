@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "4df9b8e6e218",
+ "response": "{\"action\":\"sql\",\"sql\":\"SELECT SUM(tot_amt) / COUNT(*) AS avg_order_value_completed FROM ord_hdr WHERE sts_cd = 'C';\",\"reason\":\"Computed avg order value as SUM(tot_amt)/COUNT(ord_id) filtered to completed orders (sts_cd='C').\"}",
+ "usage": {
+  "in": 7913,
+  "out": 460
+ }
+}

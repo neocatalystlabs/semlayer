@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "4df9b8e6e218",
+ "response": "{\"action\":\"sql\",\"sql\":\"SELECT SUM(tot_amt) / COUNT(ord_id) AS avg_tot_amt_per_order FROM ord_hdr WHERE sts_cd <> 'X'\",\"reason\":\"Uses avg_tot_amt_per_order metric with required sts_cd <> 'X' filter.\"}",
+ "usage": {
+  "in": 7695,
+  "out": 116
+ }
+}

@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "4df9b8e6e218",
+ "response": "{\"action\":\"sql\",\"sql\":\"WITH agg AS (SELECT SUM(tot_sls_amt) AS agg_amt FROM dly_sls_agg), ord AS (SELECT SUM(tot_amt) AS ord_amt FROM ord_hdr WHERE sts_cd <> 'CANCELLED') SELECT agg.agg_amt - ord.ord_amt AS diff FROM agg, ord\",\"reason\":\"Computed difference between daily sales agg total and non-cancelled order revenue total.\"}",
+ "usage": {
+  "in": 3310,
+  "out": 421
+ }
+}

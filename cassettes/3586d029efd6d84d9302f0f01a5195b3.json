@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "4df9b8e6e218",
+ "response": "```json\n{\n  \"action\": \"sql\",\n  \"sql\": \"SELECT COUNT(DISTINCT oh.ord_id) AS total_orders\\nFROM ord_hdr oh\\nJOIN cust_mstr cm ON oh.cust_id = cm.cust_id\\n  AND oh.ord_dt BETWEEN cm.eff_start_dt AND COALESCE(cm.eff_end_dt, DATE '9999-12-31')\\nWHERE cm.seg_cd = 'ENT'\\n  AND oh.sts_cd <> 'X'\",\n  \"reason\": \"SCD2 as-of join on order date to get segment at order time; filter cancelled orders per required_filter\"\n}\n```",
+ "usage": {
+  "in": 5823,
+  "out": 183
+ }
+}
