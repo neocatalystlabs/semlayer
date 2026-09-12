@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "4df9b8e6e218",
+ "response": "{\"action\": \"sql\", \"sql\": \"SELECT chnl_cd, COUNT(*) AS ord_cnt FROM ord_hdr GROUP BY chnl_cd\", \"reason\": \"Counts orders per channel from ord_hdr\"}",
+ "usage": {
+  "in": 3296,
+  "out": 85
+ }
+}

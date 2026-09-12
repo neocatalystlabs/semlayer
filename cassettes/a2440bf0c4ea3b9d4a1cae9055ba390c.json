@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "4df9b8e6e218",
+ "response": "{\"action\": \"refuse\", \"reason\": \"No join key links mktg_cmpgn_dim to ord_hdr/revenue; campaign attribution not possible.\"}",
+ "usage": {
+  "in": 7389,
+  "out": 130
+ }
+}

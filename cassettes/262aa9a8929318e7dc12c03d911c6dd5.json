@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "4df9b8e6e218",
+ "response": "{\"action\":\"sql\",\"sql\":\"SELECT c.chnl_nm, COUNT(o.ord_id) AS order_count\\nFROM ord_hdr o\\nJOIN chnl_dim c ON o.chnl_cd = c.chnl_cd\\nGROUP BY c.chnl_nm\\nORDER BY order_count DESC\",\"reason\":\"Count of orders per channel; no amount aggregation so sts_cd filter not required.\"}",
+ "usage": {
+  "in": 7025,
+  "out": 150
+ }
+}

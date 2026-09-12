@@ -51,6 +51,12 @@ def _build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("mcp", help="Serve a semantic layer over MCP (stdio)")
     p.add_argument("doc", help="semantic layer YAML path")
 
+    p = sub.add_parser("lint", help="Check SQL against a semantic layer (deterministic, no LLM)")
+    p.add_argument("doc", help="semantic layer YAML path")
+    p.add_argument("sql", nargs="?", default="-",
+                   help="SQL file (statements separated by ';'), or '-' for stdin")
+    p.add_argument("--dialect", default="duckdb")
+    p.add_argument("--json", action="store_true", help="machine-readable output")
     p = sub.add_parser("drift", help="Detect warehouse drift vs a semantic layer")
     p.add_argument("doc", help="semantic layer YAML path")
     p.add_argument("source", help="duckdb:<path> | snowflake | bigquery")
@@ -206,6 +212,30 @@ def _cmd_drift(args: argparse.Namespace) -> int:
     return 1  # nonzero: drift found (CI-hook friendly)
 
 
+def _cmd_lint(args: argparse.Namespace) -> int:
+    import json
+
+    from semlayer.lint import lint_sql, render_findings
+
+    doc = _load_doc(args.doc)
+    text = sys.stdin.read() if args.sql == "-" else Path(args.sql).read_text()
+    statements = [x.strip() for x in text.split(";") if x.strip()]
+    worst = 0
+    results = []
+    for stmt in statements:
+        r = lint_sql(doc, stmt, dialect=args.dialect)
+        results.append({"sql": stmt, **r})
+        worst = max(worst, 2 if r["errors"] else (1 if r["warnings"] else 0))
+        if not args.json:
+            head = stmt.replace("\n", " ")
+            print(f"-- {head[:90]}{'…' if len(head) > 90 else ''}")
+            print(render_findings(r))
+            print()
+    if args.json:
+        print(json.dumps(results, indent=2, default=str))
+    return worst
+
+
 def _cmd_mcp(args: argparse.Namespace) -> int:
     from semlayer.mcp_server import build_server
 
@@ -219,6 +249,7 @@ _HANDLERS = {
     "infer": _cmd_infer,
     "review": _cmd_review,
     "drift": _cmd_drift,
+    "lint": _cmd_lint,
     "mcp": _cmd_mcp,
 }
 

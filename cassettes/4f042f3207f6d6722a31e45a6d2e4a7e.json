@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "4df9b8e6e218",
+ "response": "{\"action\":\"sql\",\"sql\":\"SELECT SUM(oh.tot_amt) AS total_order_revenue\\nFROM ord_hdr oh\\nJOIN sts_cd_dim scd ON oh.sts_cd = scd.sts_cd\\nWHERE scd.sts_desc NOT ILIKE '%cancel%';\",\"reason\":\"\"}",
+ "usage": {
+  "in": 3300,
+  "out": 571
+ }
+}

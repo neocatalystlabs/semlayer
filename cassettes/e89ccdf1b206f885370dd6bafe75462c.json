@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "4df9b8e6e218",
+ "response": "{\"action\":\"sql\",\"sql\":\"SELECT COUNT(*) AS current_customer_records FROM cust_mstr WHERE is_curr_flg = 1\",\"reason\":\"cust_mstr_legacy is deprecated; used cust_mstr with is_curr_flg=1 instead.\"}",
+ "usage": {
+  "in": 6576,
+  "out": 99
+ }
+}

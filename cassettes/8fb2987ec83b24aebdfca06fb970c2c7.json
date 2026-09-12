@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "4df9b8e6e218",
+ "response": "{\"action\":\"sql\",\"sql\":\"WITH ranked AS (\\n  SELECT sub_id, mrr_amt,\\n         ROW_NUMBER() OVER (PARTITION BY sub_id ORDER BY evt_dt DESC) AS rn\\n  FROM sub_evt\\n)\\nSELECT SUM(mrr_amt) AS current_mrr\\nFROM ranked\\nWHERE rn = 1 AND m",
+ "usage": {
+  "in": 3318,
+  "out": 800
+ }
+}

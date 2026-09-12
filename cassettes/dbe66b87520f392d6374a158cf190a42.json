@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "1d25ef67b201",
+ "response": "[{\"id\": 0, \"verdict\": \"accept\", \"reason\": \"Matches total_tot_sls_amt metric directly.\"},\n{\"id\": 1, \"verdict\": \"accept\", \"reason\": \"Matches ord_hdr_count metric directly.\"},\n{\"id\": 2, \"verdict\": \"reject\", \"reason\": \"\u2018Non-cancelled\u2019 conflicts with sts_cd_dim's own C/X labeling.\"},\n{\"id\": 3, \"verdict\": \"accept\", \"reason\": \"Matches total_rtn_amt metric directly.\"},\n{\"id\": 4, \"verdict\": \"accept\", \"reason\": \"Matches sub_evt_count metric directly.\"},\n{\"id\": 5, \"verdict\": \"accept\", \"reason\": \"Matches total_mrr_amt metric directly.\"},\n{\"id\": 6, \"verdict\": \"reject\", \"reason\": \"\u2018Completed\u2019 status code contradicts sts_cd_dim mapping of C.\"},\n{\"id\": 7, \"verdict\": \"reject\", \"reason\": \"line_sts_cd values undefined; no dimension provided for meaning.\"},\n{\"id\": 8, \"verdict\": \"reject\", \"reason\": \"\u2018Active orders\u2019 undefined and conflicts with filter sts_cd<>'X'.\"},\n{\"id\": 9, \"verdict\": \"reject\", \"reason\": \"Compares mismatched grains/definitions; 'relationship' vague and undefined.\"},\n{\"id\": 10, \"verdict\": \"accept\", \"reason\": \"Uses existing count and ratio metrics clearly.\"},\n{\"id\": 11, \"verdict\": \"reject\", \"reason\": \"Cross-domain comparison vague; 'all orders' conflicts with filter.\"}]",
+ "usage": {
+  "in": 6396,
+  "out": 3600
+ }
+}

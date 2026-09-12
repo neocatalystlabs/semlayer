@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "4df9b8e6e218",
+ "response": "```json\n{\n  \"action\": \"sql\",\n  \"sql\": \"SELECT ca_state, d_year, SUM(total_revenue) as combined_revenue FROM (\\n  SELECT ca.ca_state, dd.d_year, SUM(ss.ss_net_paid_inc_tax) as total_revenue\\n  FROM store_sales ss\\n  JOIN customer_address ca ON ss.ss_addr_sk = ca.ca_address_sk\\n  JOIN date_dim dd ON ss.ss_sold_date_sk = dd.d_date_sk\\n  GROUP BY ca.ca_state, dd.d_year\\n  UNION ALL\\n  SELECT ca.ca_state, dd.d_year, SUM(cs.cs_net_paid_inc_ship_tax) as total_revenue\\n  FROM catalog_sales cs\\n  JOIN customer_address ca ON cs.cs_bill_addr_sk = ca.ca_address_sk\\n  JOIN date_dim dd ON cs.cs_sold_date_sk = dd.d_date_sk\\n  GROUP BY ca.ca_state, dd.d_year\\n  UNION ALL\\n  SELECT ca.ca_state, dd.d_year, SUM(ws.ws_net_paid_inc_ship_tax) as total_revenue\\n  FROM web_sales ws\\n  JOIN customer_address ca ON ws.ws_bill_addr_sk = ca.ca_address_sk\\n  JOIN date_dim dd ON ws.ws_sold_date_sk = dd.d_date_sk\\n  GROUP BY ca.ca_state, dd.d_year\\n) combined\\nGROUP BY ca_state, d_year\\nORDER BY ca_state, d_year\",\n  \"reason\": null\n}\n```",
+ "usage": {
+  "in": 14865,
+  "out": 432
+ }
+}

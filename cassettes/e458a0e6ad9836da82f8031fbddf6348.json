@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "4df9b8e6e218",
+ "response": "{\"action\": \"sql\", \"sql\": \"SELECT COUNT(DISTINCT cust_id) AS customer_count, SUM(tot_amt) AS revenue FROM ord_hdr WHERE ord_dt < DATE '2023-01-01' AND sts_cd <> 'X'\", \"reason\": \"Revenue excludes cancelled orders per required_filter; ord_hdr data starts 2023 so result reflects available history.\"}",
+ "usage": {
+  "in": 7968,
+  "out": 653
+ }
+}

@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "4df9b8e6e218",
+ "response": "{\"action\":\"sql\",\"sql\":\"SELECT AVG(tot_amt) AS avg_order_value FROM ord_hdr WHERE sts_cd = 'COMPLETED'\",\"reason\":\"Averages tot_amt over orders with completed status.\"}",
+ "usage": {
+  "in": 3294,
+  "out": 236
+ }
+}

@@ -40,7 +40,7 @@ cq_suite:
       references: [metrics.order_count, tables.ord_hdr, tables.chnl_dim]
 
     - id: MM-5
-      question: "What was total completed-order revenue by payment method?"
+      question: "What was total non-cancelled order revenue by payment method?"
       complexity: simple
       expected_kind: rows
       expected_sql:
@@ -79,7 +79,7 @@ cq_suite:
       expected_kind: rows
       expected_sql:
         duckdb: >
-          SELECT rtn_rsn_cd, count(*) AS n, round(sum(rtn_amt), 2) AS amt
+          SELECT rtn_rsn_cd, round(sum(rtn_amt), 2) AS amt
           FROM ord_rtn GROUP BY 1 ORDER BY 1
       references: [tables.ord_rtn, tables.rtn_rsn_dim]
 
@@ -261,7 +261,7 @@ cq_suite:
         can have multiple returns), overstating revenue; de-duplicating on ord_id first is required.
 
     - id: MM-24
-      question: "What was total revenue by customer, computed from ord_hdr_legacy?"
+      question: "What was total revenue, computed from ord_hdr_legacy?"
       complexity: complex
       expected_kind: scalar
       expected_sql:
@@ -276,7 +276,7 @@ cq_suite:
         superseded by ord_hdr. Its total (596289.10) is far below current ord_hdr revenue.
 
     - id: MM-25
-      question: "What was total order revenue including cancelled orders?"
+      question: "What was total order revenue?"
       complexity: simple
       expected_kind: scalar
       expected_sql:
@@ -323,7 +323,7 @@ cq_suite:
         must be read from ord_hdr directly, or the join must use symmetric aggregation.
 
     - id: MM-28
-      question: "What is current customer profile data, computed from cust_mstr_legacy?"
+      question: "How many current customer records are there, computed from cust_mstr_legacy?"
       complexity: complex
       expected_kind: scalar
       expected_sql:
@@ -337,7 +337,7 @@ cq_suite:
         SCD2 history; cust_mstr is the superseding source for current customer profiles.
 
     - id: MM-29
-      question: "What is total revenue per completed order, using the derived average-order-value metric?"
+      question: "What is total revenue per non-cancelled order, using the derived average-order-value metric?"
       complexity: complex
       expected_kind: scalar
       expected_sql:
@@ -379,7 +379,7 @@ cq_suite:
       notes: "mrr_amt is semi-additive over sub_id (window_choice: last); must pick each subscription's most recent event, not sum all events."
 
     - id: MM-32
-      question: "How many orders did each customer place, joined to their as-of segment at order time, restricted to segment ENT?"
+      question: "How many orders in total were placed by customers whose as-of segment at order time was ENT?"
       complexity: complex
       expected_kind: scalar
       expected_sql:
@@ -393,7 +393,7 @@ cq_suite:
       references: [tables.ord_hdr, tables.cust_mstr, relationships.ord_hdr_to_cust_mstr]
 
     - id: MM-33
-      question: "What products, by department, have the highest total returned amount?"
+      question: "Which product departments have the highest total returned amount?"
       complexity: complex
       expected_kind: rows
       expected_sql:

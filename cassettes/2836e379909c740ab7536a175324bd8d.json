@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "4df9b8e6e218",
+ "response": "{\"action\": \"clarify\", \"sql\": null, \"reason\": \"Joining web_evt and sub_evt to ord_hdr causes fan-out on revenue; specify intended grain instead.\"}",
+ "usage": {
+  "in": 3305,
+  "out": 356
+ }
+}

@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "4df9b8e6e218",
+ "response": "{\"action\":\"sql\",\"sql\":\"SELECT COUNT(*) AS current_version_count FROM cust_mstr WHERE is_curr_flg = 1;\",\"reason\":\"Count of cust_mstr rows where is_curr_flg=1 (current version).\"}",
+ "usage": {
+  "in": 6768,
+  "out": 89
+ }
+}

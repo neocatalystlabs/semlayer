@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "4df9b8e6e218",
+ "response": "```json\n{\n  \"action\": \"sql\",\n  \"sql\": \"SELECT SUM(orders.order_total) AS total_order_total, (SELECT SUM(payments.amount) FROM payments) AS total_payment_amount, SUM(orders.order_total) - (SELECT SUM(payments.amount) FROM payments) AS difference FROM orders;\",\n  \"reason\": \"Aggregated payments in subquery to avoid fan-out multiplication when comparing order totals to payment amounts.\"\n}\n```",
+ "usage": {
+  "in": 1682,
+  "out": 117
+ }
+}

@@ -261,6 +261,10 @@
         "enforcement": {
           "enum": ["required", "advisory"],
           "description": "'required' = consumers must apply; 'advisory' = apply or caveat the answer (SPEC.md)."
+        },
+        "scope": {
+          "enum": ["all", "measures"],
+          "description": "'all' (default) = every query over the table; 'measures' = SUM/AVG-style aggregations of amounts only (event COUNTS include all rows)."
         }
       }
     },

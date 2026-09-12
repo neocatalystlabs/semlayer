@@ -32,6 +32,10 @@ The effective WHERE clause for any query over a table is the **union (AND)** of:
 
 `enforcement: advisory` filters MUST be either applied or surfaced as an explicit caveat in the answer. Silence is non-conforming.
 
+`scope` narrows where a filter applies: `all` (default) covers every query over the table; `measures` covers aggregations of the table's measure columns (SUM/AVG-style) and NOT row/event counts. A rule discovered because an aggregate table reconciles only under it is emitted with `scope: measures` — "revenue excludes cancelled orders; order counts include them". A consumer that applies a `measures` rule to a count is over-filtering, not conforming.
+
+Rules may be inherited: a child fact whose measure provably decomposes a parent's measure (per-key reconciliation, evidence in `reason`) carries the parent's rule as a semi-join on the foreign key. Joining the parent and applying its rule directly satisfies the same requirement.
+
 ### 2.3 Fan-out safety
 
 When an aggregation traverses a relationship with `fanout_risk: true` (or any `one_to_many` / `many_to_many` cardinality from the fact side), the compiler MUST either:
@@ -43,6 +47,8 @@ Silently summing across a fan-out is non-conforming. This is the single most com
 ### 2.4 Point-in-time (SCD2) traversal
 
 A dimension column marked `temporal: scd2` MUST be resolved through the relationship whose `asof.enabled: true`, using `asof.on` as the driving date — native ASOF JOIN where the dialect supports it, otherwise `BETWEEN valid_from AND valid_to` from the table's `scd` block. A plain current-row join to an SCD2 attribute is non-conforming.
+
+A table carrying an `scd` block (producers MAY infer it from validity columns, with `naming` provenance) MUST be read through its validity window for as-of questions and through `is_current_flag` (or `valid_to IS NULL`) for current-state questions; entity counts over it use `COUNT(DISTINCT natural_key)`, never `COUNT(*)`.
 
 ### 2.5 Time and hierarchy grains
 
@@ -83,6 +89,10 @@ the same tables. Conforming behavior is: retry within the enumerated legal
 options, or surface the refusal reason to the human. Time-scoped questions
 answered without a compiled time dimension MUST carry a caveat naming the
 date column that was assumed.
+
+### 2.11 Verification of consumer-written SQL
+
+A consumer that writes SQL itself (rather than compiling a metric) SHOULD verify it against the document before execution — via the `check_sql` tool of a conforming server, or an equivalent linter over this format. The verifier is deterministic and reports, at minimum: references to objects not in the document; unqualified columns that resolve to an outer query block; reads of `deprecated`/`orphaned` objects; absent `required_filters` within their `scope`; additive aggregation of a parent's measure in a block that also joins a `fanout_risk` child; and SCD2 tables read without their validity window or current flag. Findings are `error` (the answer is wrong or unsafe), `warning` (probably wrong), or `info`. A consumer MUST NOT execute SQL with unresolved `error` findings without surfacing them; it SHOULD repair and re-verify. Execution-error repair alone is insufficient: the findings above are silent at execution time.
 
 ## 3. Producer rules (normative)
 

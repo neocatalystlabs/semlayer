@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "4df9b8e6e218",
+ "response": "{\"action\":\"sql\",\"sql\":\"SELECT cm.seg_cd, SUM(oh.tot_amt) AS total_revenue\\nFROM ord_hdr oh\\nJOIN cust_mstr cm\\n  ON oh.cust_id = cm.cust_id\\n  AND oh.ord_dt BETWEEN cm.eff_start_dt AND COALESCE(cm.eff_end_dt, DATE '9999-12-31')\\nWHERE oh.sts_cd <> 'X'\\nGROUP BY cm.seg_cd\\nORDER BY total_revenue DESC;\",\"reason\":\"\"}",
+ "usage": {
+  "in": 7682,
+  "out": 350
+ }
+}

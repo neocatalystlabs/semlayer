@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "4df9b8e6e218",
+ "response": "{\"action\":\"sql\",\"sql\":\"SELECT COUNT(*) AS active_product_count FROM prod_ref WHERE actv_flg = 1;\",\"reason\":\"\"}",
+ "usage": {
+  "in": 7423,
+  "out": 59
+ }
+}

@@ -49,6 +49,9 @@ _ABBREV = {
 }
 
 
+ABBREV = _ABBREV  # shared warehouse-abbreviation table (search uses it too)
+
+
 def _name_tokens(col: str, table: str) -> set[str]:
     raw = set(re.split(r"[_\W]+", col.lower())) - _STOP - {""}
     toks = {_ABBREV.get(t, t).rstrip("s") for t in raw}

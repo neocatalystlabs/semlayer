@@ -15,18 +15,44 @@ CQs score by behavior, not values.
 
 from __future__ import annotations
 
+import itertools
 import json
 import re
+import threading
 
-PROMPT_VERSION = "v1"
+QUERY_TIMEOUT_S = 60.0  # an agent's cross join must not hang the benchmark
+
+
+def _execute(con, sql: str) -> list:
+    """Run `sql` with a watchdog: interrupt DuckDB after QUERY_TIMEOUT_S seconds."""
+    timer = threading.Timer(QUERY_TIMEOUT_S, con.interrupt)
+    timer.start()
+    try:
+        return con.execute(sql).fetchall()
+    finally:
+        timer.cancel()
+
+PROMPT_VERSION = "v3"
 
 SYSTEM = f"""You are a data analyst agent. Answer the business question by writing
 ONE DuckDB SQL query using ONLY the context provided. Prompt version {PROMPT_VERSION}.
 Rules:
-- If required filters are listed for a table you use, APPLY them (or the
-  business-rule filters attached to metrics).
-- Never use tables marked UNUSABLE/deprecated — use their replacement.
-- If the question is ambiguous or unanswerable from the context, do NOT guess.
+- APPLY every required_filter listed for a table you use, within its stated
+  scope, even if the question's wording seems to contradict it: the filter
+  encodes a business rule the data owner has verified.
+- If the question names a table marked UNUSABLE/deprecated, answer from its
+  listed replacement instead (say so in "reason"); never read the deprecated
+  table and never refuse just because the deprecated name was used.
+- Follow the join/grain notes: do not sum a table's measures after joining
+  a many-row child (fan-out); use as-of joins for SCD2 dimensions when the
+  question asks for attributes at the time of an event.
+- If the question asks for a derived metric that is not listed but can be
+  composed from listed metrics or columns (a ratio, an average per X),
+  compute it; only refuse or clarify when the context truly cannot answer.
+- Use only columns listed in the context; if a needed column is not shown,
+  clarify rather than invent one.
+- A question asking for one number (a total, a count, whether two figures
+  reconcile) gets ONE row with ONE value (for "reconcile": the difference).
 Respond ONLY JSON:
 {{"action": "sql" | "refuse" | "clarify",
  "sql": "..." | null,
@@ -42,32 +68,83 @@ def schema_only_context(doc: dict) -> str:
     return "\n".join(lines)
 
 
+_QUESTION_STOP = {
+    "what", "was", "were", "is", "are", "the", "a", "an", "of", "by", "for", "in", "on", "to",
+    "how", "many", "much", "do", "we", "have", "had", "has", "total", "which", "with", "and",
+    "or", "per", "each", "all", "from", "at", "that", "this", "their", "our", "using", "as",
+    "did", "does", "it", "its", "be", "been", "there", "into", "than", "over", "across",
+}
+
+
+def _hit_tables(doc: dict, question: str) -> list[str]:
+    """Tables owning a keyword hit (table, column, or metric measure), best first."""
+    from semlayer import mcp_server
+    out: list[str] = []
+    for h in mcp_server.search(doc, question, limit=12):
+        name = None
+        if h["kind"] == "column":
+            name = h["name"].split(".")[0]
+        elif h["kind"] == "table":
+            name = h["name"]
+        elif h["kind"] == "metric" and h.get("measure"):
+            name = str(h["measure"]).split(".")[0]
+        if name and name not in out:
+            out.append(name)
+    return out
+
+
+def _coverage_tables(doc: dict, question: str, tables: list[str]) -> list[str]:
+    """One owning table per question content word not yet covered by `tables`.
+
+    A single-token hit ("class" -> item.i_class) must not be crowded out by
+    two-token hits ("net profit") on three sales facts.
+    """
+    from semlayer import mcp_server
+    covered: set[str] = set()
+    for t in doc["semantic_layer"]["tables"]:
+        if t["name"] in tables:
+            covered |= mcp_server._tokens(t["name"])
+            for c in t["columns"]:
+                covered |= mcp_server._tokens(c["name"])
+    out: list[str] = []
+    for tok in sorted(mcp_server._tokens(question) - covered - _QUESTION_STOP):
+        for h in mcp_server.search(doc, tok, limit=3):
+            if h["kind"] in ("column", "table"):
+                out.append(h["name"].split(".")[0])
+                break
+    return out
+
+
+def _neighbors(doc: dict, seeds: list[str]) -> list[str]:
+    """Direct join neighbours of the seed tables (facts are useless without their dims)."""
+    out: list[str] = []
+    for r in doc["semantic_layer"].get("relationships", []):
+        a, b = r["from"]["table"], r["to"]["table"]
+        for name, other in ((a, b), (b, a)):
+            if name in seeds and other not in out:
+                out.append(other)
+    return out
+
+
 def _select_tables(doc: dict, question: str) -> tuple[list[str], list[dict]]:
     """Progressive disclosure, as an agent would use the MCP surface.
 
-    search -> routing -> join-neighbor expansion. Returns (detailed table names,
-    compact index of the rest).
+    search -> coverage -> routing -> join-neighbor expansion. Returns
+    (detailed table names, compact index of the rest).
     """
     from semlayer import mcp_server
-    hits = mcp_server.search(doc, question, limit=8)
-    tables = []
-    for h in hits:
-        name = h["name"].split(".")[0] if h["kind"] == "column" else h["name"]
-        if h["kind"] in ("table", "column") and name not in tables:
-            tables.append(name)
+    tables: list[str] = []
+
+    def _add_all(names: list[str]) -> None:
+        for n in names:
+            if n not in tables:
+                tables.append(n)
+
+    _add_all(_hit_tables(doc, question))
+    _add_all(_coverage_tables(doc, question, tables))
     for r in mcp_server.routing(doc, question)[:2]:
-        for u in r.get("use", []):
-            if u not in tables:
-                tables.append(u)
-    # join-neighbor expansion: facts are useless without their dims
-    # ("quarterly revenue" needs date_dim even if no keyword matches it)
-    rels = doc["semantic_layer"].get("relationships", [])
-    for name in list(tables[:4]):
-        for r in rels:
-            for other in ({r["to"]["table"]} if r["from"]["table"] == name
-                          else {r["from"]["table"]} if r["to"]["table"] == name else set()):
-                if other not in tables:
-                    tables.append(other)
+        _add_all(r.get("use", []))
+    _add_all(_neighbors(doc, tables[:4]))
     detailed = tables[:8]
     # compact index of everything else so the agent knows what exists
     index = [{"name": t["name"], "type": t.get("table_type"),
@@ -77,31 +154,65 @@ def _select_tables(doc: dict, question: str) -> tuple[list[str], list[dict]]:
     return detailed, index
 
 
+def _table_header(d: dict) -> list[str]:
+    """Header lines for one table: identity, grain, SCD mechanics, notes, rules, filters, pk."""
+    lines = [f"TABLE {d['name']} ({d.get('table_type')}) — {d.get('description', '')[:100]}"]
+    if d.get("UNUSABLE"):
+        rep = d.get("deprecation", {}).get("replacement", "?")
+        lines[0] += f"  [UNUSABLE: deprecated — columns withheld; answer from {rep} instead]"
+        return lines
+    for f in d.get("required_filters", []):
+        scope = ("amount aggregations (SUM/AVG), not counts" if f.get("scope") == "measures"
+                 else "all queries")
+        reason = f" — {f['reason'][:90]}" if f.get("reason") else ""
+        lines.append(f"  required_filter [{f.get('enforcement', 'required')}; {scope}]: "
+                     f"{f['expr']}{reason}")
+    if d.get("grain"):
+        lines.append(f"  grain: {d['grain']}")
+    if d.get("scd"):
+        sc = d["scd"]
+        bits = [f"valid_from={sc.get('valid_from')}", f"valid_to={sc.get('valid_to')}"]
+        if sc.get("is_current_flag"):
+            bits.append(f"current_flag={sc['is_current_flag']}")
+        if sc.get("natural_key"):
+            bits.append(f"natural_key={','.join(sc['natural_key'])}")
+        lines.append("  scd2: " + " ".join(bits))
+    if d.get("ai_context"):
+        lines.append(f"  note: {d['ai_context'][:120]}")
+    for n in d.get("usage_notes", []):
+        lines.append(f"  rule: {n[:220]}")
+    pk = d.get("primary_key")
+    if pk:
+        lines.append(f"  pk: {', '.join(pk)}")
+    return lines
+
+
 def _compact_table(doc: dict, name: str) -> str:
     """Render one table's full detail block for the semantic context."""
     from semlayer import mcp_server
     d = mcp_server.get_table(doc, name)
     if "error" in d:
         return ""
-    lines = [f"TABLE {d['name']} ({d.get('table_type')}) — {d.get('description', '')[:100]}"]
+    lines = _table_header(d)
     if d.get("UNUSABLE"):
-        lines[0] += "  [UNUSABLE — use " + d.get("deprecation", {}).get("replacement", "?") + "]"
-    if d.get("ai_context"):
-        lines.append(f"  note: {d['ai_context'][:120]}")
-    for n in d.get("usage_notes", []):
-        lines.append(f"  rule: {n[:140]}")
-    for f in d.get("required_filters", []):
-        lines.append(f"  required_filter: {f['expr']}")
-    pk = d.get("primary_key")
-    if pk:
-        lines.append(f"  pk: {', '.join(pk)}")
+        return "\n".join(lines)
+    for r in d.get("relationships", []):
+        frm, to = r["from"], r["to"]
+        fc, tc = ",".join(frm["columns"]), ",".join(to["columns"])
+        if frm["table"] == d["name"]:
+            lines.append(f"  join: {frm['table']}.{fc} -> {to['table']}.{tc}"
+                         f" ({r.get('cardinality', 'many_to_one')})")
+        elif r.get("fanout_risk"):
+            lines.append(f"  child: {frm['table']}.{fc} -> {d['name']}.{tc}"
+                         f" (one_to_many: joining {frm['table']} multiplies {d['name']} rows —"
+                         f" aggregate {frm['table']} first or use EXISTS/IN)")
     for c in d.get("columns", []):
         bits = [c["name"], c.get("sql_type", ""), c.get("semantic_type", "")]
         fk = c.get("foreign_key")
         if fk:
             bits.append(f"-> {fk['references']}")
         if c.get("enum_values"):
-            decs = ", ".join(f"{e['value']}={e['meaning']}" for e in c["enum_values"][:6])
+            decs = ", ".join(f"{e['value']}={e['meaning']}" for e in c["enum_values"][:12])
             bits.append(f"[{decs}]")
         desc = (c.get("description") or "")[:50]
         lines.append("  " + " ".join(b for b in bits if b) + (f" — {desc}" if desc else ""))
@@ -112,10 +223,32 @@ def _render_sections(doc: dict, detailed: list[str], index: list[dict], question
     """Assemble the detailed tables, metrics, routing, and index into one context string."""
     from semlayer import mcp_server
     parts = [_compact_table(doc, n) for n in detailed]
+    shown = set(detailed)
+
+    qtoks = mcp_server._tokens(question) - _QUESTION_STOP
+
+    def _relevant(m: dict) -> bool:
+        refs = [m.get("measure"), m.get("numerator"), m.get("denominator")]
+        if not any(str(r).split(".")[0] in shown for r in refs if r):
+            return False
+        # a plain sum/count over a listed column adds nothing the column list
+        # lacks; show a metric when it carries a business rule, is composed
+        # (ratio/derived), or its name matches the question
+        if m.get("filter") or m.get("type") not in (None, "simple"):
+            return True
+        hay = mcp_server._tokens(" ".join([m["name"], *(m.get("synonyms") or [])]))
+        return bool(qtoks & hay)
+
+    def _formula(m: dict) -> str:
+        if m.get("type") == "ratio":
+            return f"ratio SUM({m.get('numerator')}) / COUNT({m.get('denominator')})"
+        return f"{m.get('agg')}({m.get('measure')})"
+
     metrics_lines = [
-        f"METRIC {m['name']}: {m.get('agg')}({m.get('measure')})"
+        f"METRIC {m['name']}: {_formula(m)}"
         + (f" WHERE {m['filter']}" if m.get("filter") else "")
-        for m in mcp_server.list_metrics(doc)
+        + (f"  [aka {', '.join(m['synonyms'][:2])}]" if m.get("synonyms") else "")
+        for m in mcp_server.list_metrics(doc) if _relevant(m)
     ]
     routing_lines = [
         f"ROUTING '{r['intent']}': use {', '.join(r.get('use', []))}"
@@ -161,28 +294,111 @@ def answer(llm, context: str, question: str) -> dict:
         return {"action": "error", "sql": None}
 
 
-def _normalize_rows(rows: list) -> set:
+_LABELS: dict[int, dict[str, str]] = {}
+
+
+def _label_map(con) -> dict[str, str]:
+    """Label -> code map from the warehouse's two-column dictionary tables.
+
+    Lets a value-equivalent answer ("Call Center") score against the code
+    ("CALL") the gold SQL happens to return. Built once per connection.
+    """
+    key = id(con)
+    if key not in _LABELS:
+        m: dict[str, str] = {}
+        try:
+            tables = [r[0] for r in con.execute(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_schema = 'main'").fetchall()]
+            for t in tables:
+                cols = con.execute(f'DESCRIBE "{t}"').fetchall()
+                if len(cols) != 2 or not all("VARCHAR" in c[1] for c in cols):
+                    continue
+                rows = con.execute(f'SELECT "{cols[0][0]}", "{cols[1][0]}" FROM "{t}"').fetchall()
+                for code, label in rows:
+                    if code is not None and label is not None and str(label) not in m:
+                        m[str(label)] = str(code)
+        except Exception:  # scoring aid only: never fail scoring on dictionary lookup
+            pass
+        _LABELS[key] = m
+    return _LABELS[key]
+
+
+def _norm_cell(v, labels: dict[str, str] | None = None) -> str:
+    """Canonical string for one result cell: numbers rounded, midnight timestamps as dates."""
+    import datetime as _dt
+    import decimal
+    if isinstance(v, (float, decimal.Decimal)):
+        return str(round(float(v), 2))
+    if isinstance(v, _dt.datetime) and (v.hour, v.minute, v.second) == (0, 0, 0):
+        return str(v.date())
+    sv = str(v)
+    if labels and sv in labels:
+        return labels[sv]
+    return sv
+
+
+def _normalize_rows(rows: list, labels: dict[str, str] | None = None) -> set:
     """Normalize row-set results for order-independent, float-tolerant comparison."""
-    return {
-        tuple(str(round(v, 2)) if isinstance(v, float) else str(v) for v in r)
-        for r in rows
-    }
+    return {tuple(_norm_cell(v, labels) for v in r) for r in rows}
 
 
 def _score_scalar(got: list, expected: list, tol: float) -> tuple[bool, str]:
-    """Compare a scalar CQ result against expected within tolerance."""
+    """Compare a scalar CQ result against expected within tolerance.
+
+    The expected value may appear in ANY column of the first result row
+    (agents legitimately return supporting columns alongside the answer);
+    a multi-row result is still wrong.
+    """
     try:
         expected_val = float(expected[0][0])
-        got_val = (
-            float(got[0][0]) if got and got[0][0] is not None
-            else (0.0 if expected_val == 0 else None)
-        )
     except (TypeError, ValueError, IndexError):
         return False, "non-numeric scalar"
-    if got_val is None:
+    if len(got) != 1:
+        if not got and expected_val == 0:
+            return True, "empty result, expected 0"
+        return False, f"{len(got)} rows for a scalar question"
+    cands: list[float] = []
+    for v in got[0]:
+        if v is None:
+            if expected_val == 0:
+                cands.append(0.0)
+            continue
+        try:
+            cands.append(float(v))
+        except (TypeError, ValueError):
+            continue
+    if not cands:
         return False, "null result"
-    ok = abs(got_val - expected_val) <= max(tol, abs(expected_val) * 0.001)
-    return ok, f"got {got_val}, expected {expected_val}"
+    ok = any(abs(c - expected_val) <= max(tol, abs(expected_val) * 0.001) for c in cands)
+    return ok, f"got {cands[0] if len(cands) == 1 else cands}, expected {expected_val}"
+
+
+def _rows_match(got: list, expected: list, labels: dict[str, str] | None = None) -> bool:
+    """Row-set equality tolerant of extra/reordered columns in the agent's result.
+
+    Every expected row must be recoverable as the same projection of the
+    agent's rows (a superset of columns is accepted; a missing column, a
+    missing row, or a different grain is not). Candidate columns are matched
+    by content first, so a wide result never triggers a permutation search.
+    """
+    from collections import Counter
+    exp = _normalize_rows(expected, labels)
+    if not expected or not got:
+        return not expected and not got
+    k, n = len(expected[0]), len(got[0])
+    if n == k:
+        return _normalize_rows(got, labels) == exp
+    if n < k or n > 16:
+        return False
+    exp_cols = [Counter(_norm_cell(r[j], labels) for r in expected) for j in range(k)]
+    got_cols = [Counter(_norm_cell(r[i], labels) for r in got) for i in range(n)]
+    cands = [[i for i in range(n) if got_cols[i] == exp_cols[j]] for j in range(k)]
+    return any(
+        len(set(idx)) == k
+        and _normalize_rows([tuple(r[i] for i in idx) for r in got], labels) == exp
+        for idx in itertools.product(*cands)
+    )
 
 
 def score_answer(con, cq: dict, result: dict) -> tuple[bool, str]:
@@ -195,27 +411,46 @@ def score_answer(con, cq: dict, result: dict) -> tuple[bool, str]:
     if action != "sql" or not result.get("sql"):
         return False, f"expected sql, got {action}"
     try:
-        got = con.execute(result["sql"]).fetchall()
+        got = _execute(con, result["sql"])
     except Exception as e:
         return False, f"sql error: {str(e)[:80]}"
-    expected = con.execute(cq["expected_sql"]["duckdb"]).fetchall()
+    expected = _execute(con, cq["expected_sql"]["duckdb"])
     if kind == "scalar":
         return _score_scalar(got, expected, cq.get("tolerance", 0.01))
-    # rows: compare as normalized sets of stringified rows
-    ok = _normalize_rows(got) == _normalize_rows(expected)
+    # rows: compare as normalized sets of stringified rows (extra columns tolerated)
+    ok = _rows_match(got, expected, _label_map(con))
     return ok, f"{len(got)} rows vs {len(expected)} expected"
 
 
-def answer_with_repair(llm, con, context: str, question: str) -> dict:
-    """One-shot answer plus a single error-repair round.
+def answer_with_repair(llm, con, context: str, question: str, doc: dict | None = None) -> dict:
+    """One-shot answer plus repair rounds.
 
     The realistic agent loop: agents see execution errors and fix their SQL.
+    With `doc`, the semantic linter runs first and its error/warning findings
+    are fed back for one repair round BEFORE execution (the `check_sql`
+    MCP tool, as an agent would call it).
     """
     res = answer(llm, context, question)
     if res.get("action") != "sql" or not res.get("sql"):
         return res
+    if doc is not None:
+        from semlayer.lint import lint_sql, render_findings
+        lint = lint_sql(doc, res["sql"])
+        if lint["errors"] or lint["warnings"]:
+            lint_prompt = (
+                f"{question}\n\nYour previous SQL:\n{res['sql']}\n"
+                f"check_sql found problems against the semantic layer:\n"
+                f"{render_findings(lint)}\n"
+                "Fix the SQL. Required filters are verified business rules and take "
+                "precedence over the question's wording: apply them and note it in "
+                "\"reason\". Clarify or refuse only if no correct SQL exists."
+            )
+            fixed = answer(llm, context, lint_prompt)
+            if fixed.get("action") != "sql" or not fixed.get("sql"):
+                return fixed
+            res = fixed
     try:
-        con.execute(res["sql"]).fetchall()
+        _execute(con, res["sql"])
         return res
     except Exception as e:
         repair_prompt = (

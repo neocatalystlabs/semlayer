@@ -70,10 +70,10 @@ def test_metric_coverage_vs_gold(enriched):
 
 def test_business_rule_discovered(enriched):
     """The reconciliation verifier must rediscover the cancelled-exclusion rule,
-    scoped to MONETARY metrics (not event counts) + a usage note."""
+    scoped to MONETARY metrics (not event counts) + a measure-scoped required filter."""
     ord_hdr = next(t for t in enriched["semantic_layer"]["tables"] if t["name"] == "ord_hdr")
-    notes = " ".join(ord_hdr.get("knowledge", {}).get("usage_notes", []))
-    assert "sts_cd <> 'X'" in notes
+    rfs = ord_hdr.get("knowledge", {}).get("required_filters", [])
+    assert any(r["expr"] == "sts_cd <> 'X'" and r.get("scope") == "measures" for r in rfs), rfs
     metrics = enriched["semantic_layer"]["metrics"]
     rev = next(m for m in metrics if m["measure"] == "ord_hdr.tot_amt" and m["agg"] == "sum"
                and "completed" not in m["name"])
@@ -133,3 +133,25 @@ def test_dbt_export_round_trip(enriched):
     assert any("confidence" in l for l in losses)
     # deprecated tables excluded AND reported
     assert any("ord_hdr_legacy" in l for l in losses)
+
+
+def test_parent_rule_propagates_to_child_fact(enriched):
+    """ord_ln.line_amt sums to ord_hdr.tot_amt per order, so the cancelled-exclusion rule is
+    inherited by ord_ln as a REQUIRED semi-join filter with per-key evidence."""
+    ord_ln = next(t for t in enriched["semantic_layer"]["tables"] if t["name"] == "ord_ln")
+    rfs = ord_ln.get("knowledge", {}).get("required_filters", [])
+    inh = [f for f in rfs if f["expr"].startswith("ord_ln.ord_id IN (SELECT ord_id FROM ord_hdr")]
+    assert inh and inh[0]["enforcement"] == "required" and inh[0]["scope"] == "measures"
+    assert "reconciles" in inh[0]["reason"]
+    line_rev = next(m for m in enriched["semantic_layer"]["metrics"] if m["name"] == "total_line_amt")
+    assert line_rev.get("filter") == inh[0]["expr"]
+
+
+def test_ratio_metric_synthesised_with_rule(enriched):
+    """avg_tot_amt_per_order = SUM(tot_amt)/COUNT(ord_id) on ord_hdr, carrying the discovered rule."""
+    from semlayer.compile import compile_metric
+    m = next(m for m in enriched["semantic_layer"]["metrics"] if m["name"] == "avg_tot_amt_per_order")
+    assert m["type"] == "ratio" and m["numerator"] == "ord_hdr.tot_amt"
+    assert m["denominator"] == "ord_hdr.ord_id" and m.get("filter") == "sts_cd <> 'X'"
+    sql = compile_metric(enriched, "avg_tot_amt_per_order")["sql"]
+    assert "COUNT(ord_hdr.ord_id)" in sql and "SUM(ord_hdr.tot_amt)" in sql and "sts_cd <> 'X'" in sql

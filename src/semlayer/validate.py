@@ -169,9 +169,10 @@ def _check_ratio_metric(c: _Ctx, mname: str, m: dict) -> None:
     for part in ("numerator", "denominator"):
         if not m.get(part):
             c.result.errors.append(f"metric {mname}: ratio metric requires '{part}'")
-        elif m[part] not in c.metrics:
+        elif m[part] not in c.metrics and m[part] not in c.columns:
             c.result.errors.append(
-                f"ref: metric {mname}: {part} '{m[part]}' is not a declared metric"
+                f"ref: metric {mname}: {part} '{m[part]}' is neither a declared metric "
+                f"nor a modeled 'table.column' measure"
             )
 
 

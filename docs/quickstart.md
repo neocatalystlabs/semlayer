@@ -39,5 +39,9 @@ semlayer infer bigquery -o layer.yaml
   human pass that turns inference into a trusted model).
 - Commit `layer.yaml` to your repo; wire `semlayer drift layer.yaml <source>`
   into CI or cron (nonzero exit = drift found).
+- `semlayer lint layer.yaml models/revenue.sql` — check SQL (a dbt model, a
+  saved query, an agent's answer) against the layer; exit 2 on errors, 1 on
+  warnings, so it drops into CI. Agents get the same checks as the
+  `check_sql` MCP tool.
 - `semlayer export` currently emits dbt semantic models; losses are printed,
   never silent.

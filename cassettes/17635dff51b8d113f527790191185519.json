@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "4df9b8e6e218",
+ "response": "{\"action\": \"sql\", \"sql\": \"SELECT COUNT(DISTINCT customer_number) AS cust_cnt, SUM(amount) AS revenue FROM ord_hdr_legacy WHERE order_dt < DATE '2023-",
+ "usage": {
+  "in": 3307,
+  "out": 800
+ }
+}
