@@ -23,7 +23,20 @@ def run_fixture(fixture: str, answer_model: str | None = None,
     import duckdb
     import yaml
 
-    oss = Path(__file__).resolve().parent.parent.parent
+    # The fixtures live in the repo, never in the wheel, so a pip-installed
+    # benchmark must look outside its own package: source checkout first, then
+    # the directory the user is standing in (their clone).
+    def _repo_root() -> Path:
+        for cand in (Path(__file__).resolve().parent.parent.parent, Path.cwd()):
+            if (cand / "fixtures" / "generators").is_dir():
+                return cand
+        raise SystemExit(
+            "benchmark needs the repo's fixtures/, which are not shipped in the "
+            "wheel: clone github.com/neocatalystlabs/semlayer and run this from "
+            "the clone root."
+        )
+
+    oss = _repo_root()
     sys.path.insert(0, str(oss / "fixtures"))
 
     from semlayer.cq.answer import (
