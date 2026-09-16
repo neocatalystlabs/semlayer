@@ -31,7 +31,25 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 CHEAP_MODEL = "claude-haiku-4-5-20251001"
-CASSETTE_DIR = Path(__file__).resolve().parent.parent.parent.parent / "cassettes"
+def _cassette_dir() -> Path:
+    """Cassettes live in the repo, not the wheel — same rule as fixtures.
+
+    A pip-installed package resolves __file__ into site-packages, so the repo
+    copy is found via the source tree first, then the directory the user is
+    standing in (their clone). Without this, a pip-installed benchmark run
+    raises CassetteMiss on the first prompt.
+    """
+    src_tree = Path(__file__).resolve().parent.parent.parent.parent
+    for cand in (src_tree, Path.cwd()):
+        d = cand / "cassettes"
+        # must CONTAIN recordings: __init__ mkdirs this path, so an empty dir
+        # left by an earlier run in the wrong directory would otherwise win.
+        if d.is_dir() and any(d.glob("*.json")):
+            return d
+    return src_tree / "cassettes"
+
+
+CASSETTE_DIR = _cassette_dir()
 
 
 @runtime_checkable

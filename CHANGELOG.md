@@ -64,6 +64,13 @@ Spec `0.3.0` (MINOR: one new optional field, one new contract section).
   `compile_metric` quarter/year requests require an explicit
   `calendar='fiscal'|'calendar'` choice — never a silent Gregorian
   assumption; fiscal bucketing groups by the customer's own fiscal columns.
+- **Benchmark runs from a pip install.** `python -m semlayer.benchmark`
+  resolved `fixtures/` and `cassettes/` relative to its own file, which lands
+  in site-packages once installed, so the documented reproduction command
+  only worked inside a source checkout. Both now fall back to the directory
+  the run starts in, and a cassette directory is accepted only if it actually
+  holds recordings — an empty one created by an earlier failed run used to
+  win and produce a `CassetteMiss` on the first prompt.
 
 ## v0.3.0-beta.1 (2026-07-19)
 
