@@ -9,7 +9,7 @@ PK candidates come from full-column uniqueness + id-naming.
 from __future__ import annotations
 
 from semlayer.profile.stats import TableStats, profile_table
-from semlayer.profile.typing_rules import classify
+from semlayer.profile.typing_rules import ALWAYS_ESCALATE, classify
 
 ENGINE_VERSION = "0.4.0b1"
 
@@ -50,10 +50,19 @@ def profile_with_stats(source, no_sample_values: bool = False, llm=None, context
     }, stats_by_table
 
 
+def _rule_detail(col: dict) -> str | None:
+    prov = col.get("provenance") or []
+    return prov[0].get("detail") if prov else None
+
+
 def _escalate(llm, ts: TableStats, doc: dict, no_sample_values: bool, context=None) -> None:
     from semlayer.profile.llm_typing import escalate_table
 
-    low = [c for c in doc["columns"] if c["confidence"] < ESCALATE_BELOW]
+    low = [
+        c
+        for c in doc["columns"]
+        if c["confidence"] < ESCALATE_BELOW or _rule_detail(c) in ALWAYS_ESCALATE
+    ]
     promoted = _doc_promoted(context, ts.table.name, doc["columns"], low)
     if not low and not promoted:
         return

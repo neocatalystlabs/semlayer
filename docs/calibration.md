@@ -1,0 +1,155 @@
+# Confidence calibration report
+
+SPEC §3 rule 5: *"`confidence` MUST be calibration-tested by the producing engine;
+a document's confidence values are meaningless without a published calibration
+report."* This is that report. Until it existed, semlayer was in breach of its own
+spec — it shipped confidence numbers that had never been measured against anything.
+
+Engine version: 0.4.0b1. Measured 2026-09-16.
+
+## What the number means
+
+A column's `confidence` is the probability that **the whole column element is
+right** — both `semantic_type` and `entity_role`. Not "the type is probably right."
+If we say 0.7 and the type is right but the role is wrong, that counts as a miss.
+
+This definition is deliberate and it is the conservative reading. It matters
+because our rules are not uniformly good at both halves. `integer fallback` gets
+the type right 97% of the time and the role right 13% of the time. `N distinct
+values` is the mirror image: type 20%, role 100%. A single scalar cannot be
+honest about both, so it reports the joint.
+
+That is a limitation of the format, not of the measurement, and it is the main
+argument for replacing the scalar with per-facet bands. See *Known gaps*.
+
+## Method
+
+- **Corpus**: 785 gold-typed columns across the 9 fixtures in `fixtures/golds/`.
+  These are synthetic marts built to look like real enterprise schemas (dirty
+  names, EAV, fan traps, snapshots, a TPC-DS-shaped warehouse), not a sample of
+  any customer's warehouse. Numbers here transfer to the extent your schema looks
+  like these.
+- **Grading**: exact match on `semantic_type` and `entity_role` against gold.
+  Tables below report the strict grade. The scorer's lenient mode (which forgives
+  `code`↔`enum`, `date`↔`timestamp_event`, and similar) is *not* used to set any
+  published constant, because a consumer that acts on the type cares about the
+  distinction the lenient mode forgives.
+- **Shrinkage**: each calibrated constant is the measured joint hit-rate shrunk
+  toward 0.5 with a pseudo-count of 2, so a rule that fired 3 times cannot claim
+  1.00, then rounded to the nearest 0.05.
+- **ECE**: expected calibration error, bucketing by reported confidence and
+  comparing to the bucket midpoint. Lower is better; 0 means the number means
+  what it says.
+
+Reproduce:
+
+```
+uv run python ../prd/confidence-calibration-run.py        # heuristic tier
+uv run python ../prd/confidence-calibration-run.py --llm  # LLM tier (cassette replay)
+```
+
+## Results: heuristic tier (no LLM)
+
+Accuracy across the corpus: type 0.786, role 0.811, PK recall 0.654.
+
+Element-level reliability, statistical mechanism — reported confidence vs.
+measured hit-rate:
+
+| reported | n | hit-rate |
+|---|---|---|
+| 0.05 | 37 | 0.03 |
+| 0.15 | 23 | 0.17 |
+| 0.25 | 40 | 0.17 |
+| 0.40 | 3  | 0.33 |
+| 0.70 | 26 | 0.73 |
+| 0.85 | 51 | 0.88 |
+| 0.90 | 6  | 0.83 |
+
+Monotone and close to the diagonal. Element ECE **0.093** (was 0.130 before this
+pass). The 0.90 row is the only inversion and it is 6 columns from rules that
+fire too rarely to calibrate.
+
+The naming mechanism is **not yet calibrated** and shows it:
+
+| reported | n | hit-rate |
+|---|---|---|
+| 0.6 | 85  | 0.71 |
+| 0.7 | 234 | 0.66 |
+| 0.8 | 371 | 0.93 |
+
+Reported 0.7 is *less* reliable than reported 0.6. Two rules drive it, both
+badly over-scored (strict joint accuracy in parentheses): `name rule -> code`
+claims 0.75 (0.06) and `name rule -> pii_address` claims 0.75 (0.06). Calibrating
+the naming tier is the next pass; it is a larger diff because those constants
+live in a name-rule table with many entries.
+
+Foreign keys are **under**-confident: every FK bucket hits 1.00 while reporting
+0.7–0.8, ECE 0.212. An FK backed by both naming and an inclusion dependency has
+not been wrong once on this corpus. That is a real signal we are hiding.
+
+## Results: LLM tier
+
+Element ECE 0.128, and the tier is better on FK (ECE 0.062) than heuristics alone.
+
+**Coverage caveat, stated plainly:** this run replays recorded cassettes and 3 of
+the 9 fixtures (`multi_tenant`, `self_ref`, `tpcds_clean`) have no cassette for
+the current prompt, so they are skipped. `tpcds_clean` is 425 of the 785 columns.
+The LLM-tier numbers above therefore rest on roughly 340 columns, not the full
+corpus, and should be read as indicative. Re-recording those cassettes costs live
+API spend and has not been done.
+
+## What changed in this pass
+
+1. **Removed `unique numeric`.** A numeric column with high cardinality and
+   uniqueness was typed `identifier`/`primary_key` at confidence 0.6. Measured:
+   0 correct out of 15, on both type and role. Because id-named columns are
+   already caught by an earlier rule, this one fired precisely on the non-id
+   numerics — which are measures. It was wrong by construction and it shadowed
+   the decimal and integer fallbacks that handle those columns correctly.
+2. **Removed `_rule_weak_id`.** Columns whose names end in `_no`/`_nbr`/`_number`
+   were typed as identifiers at 0.6. Measured: 1 correct out of 13. Most such
+   columns are text (phone numbers, order numbers) that gold types as `free_text`.
+3. **Recalibrated 7 statistical constants** to measured joint hit-rate, per the
+   method above.
+4. **Decoupled escalation from the trust number.** `decimal fallback` calibrates
+   to 0.7, which is genuinely how often it is right — but it lands exactly on
+   `ESCALATE_BELOW`, so honest calibration would have switched off the LLM pass
+   that fixes its known failure (it calls every bare decimal `monetary_value`, so
+   weights and ratios come out as money). Trust and routing are different
+   questions. That rule now escalates regardless of confidence.
+
+Removing the two dead rules **improved** accuracy — type 0.775 → 0.786, role
+0.789 → 0.811, PK recall unchanged — because their columns fell through to rules
+that were already better.
+
+## Known gaps
+
+- **One scalar, two facts.** Documented above. Per-facet confidence (or a
+  structured basis with per-element bands) is the fix; it is a format change.
+- **Naming tier uncalibrated.** Numbers above; next pass.
+- **FK under-confident.** Raising it is a reviewed diff, not a free win: FK
+  confidence feeds the review queue.
+- **Metrics are constants.** All metric confidences are one of three hard-coded
+  values (0.6, 0.7, 0.75) assigned by code path. There is no gold data for "is
+  this metric definition correct", so this experiment cannot calibrate them. They
+  are, today, uncalibrated numbers and should be read as provenance markers
+  rather than probabilities. Calibrating them requires a competency-question
+  pass-rate harness.
+- **Tables and required filters carry no `confidence` at all.** Per SPEC §1,
+  absent confidence means *human-authored*. A conforming consumer therefore reads
+  our most heavily inferred content as hand-written. This is a producer bug and a
+  separate fix.
+- **Corpus is synthetic.** 9 fixtures, one shape of "enterprise-looking". Real
+  warehouses will move these numbers.
+
+## Queued rule fixes the data points at
+
+Measured confusions that are specific enough to fix, each its own reviewed diff:
+
+- Numeric, unique, name ends in `_number`/`_no`/`_nbr` → `primary_key`
+  (6 columns, e.g. `catalog_returns.cr_order_number`, currently typed as measures).
+- `n_distinct <= 2` → `flag`, not `enum` (8 columns, e.g. `date_dim.d_holiday`).
+- `small int domain` → `quantity`, not `code`, when values are ordinal
+  (19 columns, e.g. `reviews.rating`, `shoes.shoe_size`).
+- `integer fallback` role: 21 columns gold-typed `dimension` come out `measure`
+  (e.g. `date_dim.wk_of_yr`).

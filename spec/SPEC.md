@@ -100,7 +100,7 @@ A consumer that writes SQL itself (rather than compiling a metric) SHOULD verify
 2. Every SQL-bearing field is dialect-taggable; a bare string is the document's default dialect.
 3. Re-inference MUST NOT overwrite `reviewed`/`certified` content; conflicts are recorded in `conflicts[]` and queued for review. When a certified object's warehouse element disappears, the producer MUST transition it to `orphaned` (never delete silently, never leave it `certified`).
 4. Producers MUST populate `generated_by` (engine, model, timestamp) on generated documents; engine-version changes are a distinct drift class from warehouse changes.
-5. `confidence` MUST be calibration-tested by the producing engine; a document's confidence values are meaningless without a published calibration report.
+5. `confidence` MUST be calibration-tested by the producing engine; a document's confidence values are meaningless without a published calibration report. (semlayer's own report: [docs/calibration.md](../docs/calibration.md).)
 
 ## 4. References
 

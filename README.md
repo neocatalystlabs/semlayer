@@ -35,7 +35,7 @@ On our messy-warehouse benchmark (cryptic names, zero declared constraints, hidd
 | **Descriptions** | every table + column, LLM-written from evidence via join-graph context propagation, judged 0.82–0.89 correct+useful by an independent model |
 | **Your docs as priors** | `--context` ingests data dictionaries, wiki exports, CLAUDE.md files — and *tells you where they're wrong*: doc-vs-data contradictions go to review, never silent override ([guide](docs/context-priors.md)) |
 
-Everything lands with `confidence`, `provenance` (which signals produced it), and `lifecycle` (`inferred → reviewed → certified`, plus `deprecated`/`orphaned`), governed by a [normative consumer contract](spec/SPEC.md) that makes silent misuse — summing across a fan-out, joining SCD2 at current-row, filtering on guessed decodes — *non-conforming*, not merely unwise.
+Everything lands with `confidence` ([calibrated, with the misses published](docs/calibration.md)), `provenance` (which signals produced it), and `lifecycle` (`inferred → reviewed → certified`, plus `deprecated`/`orphaned`), governed by a [normative consumer contract](spec/SPEC.md) that makes silent misuse — summing across a fan-out, joining SCD2 at current-row, filtering on guessed decodes — *non-conforming*, not merely unwise.
 
 ## Cost & privacy
 

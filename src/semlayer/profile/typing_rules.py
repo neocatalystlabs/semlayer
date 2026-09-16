@@ -4,6 +4,13 @@ Deterministic name/pattern/statistics rules — the pre-LLM baseline and the
 `--no-sample-egress` floor. Each classification carries confidence + the
 signal that produced it. The LLM tier (M3+) escalates low-confidence columns;
 these rules never call out.
+
+Confidence numbers in the statistic tier are calibrated, not guessed: each is
+the measured rate at which that rule gets BOTH semantic_type and entity_role
+right across the 785 gold-typed columns in fixtures/golds, shrunk toward 0.5
+with a pseudo-count of 2 so low-n rules cannot swing. Naming-tier constants
+are not yet calibrated. Changing any of these means re-running the calibration
+and updating the published report — see docs/calibration.md.
 """
 
 from __future__ import annotations
@@ -71,7 +78,6 @@ _NAME_RULES: list[tuple[re.Pattern, str, float]] = [
 ]
 
 _ID_NAME_RE = re.compile(r"(^|_)(id|key|sk|pk)$|^id($|_)")
-_WEAK_ID_NAME_RE = re.compile(r"(^|_)(no|nbr|number)$")
 _METADATA_NAME_RE = re.compile(
     r"(^|_)(crt|created|updt|updated|upd|load|etl|ingest|src_sys|source_system|batch|audit)(_|$)|_(at|ts)$"
 )
@@ -124,23 +130,12 @@ def _rule_temporal(
         return Typing("timestamp_event", "metadata", 0.75, "naming", "audit/etl timestamp name")
     if "TIMESTAMP" in t:
         return Typing("timestamp_event", "dimension", 0.7, "statistic", "timestamp type")
-    return Typing("date", "dimension", 0.8, "statistic", "date type")
+    return Typing("date", "dimension", 0.85, "statistic", "date type")
 
 
 def _rule_nested(stats: ColumnStats, name: str, t: str, no_sample_values: bool) -> Typing | None:
     if "STRUCT" in t or "JSON" in t or "MAP" in t or t.endswith("[]"):
         return Typing("json_object", "metadata", 0.85, "statistic", "nested type")
-    return None
-
-
-def _rule_weak_id(stats: ColumnStats, name: str, t: str, no_sample_values: bool) -> Typing | None:
-    # weak id suffixes (no/nbr/number) count only when the data looks like ids
-    if _WEAK_ID_NAME_RE.search(name) and (stats.is_unique or stats.cardinality_ratio > 0.5):
-        role = "primary_key" if stats.is_unique else "foreign_key"
-        return Typing(
-            "identifier", role, 0.6, "statistic",
-            f"number-suffixed and high-cardinality (ratio {stats.cardinality_ratio:.2f})",
-        )
     return None
 
 
@@ -151,7 +146,7 @@ def _rule_id_name(stats: ColumnStats, name: str, t: str, no_sample_values: bool)
     conf = 0.85 if stats.is_unique else 0.7
     if not _is_numeric(t) and stats.cardinality_ratio < 0.01 and stats.n_distinct < 50:
         # id-suffixed but tiny domain: likely a code, not an identifier
-        return Typing("code", "dimension", 0.55, "statistic", "id-named but low cardinality")
+        return Typing("code", "dimension", 0.4, "statistic", "id-named but low cardinality")
     return Typing("identifier", role, conf, "naming", f"id-like name, unique={stats.is_unique}")
 
 
@@ -176,18 +171,24 @@ def _rule_metadata_name(
     return None
 
 
+# Calibration says this rule is ~0.7 trustworthy, but its errors are systematic:
+# it calls every bare decimal monetary_value, so weights/ratios come out as money.
+# Trust and routing are different questions -- the LLM tier resolves this one
+# cheaply, so it escalates regardless of confidence. See docs/calibration.md.
+_DECIMAL_FALLBACK = "decimal fallback"
+ALWAYS_ESCALATE = frozenset({_DECIMAL_FALLBACK})
+
+
 def _rule_numeric_fallback(
     stats: ColumnStats, name: str, t: str, no_sample_values: bool
 ) -> Typing | None:
     if not _is_numeric(t):
         return None
-    if stats.cardinality_ratio > 0.9 and stats.is_unique:
-        return Typing("identifier", "primary_key", 0.6, "statistic", "unique numeric")
     if "DECIMAL" in t or "DOUBLE" in t or "FLOAT" in t or "NUMERIC" in t:
-        return Typing("monetary_value", "measure", 0.4, "statistic", "decimal fallback")
+        return Typing("monetary_value", "measure", 0.7, "statistic", _DECIMAL_FALLBACK)
     if stats.n_distinct <= 30:
-        return Typing("code", "dimension", 0.45, "statistic", "small int domain")
-    return Typing("quantity", "measure", 0.35, "statistic", "integer fallback")
+        return Typing("code", "dimension", 0.25, "statistic", "small int domain")
+    return Typing("quantity", "measure", 0.15, "statistic", "integer fallback")
 
 
 def _rule_text_fallback(
@@ -196,7 +197,7 @@ def _rule_text_fallback(
     if stats.avg_len is not None and stats.avg_len > 40:
         return Typing("free_text", "metadata", 0.6, "statistic", f"avg length {stats.avg_len:.0f}")
     if stats.n_distinct <= 30 and stats.row_count > 100:
-        return Typing("enum", "dimension", 0.6, "statistic", f"{stats.n_distinct} distinct values")
+        return Typing("enum", "dimension", 0.25, "statistic", f"{stats.n_distinct} distinct values")
     if _DATE_NAME_RE.search(name):
         return Typing("date", "dimension", 0.5, "naming", "date-like name, non-temporal type")
     return None
@@ -211,7 +212,6 @@ _RULES = [
     _rule_bool,
     _rule_temporal,
     _rule_nested,
-    _rule_weak_id,
     _rule_id_name,
     _rule_name_table,
     _rule_metadata_name,
@@ -228,7 +228,7 @@ def classify(stats: ColumnStats, no_sample_values: bool = False) -> Typing:
         result = rule(stats, name, t, no_sample_values)
         if result is not None:
             return result
-    return Typing("unknown", "dimension", 0.2, "statistic", "no rule matched")
+    return Typing("unknown", "dimension", 0.05, "statistic", "no rule matched")
 
 
 def _role_for(stype: str, stats: ColumnStats) -> str:
