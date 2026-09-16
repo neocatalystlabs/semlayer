@@ -71,6 +71,13 @@ Spec `0.3.0` (MINOR: one new optional field, one new contract section).
   the run starts in, and a cassette directory is accepted only if it actually
   holds recordings — an empty one created by an earlier failed run used to
   win and produce a `CassetteMiss` on the first prompt.
+- **Drift survives a renamed column.** `semantic_drift` walked the columns in
+  the document and probed each enum column by name against the live warehouse,
+  without checking it still existed. A rename (the most ordinary schema change
+  there is) killed the whole run with a binder error instead of reporting the
+  change. It now probes only columns the warehouse still has: a renamed column
+  is reported as the old one dropped plus the new one added, and the old one is
+  orphaned. The freshness check had the same flaw and is fixed with it.
 
 ## v0.3.0-beta.1 (2026-07-19)
 

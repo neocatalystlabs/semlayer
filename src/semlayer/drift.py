@@ -73,6 +73,30 @@ def diff_snapshots(old: dict, new: dict) -> list[DriftEvent]:
     return events
 
 
+def _unmodeled_enum_values(source, fq: str, t: dict, live_cols: set) -> list[DriftEvent]:
+    """Enum values present in the warehouse but absent from the model.
+
+    Only columns the warehouse still has are probed: a renamed or dropped
+    column is already reported by the structural diff, and querying it here by
+    its old name used to kill the whole drift run.
+    """
+    events = []
+    for c in t["columns"]:
+        if c["name"] not in live_cols:
+            continue
+        known = {str(e["value"]) for e in c.get("enum_values") or []}
+        if not known:
+            continue
+        rows = source.query(
+            f'SELECT DISTINCT "{c["name"]}" FROM {fq} '
+            f'WHERE "{c["name"]}" IS NOT NULL LIMIT 50'
+        )
+        for v in sorted({str(r[0]) for r in rows} - known):
+            events.append(DriftEvent("enum_value_added", t["name"], c["name"],
+                                     f"unmodeled value '{v}'"))
+    return events
+
+
 def semantic_drift(source, doc: dict) -> list[DriftEvent]:
     """DML-only drift: enum values unseen by the model; stale loads."""
     events = []
@@ -83,21 +107,15 @@ def semantic_drift(source, doc: dict) -> list[DriftEvent]:
         if meta is None:
             continue
         fq = qualify(meta.schema, meta.name)
-        for c in t["columns"]:
-            known = {str(e["value"]) for e in c.get("enum_values") or []}
-            if not known:
-                continue
-            live_query = (
-                f'SELECT DISTINCT "{c["name"]}" FROM {fq} '
-                f'WHERE "{c["name"]}" IS NOT NULL LIMIT 50'
-            )
-            live = {str(r[0]) for r in source.query(live_query)}
-            for v in sorted(live - known):
-                events.append(DriftEvent("enum_value_added", t["name"], c["name"],
-                                         f"unmodeled value '{v}'"))
+        # Only probe columns the warehouse still has. A renamed or dropped
+        # column is already reported by the structural diff; querying it here
+        # by its old name killed the whole drift run.
+        live_cols = {c.name for c in meta.columns}
+        events += _unmodeled_enum_values(source, fq, t, live_cols)
         fresh = t.get("freshness", {})
         if fresh.get("expected_cadence") == "daily":
-            date_cols = [c["name"] for c in t["columns"] if c.get("semantic_type") == "date"]
+            date_cols = [c["name"] for c in t["columns"]
+                         if c.get("semantic_type") == "date" and c["name"] in live_cols]
             if date_cols:
                 row = source.query(f'SELECT max("{date_cols[0]}") FROM {fq}')[0]
                 if row[0] is not None:
