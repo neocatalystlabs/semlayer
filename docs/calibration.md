@@ -89,14 +89,34 @@ not been wrong once on this corpus. That is a real signal we are hiding.
 
 ## Results: LLM tier
 
-Element ECE 0.128, and the tier is better on FK (ECE 0.062) than heuristics alone.
+Covers 759 of the 785 columns. Two fixtures (`multi_tenant`, `self_ref`) have no
+cassette for the current prompt and are skipped; `tpcds_clean` was re-recorded
+against the live model for this report.
 
-**Coverage caveat, stated plainly:** this run replays recorded cassettes and 3 of
-the 9 fixtures (`multi_tenant`, `self_ref`, `tpcds_clean`) have no cassette for
-the current prompt, so they are skipped. `tpcds_clean` is 425 of the 785 columns.
-The LLM-tier numbers above therefore rest on roughly 340 columns, not the full
-corpus, and should be read as indicative. Re-recording those cassettes costs live
-API spend and has not been done.
+Element ECE **0.195** — worse than the heuristic tier, and worse than the 0.128
+an earlier draft of this report published when `tpcds_clean` was missing. The
+easy fixtures were flattering the number. That is the main reason this section
+is now measured on the full corpus.
+
+Where the escalation lands, split by what the column's confidence is claiming:
+
+| mechanism | reported | n | type | role | element |
+|---|---|---|---|---|---|
+| `statistic+llm` | 0.8 | 116 | 0.61 | 0.85 | 0.53 |
+| `naming+llm` | 0.8 | 41 | 0.54 | 0.71 | 0.32 |
+
+These are the model's own self-reported confidences, passed through untouched.
+The split matters: the LLM's **entity-role** calls are well calibrated (role ECE
+0.060) while its **semantic-type** calls are over-confident by roughly twenty
+points (type ECE 0.159). Escalated columns claiming 0.8 get the type right about
+three times in five. A consumer that trusts an escalated type at face value is
+being over-served, and the aggregate element number hides which half is at fault.
+
+FK remains the tier's strength: ECE 0.120, and every FK bucket still hits 1.00.
+
+Not fixed here. Passing the model's self-report through unadjusted is the same
+class of error this pass removed from the rule tier — an unmeasured number
+presented as a measured one — and it now has a measurement.
 
 ## What changed in this pass
 
