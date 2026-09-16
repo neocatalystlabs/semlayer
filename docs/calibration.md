@@ -130,15 +130,23 @@ that were already better.
 - **FK under-confident.** Raising it is a reviewed diff, not a free win: FK
   confidence feeds the review queue.
 - **Metrics are constants.** All metric confidences are one of three hard-coded
-  values (0.6, 0.7, 0.75) assigned by code path. There is no gold data for "is
-  this metric definition correct", so this experiment cannot calibrate them. They
-  are, today, uncalibrated numbers and should be read as provenance markers
-  rather than probabilities. Calibrating them requires a competency-question
-  pass-rate harness.
+  values (0.6, 0.7, 0.75) assigned by code path. They are uncalibrated and should
+  be read as provenance markers rather than probabilities. They are not, however,
+  unmeasurable: metric quality is downstream of two classifiers that *do* have
+  gold labels — table type and column role — and the errors chain. A timezone
+  offset typed `measure` instead of `dimension` trips the "two FKs plus a
+  measure means fact" rule, turning a dimension table into a fact, which
+  manufactures metrics that sum timezone offsets at confidence 0.70. The honest
+  statement is that we have not labeled metric precision, not that we cannot.
+- **Table type is 0.647 and publishes no number.** De-duplicated across the
+  corpus, table-type classification is right 66 of 102 times. `classify_table`
+  computes a confidence for that call and `link/run.py` discards it, so the
+  document carries the classification without the caveat.
 - **Tables and required filters carry no `confidence` at all.** Per SPEC §1,
   absent confidence means *human-authored*. A conforming consumer therefore reads
-  our most heavily inferred content as hand-written. This is a producer bug and a
-  separate fix.
+  our most heavily inferred content as hand-written. For tables this is a
+  one-line producer fix (the value is computed, then dropped); it is not a
+  measurement problem.
 - **Corpus is synthetic.** 9 fixtures, one shape of "enterprise-looking". Real
   warehouses will move these numbers.
 
