@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>semlayer — the semantic layer that infers itself</title>
-<meta name="description" content="Open-source engine that infers a semantic layer from your data warehouse: undeclared foreign keys, status-code decodes, hidden business rules — with confidence, provenance, and review on every claim. Served to AI agents over MCP.">
+<title>semlayer — your AI writes perfect SQL and returns the wrong number</title>
+<meta name="description" content="Your AI answers warehouse questions in seconds and more than half are wrong. semlayer infers the rules your engineers keep in their heads — 42% to 87% correct on our messy-warehouse benchmark. Open source, Apache-2.0.">
 <style>
   :root {
     --bg: #ffffff; --fg: #1a1a2e; --muted: #566; --accent: #6b47dc;
@@ -52,44 +52,89 @@
     font-size: 0.85rem; color: var(--muted);
   }
   .footer a { color: var(--muted); }
+  h2 { font-size: 1.35rem; letter-spacing: -0.01em; margin: 2.5rem 0 0.75rem; }
+  .lede { font-size: 1.25rem; line-height: 1.5; margin-bottom: 1.25rem; }
+  .caveat {
+    background: transparent; border: 1px solid var(--border);
+    padding: 0.9rem 1.1rem; border-radius: 4px; margin: 1.5rem 0;
+    font-size: 0.95rem; color: var(--muted);
+  }
+  .quiet { font-size: 0.95rem; color: var(--muted); }
 </style>
 </head>
 <body>
 
 <h1>sem<span>layer</span></h1>
-<p class="tagline">The open-source semantic layer that infers itself — skip the quarter of hand-writing dbt YAML.</p>
+<p class="tagline">Your AI writes perfect SQL and returns the wrong number.</p>
 
-<p>Point it at your warehouse. It profiles every column, discovers the foreign
-keys nobody declared, decodes the status columns, and recovers the business
-rules hiding in your aggregate tables — verified against your own data, with
-<strong>confidence, provenance, and a review queue on every claim</strong>.
-Then any AI agent consumes the result over MCP.</p>
+<p class="lede">Your company pointed Claude or Copilot at the data warehouse, and
+your business users can finally ask their own questions. The answers come back in
+seconds, they look right, and more than half of them are wrong.</p>
+
+<p>Nothing errors. Nothing warns anyone. The query is valid, it just answers a
+slightly different question than the one that was asked &mdash; because it does not
+know that cancelled orders never count as revenue, or which of your four
+order tables is the one finance uses.</p>
+
+<p>That knowledge is real, and it is not written down anywhere a machine can read.
+It lives in the heads of the three engineers who built the warehouse.</p>
+
+<h2>What semlayer does</h2>
+
+<p><strong>It works those rules out for itself, from your data.</strong> Point it at your
+warehouse and it reads every table, finds the relationships nobody declared,
+decodes what your status columns mean, and recovers the filters your summary
+tables silently apply. It writes all of it down in one open file that any AI
+agent can read.</p>
 
 <div class="stat">
-On our messy-warehouse benchmark, an agent answers <strong>53% of business
-questions correctly vs 34%</strong> from the raw schema (+54% relative).
-On clean, well-named schemas it doesn't help — <strong>we publish that
-negative result too</strong>. The full eval suite ships in the repo.
+Same AI, same 38 business questions, same warehouse: <strong>42% answered
+correctly from the raw schema, 87% with the context semlayer inferred.</strong>
+The errors it fixes are the silent kind &mdash; raw-schema &ldquo;total revenue&rdquo;
+sums cancelled orders, reporting $16.3M where finance reports $14.6M.
 </div>
 
-<pre><code>pip install -e ".[warehouses]"      <span class="c"># Snowflake, BigQuery, DuckDB (+ Iceberg)</span>
+<p>Nobody hand-writes a model, and nobody maintains it. Re-run it on a schedule and
+the context stays in step with the schema. Your engineers add what only they know
+on top, and that is never overwritten.</p>
+
+<div class="caveat">
+<strong>Where it does not help:</strong> on a clean, well-documented warehouse the
+raw schema already wins &mdash; 67% correct without semlayer, 58% with it. That
+result ships in the repo next to the good one. If your warehouse is tidy, you do
+not need this.
+</div>
+
+<h2>How it works</h2>
+
+<p>It profiles every column, discovers the foreign keys nobody declared, decodes the
+status columns, and recovers business rules hiding in your aggregate tables &mdash;
+verified against your own data, with <strong>confidence, provenance, and a review
+queue on every claim</strong>. Statistics alone never auto-accept a foreign key, and
+a doc that contradicts your data goes to review rather than being believed. Then any
+AI agent consumes the result over MCP.</p>
+
+<pre><code>pip install semlayer
 semlayer infer snowflake -o layer.yaml --context ./docs/
 semlayer review layer.yaml           <span class="c"># accept/reject what it inferred</span>
 semlayer mcp layer.yaml              <span class="c"># serve it to Claude, Cursor, any agent</span></code></pre>
 
+<p class="quiet">Snowflake, BigQuery and DuckDB. Skip the quarter of hand-writing
+dbt YAML.</p>
+
 <p>
-<a class="cta" href="https://github.com/neocatalystlabs/semlayer">GitHub →</a>
-<a class="cta alt" href="https://github.com/neocatalystlabs/semlayer#readme">Read the benchmark</a>
+<a class="cta" href="https://github.com/neocatalystlabs/semlayer">GitHub &rarr;</a>
+<a class="cta alt" href="https://github.com/neocatalystlabs/semlayer/blob/main/docs/benchmark.md">Read the benchmark</a>
 </p>
 
 <ul>
-  <li><strong>Free &amp; complete</strong>: Apache-2.0 CLI, runs in your environment with your keys — no caps, no signup. A paid hosted control plane (continuous re-inference, team review, dashboards) comes later; the CLI stays fully functional.</li>
-  <li><strong>Honest by construction</strong>: every claim carries its evidence; statistics alone never auto-accept a foreign key; doc-vs-data contradictions go to review, never silently believed.</li>
-  <li><strong>Design partners wanted</strong>: got a messy warehouse and an AI initiative? <a href="mailto:hello@semlayer.dev">hello@semlayer.dev</a> — or file the <a href="https://github.com/neocatalystlabs/semlayer/issues/new/choose">beta feedback form</a>.</li>
+  <li><strong>Free &amp; complete</strong>: Apache-2.0 CLI, runs in your environment with your keys &mdash; no caps, no signup. A paid hosted control plane (continuous re-inference, team review, dashboards) comes later; the CLI stays fully functional.</li>
+  <li><strong>Honest by construction</strong>: every claim carries its evidence, and the whole eval suite ships in the repo so you can check whether it helped on your data.</li>
+  <li><strong>Design partners wanted</strong>: got a messy warehouse and an AI initiative? <a href="mailto:hello@semlayer.dev">hello@semlayer.dev</a> &mdash; or file the <a href="https://github.com/neocatalystlabs/semlayer/issues/new/choose">beta feedback form</a>.</li>
 </ul>
 
 <p class="footer">
-semlayer · Apache-2.0 · a Neocatalyst Labs project ·
+semlayer &middot; Apache-2.0 &middot; a Neocatalyst Labs project &middot;
 <a href="https://github.com/neocatalystlabs/semlayer">github.com/neocatalystlabs/semlayer</a>
 </p>
 
