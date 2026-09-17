@@ -210,8 +210,10 @@ def _detect_recursive_hierarchies(doc: dict, stats_by_table: dict, source) -> li
 def _classify_tables(doc: dict, fk_out: dict, fk_in: dict) -> None:
     """Assign table_type + confidence/provenance to every table in place."""
     for t in doc["semantic_layer"]["tables"]:
-        ttype, _conf, detail = classify_table(t, fk_out.get(t["name"], 0), fk_in.get(t["name"], 0))
+        ttype, conf, detail = classify_table(t, fk_out.get(t["name"], 0), fk_in.get(t["name"], 0))
         t["table_type"] = ttype
+        # confidence in the LABEL, not a quality score -- see docs/calibration.md
+        t["confidence"] = conf
         t.setdefault("provenance", []).append(
             {"signal": "statistic", "detail": f"table_type: {detail}"}
         )
