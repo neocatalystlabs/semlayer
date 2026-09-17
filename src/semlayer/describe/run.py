@@ -127,6 +127,9 @@ def _apply_parsed(t: dict, parsed: dict, pass_n: int) -> None:
     t.setdefault("provenance", []).append(prov)
 
 
+LLM_FILL_CONFIDENCE = 0.65   # measured 7/10 against gold, shrunk
+
+
 def _apply_table_type(t: dict, llm_type: str | None) -> None:
     """LLM fills ONLY 'unknown' table types.
 
@@ -140,6 +143,17 @@ def _apply_table_type(t: dict, llm_type: str | None) -> None:
     heur = t.get("table_type", "unknown")
     if heur == "unknown":
         t["table_type"] = llm_type
+        # The heuristic's confidence and provenance describe the `unknown`
+        # verdict we just replaced -- leaving them makes the document assert a
+        # type at the no-decisive-signal confidence of 0.05, and cite a rule
+        # that did not produce it. Measured against gold: the fill is right
+        # 7 of 10, shrunk toward 0.5 with a pseudo-count of 2 -> 0.65.
+        # See docs/calibration.md.
+        t["confidence"] = LLM_FILL_CONFIDENCE
+        t.setdefault("provenance", []).append({
+            "signal": "llm",
+            "detail": f"table_type: llm filled unknown -> {llm_type}",
+        })
     elif llm_type != heur:
         t.setdefault("conflicts", []).append({
             "between": ["statistic", "llm"],
