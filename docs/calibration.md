@@ -153,6 +153,27 @@ denormalized-by-column-count (0.60), and the fact rule for a table nothing
 references (0.65). Each measured 1.00 on its few cases, so they are most likely
 under-confident. They account for most of the residual ECE.
 
+## Results: table type filled by the LLM
+
+When the heuristic rules reach no decisive signal, the describe stage lets the
+LLM fill the `table_type` (it is not allowed to *override* a decided heuristic —
+that was measured in 2026-07 to reduce accuracy). Measured against gold, that
+fill is right **7 of 10** times.
+
+Until this pass those tables kept the heuristic's `unknown` confidence of 0.05
+and its `no decisive signal` provenance, so the document asserted a type at the
+confidence of the verdict it had just replaced, citing a rule that did not
+produce it. A 70%-accurate claim was published as 5% confident.
+
+They now carry **0.65** (7/10 shrunk toward 0.5 with a pseudo-count of 2) and a
+`signal: llm` provenance entry naming the fill.
+
+The failure mode is consistent and worth knowing: all three misses assign
+`operational` to tables gold calls `fact` (`collision_heavy.shipments`,
+`collision_heavy.tickets`, `messy_mart.web_evt`) — the same over-assignment of
+`operational` to minimal tables that disqualified the LLM from overriding
+decided heuristics.
+
 ## What changed in this pass
 
 1. **Removed `unique numeric`.** A numeric column with high cardinality and
