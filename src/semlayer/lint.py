@@ -103,9 +103,18 @@ def _conjuncts(scope: Scope) -> list[exp.Expression]:
 
 
 def _split_and(node: exp.Expression) -> list[exp.Expression]:
-    """Top-level conjuncts of a predicate (the predicate itself when it is not an AND)."""
+    """Top-level conjuncts of a predicate (the predicate itself when it is not an AND).
+
+    Parentheses are unwrapped first, at every level: `(a)` is one conjunct and
+    `(a AND b)` is two. Without this a parenthesised predicate normalises with
+    its brackets attached and can never equal a required filter -- and
+    `compile_metric` emits exactly that form, so the linter reported our own
+    compiler's output as missing the filter the compiler had just applied.
+    """
+    while isinstance(node, exp.Paren):
+        node = node.this
     if isinstance(node, exp.And):
-        return [cast(exp.Expression, n) for n in node.flatten()]
+        return [c for n in node.flatten() for c in _split_and(cast(exp.Expression, n))]
     return [node]
 
 
