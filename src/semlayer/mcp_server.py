@@ -39,6 +39,10 @@ def list_tables(doc: dict, domain: str | None = None) -> list[dict]:
         entry = {"name": t["name"], "type": t.get("table_type", "unknown"),
                  "description": (t.get("description") or "")[:140],
                  "lifecycle": t.get("lifecycle", "inferred")}
+        # how sure we are of `type` -- NOT a quality or canonical-ness score.
+        # "which table should I use" is answered by lifecycle + route_intent.
+        if t.get("confidence") is not None:
+            entry["type_confidence"] = t["confidence"]
         if t.get("lifecycle") in ("deprecated", "orphaned"):
             entry["UNUSABLE"] = True
             rep = t.get("deprecation", {}).get("replacement")
