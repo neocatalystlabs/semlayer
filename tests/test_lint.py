@@ -80,6 +80,30 @@ def test_inherited_filter_both_forms_satisfy(doc, sql):
     assert r["ok"] and not r["findings"], render_findings(r)
 
 
+@pytest.mark.parametrize("sql", [
+    # exactly what compile_metric emits: the filter is parenthesised
+    "SELECT SUM(ord_hdr.tot_amt) AS total_tot_amt FROM ord_hdr WHERE (sts_cd <> 'X')",
+    # and the same, nested inside an AND
+    "SELECT SUM(ord_hdr.tot_amt) AS m FROM ord_hdr "
+    "WHERE ((sts_cd <> 'X') AND (ord_dt >= '2024-01-01'))",
+])
+def test_parenthesised_required_filter_satisfies(doc, sql):
+    """A required filter in brackets still satisfies the rule.
+
+    compile_metric parenthesises the filters it applies, so without this the
+    linter reported the compiler's own output as missing the filter it had just
+    added -- and the MCP server tells agents to check_sql before executing.
+    """
+    r = lint_sql(doc, sql)
+    assert r["ok"] and not r["findings"], render_findings(r)
+
+
+def test_parenthesised_but_wrong_filter_is_still_flagged(doc):
+    """Unwrapping brackets must not make the check credulous."""
+    r = lint_sql(doc, "SELECT SUM(ord_hdr.tot_amt) AS m FROM ord_hdr WHERE (sts_cd <> 'P')")
+    assert _rules(r) == {"missing_required_filter"}
+
+
 def test_inherited_filter_missing_on_child_fact(doc):
     r = lint_sql(doc, "SELECT p.dept_cd, sum(l.line_amt) FROM ord_ln l "
                       "JOIN prod_ref p ON l.prod_id = p.prod_id GROUP BY 1")
