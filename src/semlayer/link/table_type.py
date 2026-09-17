@@ -23,6 +23,14 @@ def classify_table(t: dict, fk_out: int, fk_in: int) -> tuple[str, float, str]:
     ops) are checked before structural signals (FK fan-out/in, measure
     density) because a naming hit is a stronger, more direct signal than an
     inferred graph shape. Returns (table_type, confidence, detail).
+
+    Confidence is the measured rate at which each rule picks the gold
+    table_type across the fixture corpus, shrunk toward 0.5 with a pseudo-count
+    of 2. Rules that fired 3 times or fewer are left at their original value
+    and are flagged as uncalibrated in docs/calibration.md. This number says
+    only how sure we are of the LABEL -- a high score on a staging table means
+    "confidently staging", not "good table". Canonical-ness lives in lifecycle
+    and repo_knowledge.routing, not here.
     """
     name = t["name"].lower()
     cols = t["columns"]
@@ -45,27 +53,27 @@ def classify_table(t: dict, fk_out: int, fk_in: int) -> tuple[str, float, str]:
         (bool(_OPS_RE.search(name) and fk_in == 0), "operational", 0.7,
          "ops naming, nothing references it"),
         (has_validity, "snapshot_scd2", 0.8, "validity-window columns"),
-        (has_snap, "snapshot_scd2", 0.6, "snapshot naming/flag (no validity columns)"),
+        (has_snap, "snapshot_scd2", 0.35, "snapshot naming/flag (no validity columns)"),
         (bool(_AGG_RE.search(name) and n_measures >= 1), "aggregate", 0.75,
          "aggregate naming + measures"),
-        (bool(_DIM_RE.search(name)), "dimension", 0.8, "dimension naming"),
+        (bool(_DIM_RE.search(name)), "dimension", 0.95, "dimension naming"),
         (n_cols > 50, "denormalized", 0.6, f"{n_cols} columns"),
         # graph signals
-        (fk_out >= 2 and n_measures >= 1, "fact", 0.8,
+        (fk_out >= 2 and n_measures >= 1, "fact", 0.75,
          f"{fk_out} FKs out + {n_measures} measures"),
         (fk_out >= 1 and n_measures >= 1 and fk_in == 0, "fact", 0.65,
          f"{fk_out} FK out + {n_measures} measures, nothing references it"),
-        (fk_in >= 1 and n_measures == 0 and fk_out == 0, "dimension", 0.75,
+        (fk_in >= 1 and n_measures == 0 and fk_out == 0, "dimension", 0.95,
          f"referenced by {fk_in} tables, no measures, no FKs out"),
-        (fk_in >= 1 and n_measures == 0, "dimension", 0.6,
+        (fk_in >= 1 and n_measures == 0, "dimension", 0.5,
          f"referenced by {fk_in} tables, no measures"),
-        (n_cols <= 4 and n_measures == 0 and has_name_col, "dimension", 0.6,
+        (n_cols <= 4 and n_measures == 0 and has_name_col, "dimension", 0.65,
          "key + name entity shape"),
-        (n_measures >= 2, "fact", 0.55, "measure-heavy, few FKs resolved"),
-        (fk_in == 0 and fk_out == 0 and n_measures == 0, "operational", 0.4,
+        (n_measures >= 2, "fact", 0.1, "measure-heavy, few FKs resolved"),
+        (fk_in == 0 and fk_out == 0 and n_measures == 0, "operational", 0.1,
          "isolated, no measures"),
     ]
     for matched, ttype, conf, detail in rules:
         if matched:
             return ttype, conf, detail
-    return "unknown", 0.3, "no decisive signal"
+    return "unknown", 0.05, "no decisive signal"

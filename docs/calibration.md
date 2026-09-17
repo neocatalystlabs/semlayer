@@ -118,6 +118,41 @@ Not fixed here. Passing the model's self-report through unadjusted is the same
 class of error this pass removed from the rule tier — an unmeasured number
 presented as a measured one — and it now has a measurement.
 
+## Results: table type
+
+A table's `confidence` answers one question — **how sure are we of the
+`table_type` label**. It is not a quality score. A high number on a staging
+table means "confidently staging", which is a table you should not query.
+"Which table should I use" is answered by `lifecycle` (`certified` > `reviewed`
+> `inferred`, plus `deprecated`/`orphaned`) and `repo_knowledge.routing`, not by
+this number.
+
+Until this pass the value was computed and then discarded by `link/run.py`, so
+the document asserted a table type with no caveat at all. It is now calibrated
+the same way as the column tiers and emitted, and `get_tables` surfaces it as
+`type_confidence`.
+
+| reported | n | picks gold type |
+|---|---|---|
+| 0.05 | 12 | 0.00 |
+| 0.10 | 14 | 0.00 |
+| 0.35 | 4  | 0.25 |
+| 0.50 | 4  | 0.50 |
+| 0.65 | 4  | 0.75 |
+| 0.75 | 19 | 0.79 |
+| 0.95 | 33 | 1.00 |
+
+ECE **0.084**, down from 0.228. Before this pass the bottom of the range was
+pure fiction: a rule reporting 0.55 ("measure-heavy, few FKs resolved") was
+right 0 times out of 6, and the 0.3 and 0.4 fallbacks were right 0 of 20.
+
+Six rules fired 3 times or fewer and are **left uncalibrated** at their original
+values rather than fitted to a handful of observations: staging naming (0.85),
+aggregate naming (0.75), ops naming (0.70), validity-window columns (0.80),
+denormalized-by-column-count (0.60), and the fact rule for a table nothing
+references (0.65). Each measured 1.00 on its few cases, so they are most likely
+under-confident. They account for most of the residual ECE.
+
 ## What changed in this pass
 
 1. **Removed `unique numeric`.** A numeric column with high cardinality and
@@ -158,10 +193,10 @@ that were already better.
   measure means fact" rule, turning a dimension table into a fact, which
   manufactures metrics that sum timezone offsets at confidence 0.70. The honest
   statement is that we have not labeled metric precision, not that we cannot.
-- **Table type is 0.647 and publishes no number.** De-duplicated across the
-  corpus, table-type classification is right 66 of 102 times. `classify_table`
-  computes a confidence for that call and `link/run.py` discards it, so the
-  document carries the classification without the caveat.
+- **Table type is 0.647.** De-duplicated across the corpus, table-type
+  classification picks the gold type 66 of 102 times. Its confidence is now
+  calibrated and emitted (see below), but the underlying accuracy is unchanged
+  and is the weakest classifier we ship.
 - **Tables and required filters carry no `confidence` at all.** Per SPEC §1,
   absent confidence means *human-authored*. A conforming consumer therefore reads
   our most heavily inferred content as hand-written. For tables this is a
