@@ -4,6 +4,20 @@
 
 Spec `0.3.0` (MINOR: one new optional field, one new contract section).
 
+- **Confidence is now calibrated, and the calibration is published**
+  ([docs/calibration.md](docs/calibration.md)) — SPEC §3 rule 5 requires it and
+  we were in breach. A column's `confidence` is defined as the probability that
+  *both* `semantic_type` and `entity_role` are right, measured against the 785
+  gold-typed columns in `fixtures/golds/`. Two rules were removed as wrong by
+  construction: `unique numeric` (0 of 15 correct, reported 0.6) and the weak-id
+  name rule (1 of 13, reported 0.6). Seven statistical constants were re-fitted
+  to measured hit-rate with shrinkage. Statistical-tier reliability is now
+  monotone, ECE 0.130 -> 0.093, and accuracy improved as a side effect (type
+  0.775 -> 0.786, role 0.789 -> 0.811). LLM escalation no longer keys solely off
+  the trust number: `decimal fallback` calibrates to 0.7 but is systematically
+  money-vs-quantity ambiguous, so it escalates regardless. The naming tier, FK
+  confidence and metric confidences remain uncalibrated and the report says so.
+
 - **Semantic SQL linter** (`semlayer.lint`, new runtime dependency
   `sqlglot`, MIT). Deterministic, no LLM: `parse_error`, `unknown_table`,
   `unknown_column`, `correlated_reference` (an unqualified column that

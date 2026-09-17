@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"cr_order_number\",\n    \"semantic_type\": \"identifier\",\n    \"entity_role\": \"foreign_key\",\n    \"confidence\": 0.92,\n    \"enum_decodes\": null,\n    \"rationale\": \"Order number identifier linking returns to orders; non-unique, numeric range 2-1599\"\n  }\n]\n```",
+ "usage": {
+  "in": 766,
+  "out": 98
+ }
+}
