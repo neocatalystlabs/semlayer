@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "1d25ef67b201",
+ "response": "[{\"id\": 0, \"verdict\": \"accept\", \"reason\": \"Maps to total_tot_sls_amt metric with date filter\"},\n{\"id\": 1, \"verdict\": \"accept\", \"reason\": \"Maps directly to ord_hdr_count metric\"},\n{\"id\": 2, \"verdict\": \"accept\", \"reason\": \"Matches avg_tot_amt_per_order synonym exactly\"},\n{\"id\": 3, \"verdict\": \"accept\", \"reason\": \"Maps directly to total_rtn_amt metric\"},\n{\"id\": 4, \"verdict\": \"accept\", \"reason\": \"Maps directly to sub_evt_count metric\"},\n{\"id\": 5, \"verdict\": \"accept\", \"reason\": \"Maps directly to total_mrr_amt metric\"},\n{\"id\": 6, \"verdict\": \"accept\", \"reason\": \"Both metrics exist, difference is computable\"},\n{\"id\": 7, \"verdict\": \"reject\", \"reason\": \"\\\"All order lines\\\" conflicts with filtered total_line_amt definition\"},\n{\"id\": 8, \"verdict\": \"accept\", \"reason\": \"Both ratio metrics exist with matching filter\"},\n{\"id\": 9, \"verdict\": \"reject\", \"reason\": \"Vague \\\"relationship\\\" and ambiguous \\\"highest spending\\\" metric\"},\n{\"id\": 10, \"verdict\": \"reject\", \"reason\": \"Undefined \\\"return rate\\\" and vague \\\"significantly\\\"\"},\n{\"id\": 11, \"verdict\": \"reject\", \"reason\": \"No metric for average order value of completed orders\"}]",
+ "usage": {
+  "in": 6812,
+  "out": 1697
+ }
+}

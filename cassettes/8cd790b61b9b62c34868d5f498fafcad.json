@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "1d25ef67b201",
+ "response": "[{\"id\": 0, \"verdict\": \"reject\", \"reason\": \"Vague, undefined term 'vibe', not measurable.\"},\n{\"id\": 1, \"verdict\": \"reject\", \"reason\": \"No profit/cost metrics modeled in semantic layer.\"},\n{\"id\": 2, \"verdict\": \"reject\", \"reason\": \"Office floor and headcount not modeled.\"},\n{\"id\": 3, \"verdict\": \"reject\", \"reason\": \"Vague, undefined criteria for 'good'.\"},\n{\"id\": 4, \"verdict\": \"reject\", \"reason\": \"Completely ambiguous, no defined entities.\"},\n{\"id\": 5, \"verdict\": \"reject\", \"reason\": \"Churn undefined; no churn metric modeled.\"}]",
+ "usage": {
+  "in": 6480,
+  "out": 345
+ }
+}
