@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "1d25ef67b201",
+ "response": "[{\"id\": 0, \"verdict\": \"accept\", \"reason\": \"Maps clearly to total_tot_sls_amt metric.\"},\n{\"id\": 1, \"verdict\": \"accept\", \"reason\": \"Maps clearly to ord_hdr_count metric.\"},\n{\"id\": 2, \"verdict\": \"reject\", \"reason\": \"'Non-cancelled' term conflicts with sts_cd_dim definitions.\"},\n{\"id\": 3, \"verdict\": \"accept\", \"reason\": \"Maps clearly to total_rtn_amt metric.\"},\n{\"id\": 4, \"verdict\": \"accept\", \"reason\": \"Maps clearly to sub_evt_count metric.\"},\n{\"id\": 5, \"verdict\": \"accept\", \"reason\": \"Maps clearly to total_mrr_amt metric.\"},\n{\"id\": 6, \"verdict\": \"reject\", \"reason\": \"'Completed' filter contradicts sts_cd_dim status definitions.\"},\n{\"id\": 7, \"verdict\": \"reject\", \"reason\": \"'Completed' term mismatched with actual status codes.\"},\n{\"id\": 8, \"verdict\": \"reject\", \"reason\": \"'Non-cancelled' filter conflicts with sts_cd_dim definitions.\"},\n{\"id\": 9, \"verdict\": \"accept\", \"reason\": \"Answerable via total_tot_spend_amt grouped by month.\"},\n{\"id\": 10, \"verdict\": \"reject\", \"reason\": \"'Completed order amount' mismatched with sts_cd definitions.\"},\n{\"id\": 11, \"verdict\": \"accept\", \"reason\": \"Both ratio metrics exist and are comparable directly.\"}]",
+ "usage": {
+  "in": 6776,
+  "out": 2977
+ }
+}

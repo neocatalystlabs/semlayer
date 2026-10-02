@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "1d25ef67b201",
+ "response": "[{\"id\": 0, \"verdict\": \"accept\", \"reason\": \"Maps directly to total_tot_sls_amt metric.\"},\n{\"id\": 1, \"verdict\": \"accept\", \"reason\": \"Maps directly to ord_hdr_count metric.\"},\n{\"id\": 2, \"verdict\": \"accept\", \"reason\": \"Matches avg_tot_amt_per_order synonym 'average order value'.\"},\n{\"id\": 3, \"verdict\": \"accept\", \"reason\": \"Maps directly to total_rtn_amt metric.\"},\n{\"id\": 4, \"verdict\": \"accept\", \"reason\": \"Maps directly to sub_evt_count metric.\"},\n{\"id\": 5, \"verdict\": \"accept\", \"reason\": \"Maps directly to total_mrr_amt metric.\"},\n{\"id\": 6, \"verdict\": \"accept\", \"reason\": \"Both completed and non-cancelled total amount metrics defined.\"},\n{\"id\": 7, \"verdict\": \"accept\", \"reason\": \"Both completed and active line amount metrics defined, percentage computable.\"},\n{\"id\": 8, \"verdict\": \"accept\", \"reason\": \"Both ratio metrics defined with matching filter and grain.\"},\n{\"id\": 9, \"verdict\": \"reject\", \"reason\": \"Order count per month from mth_cust_agg not a defined metric.\"},\n{\"id\": 10, \"verdict\": \"reject\", \"reason\": \"Vague 'compare to average order value' lacks defined comparison logic.\"},\n{\"id\": 11, \"verdict\": \"accept\", \"reason\": \"Both avg_rtn_amt and avg_tot_amt_per_order metrics clearly defined.\"}]",
+ "usage": {
+  "in": 6809,
+  "out": 2129
+ }
+}

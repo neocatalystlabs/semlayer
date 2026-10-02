@@ -162,8 +162,7 @@ def _cmd_review(args: argparse.Namespace) -> int:
         print("review queue empty")
         return 0
     for i, it in enumerate(items, 1):
-        loc = f"{it.table}.{it.column}" if it.column else it.table
-        print(f"[{i}/{len(items)}] {it.kind}: {loc}\n    claim: {it.claim}"
+        print(f"[{i}/{len(items)}] {it.kind}: {it.location}\n    claim: {it.claim}"
               + (f"\n    evidence: {it.evidence}" if it.evidence else ""))
         if args.list:
             continue

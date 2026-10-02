@@ -39,6 +39,7 @@ class Changeset:
     needs_inference: list[str] = field(default_factory=list)
     affected: list[str] = field(default_factory=list)
     broken_cqs: list[str] = field(default_factory=list)
+    demoted: list[str] = field(default_factory=list)
 
     @property
     def empty(self) -> bool:
@@ -277,7 +278,35 @@ def apply_drift(doc: dict, events: list[DriftEvent]) -> Changeset:
         elif e.kind == "enum_value_added" and t is not None:
             _apply_enum_value_added(e, t)
     cs.affected = blast_radius(doc, events)
+    _demote_touched_aggregates(sl, cs)
     return cs
+
+
+def _demote_touched_aggregates(sl: dict, cs: Changeset) -> None:
+    """An aggregate in the blast radius stops claiming it reconciles.
+
+    The reconciliation that produced `consistency: consistent` ran against rows
+    that have since changed, so the claim is stale: consistency falls back to
+    `unverified` and any routing to `advisory`. Nothing about the mapping
+    itself is rewritten — re-reconciling is what restores it.
+    """
+    hit = {a.split(".", 1)[1] for a in cs.affected if a.startswith("aggregate_tables.")}
+    for a in sl.get("aggregate_tables", []) or []:
+        if a["table"] not in hit:
+            continue
+        routing = a.setdefault("routing", {})
+        was_verified = routing.get("status") == "verified"
+        consistency = a.setdefault("consistency", {})
+        was_consistent = consistency.get("status") == "consistent"
+        if not (was_verified or was_consistent):
+            continue
+        routing["status"] = "advisory"
+        consistency["status"] = "unverified"
+        a.setdefault("provenance", []).append({
+            "signal": "statistic",
+            "detail": "drift: base table changed; routing demoted pending re-reconciliation",
+        })
+        cs.demoted.append(f"aggregate_tables.{a['table']}")
 
 
 def cq_regression(con, cq_suite: list[dict], events: list[DriftEvent],
@@ -318,6 +347,9 @@ def render_changeset(cs: Changeset) -> str:
     if cs.needs_inference:
         lines.append("\n## Awaiting inference")
         lines += [f"- {o}" for o in cs.needs_inference]
+    if cs.demoted:
+        lines.append("\n## Routing demoted (re-reconcile to restore)")
+        lines += [f"- {o}" for o in cs.demoted]
     if cs.affected:
         lines.append("\n## Blast radius")
         lines += [f"- {o}" for o in cs.affected]
