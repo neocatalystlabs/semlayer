@@ -1,8 +1,8 @@
 # Changelog
 
-## v0.4.0-beta.1 (unreleased)
+## v0.4.0-beta.2 (unreleased)
 
-Spec `0.3.0` (MINOR: one new optional field, one new contract section).
+Spec `0.3.0`, unchanged.
 
 - **`semlayer review` covers the metric tier.** Three new item kinds, queued by
   claim kind rather than by a confidence threshold (metric confidences are rule
@@ -21,6 +21,10 @@ Spec `0.3.0` (MINOR: one new optional field, one new contract section).
   is never rewritten.
 - **Routing no longer drops aggregates.** A fact with two reconciled aggregates
   listed one of them; `repo_knowledge.routing[].use` now carries all of them.
+
+## v0.4.0-beta.1 (2026-09-12)
+
+Spec `0.3.0` (MINOR: one new optional field, one new contract section).
 
 - **Semantic SQL linter** (`semlayer.lint`, new runtime dependency
   `sqlglot`, MIT). Deterministic, no LLM: `parse_error`, `unknown_table`,
