@@ -121,3 +121,13 @@ def test_packaged_schemas_match_canonical():
         canonical = (root / "spec" / name).read_bytes()
         packaged = (root / "src" / "semlayer" / "spec" / name).read_bytes()
         assert canonical == packaged, f"{name}: run cp spec/{name} src/semlayer/spec/"
+
+
+def test_engine_version_matches_the_package():
+    """A hardcoded engine stamp drifts from the release; SPEC §3 rule 4 forbids that."""
+    from importlib.metadata import version
+
+    from semlayer import __version__
+    from semlayer.profile.run import ENGINE_VERSION
+
+    assert ENGINE_VERSION == version("semlayer") == __version__
