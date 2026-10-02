@@ -8,10 +8,15 @@ PK candidates come from full-column uniqueness + id-naming.
 
 from __future__ import annotations
 
+from importlib.metadata import version
+
 from semlayer.profile.stats import TableStats, profile_table
 from semlayer.profile.typing_rules import ALWAYS_ESCALATE, classify
 
-ENGINE_VERSION = "0.4.0b1"
+# Derived, never restated: a hardcoded copy silently drifts from the released
+# version, and SPEC 3 rule 4 makes engine version its own drift class — a
+# document stamped with the wrong engine hides a re-inference it should trigger.
+ENGINE_VERSION = version("semlayer")
 
 
 ESCALATE_BELOW = 0.7  # tier-1 confidence under this goes to the LLM (if provided)

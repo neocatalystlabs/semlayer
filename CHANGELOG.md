@@ -1,6 +1,19 @@
 # Changelog
 
-## v0.4.0-beta.2 (unreleased)
+## v0.4.0-beta.3 (unreleased)
+
+Spec `0.3.0`, unchanged.
+
+- **The engine stamped documents with the wrong version.** `ENGINE_VERSION`
+  was a hardcoded copy in `profile/run.py` that the 0.4.0-beta.2 bump missed,
+  so that build wrote `generated_by.engine: 0.4.0b1`. SPEC §3 rule 4 makes
+  engine version its own drift class, so a wrong stamp hides a re-inference it
+  should have triggered. It is now derived from the installed distribution and
+  asserted against both `__version__` and the distribution metadata, so it
+  cannot drift again. Documents written by 0.4.0b2 carry the wrong engine
+  version; re-run `infer` to correct the stamp.
+
+## v0.4.0-beta.2 (2026-10-02)
 
 Spec `0.3.0`, unchanged.
 

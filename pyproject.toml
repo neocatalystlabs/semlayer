@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "semlayer"
-version = "0.4.0b2"
+version = "0.4.0b3"
 description = "Open semantic layer format and inference engine for data warehouses"
 readme = "README.md"
 license = {text = "Apache-2.0"}
