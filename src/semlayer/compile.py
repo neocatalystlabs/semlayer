@@ -30,30 +30,39 @@ _SQL_WORDS = {"and", "or", "not", "in", "like", "is", "null", "between",
 class _Ctx:
     """Compile state: metric + document indexes + join paths + accumulated joins."""
 
-    def __init__(self, sl: dict, metric: dict, base: str, dialect: str):
+    def __init__(self, sl: dict, metric: dict, base: str, dialect: str,
+                 scd: str | None = None):
         self.sl, self.metric, self.base, self.dialect = sl, metric, base, dialect
+        self.scd = scd
         self.tables = {t["name"]: t for t in sl["tables"]}
         self.paths, self.ambiguous = _join_paths(sl, self.tables, base)
         self.reach = _reachable(self.tables, base, self.paths)
         self.legal = sorted(self.reach)
         # dim table -> (parent table, parent cols, dim cols), insertion-ordered
         self.joins: dict[str, tuple] = {}
+        # dim table -> extra ON predicate resolving its SCD2 validity
+        self.scd_predicates: dict[str, str] = {}
         self.time_col: str | None = None
 
 
 def compile_metric(doc: dict, name: str, group_by: list[str] | None = None,  # noqa: PLR0913, PLR0917 — flat signature mirrors the MCP tool schema
                    time_grain: str | None = None, time_start: str | None = None,
                    time_end: str | None = None, extra_filter: str | None = None,
-                   dialect: str = "duckdb", calendar: str | None = None) -> dict:
+                   dialect: str = "duckdb", calendar: str | None = None,
+                   scd: str | None = None) -> dict:
     """Compile a metric to SQL, or refuse constructively.
 
     `calendar`: "fiscal" | "calendar" — REQUIRED for quarter/year grains when
     the metric's date dimension carries a verified fiscal calendar (refusing
     to silently pick is SPEC 2.6 applied to time).
+    `scd`: "current" | "asof" — REQUIRED when the join path crosses a table
+    with an `scd` block. "Customers in California" means either where they
+    live now or where they lived when they ordered, and those are different
+    numbers; SPEC 2.4 calls a plain current-row join non-conforming.
     Returns {"sql": str} on success; on refusal {"refused": True,
     "reason": str, "legal_group_by": [...], "legal_time_grains": [...]}.
     """
-    ctx = _make_ctx(doc, name, dialect)
+    ctx = _make_ctx(doc, name, dialect, scd)
     if isinstance(ctx, dict):
         return ctx
     value_sql = _value_expression(ctx)
@@ -71,7 +80,8 @@ def compile_metric(doc: dict, name: str, group_by: list[str] | None = None,  # n
     return {"sql": _emit(ctx, cols, time_expr, where, value_sql)}
 
 
-def _make_ctx(doc: dict, name: str, dialect: str) -> _Ctx | dict:
+def _make_ctx(doc: dict, name: str, dialect: str,
+              scd: str | None = None) -> _Ctx | dict:
     sl = doc["semantic_layer"]
     metric = next((m for m in sl.get("metrics", []) if m["name"] == name), None)
     if metric is None:
@@ -85,7 +95,9 @@ def _make_ctx(doc: dict, name: str, dialect: str) -> _Ctx | dict:
         return _refuse(f"metric base table '{base}' not in document", [])
     if tables[base].get("lifecycle") in ("deprecated", "orphaned"):
         return _refuse(f"base table '{base}' is {tables[base]['lifecycle']}", [])
-    return _Ctx(sl, metric, base, dialect)
+    if scd not in (None, "current", "asof"):
+        return _refuse(f"unknown scd mode '{scd}' (use 'current' or 'asof')", [])
+    return _Ctx(sl, metric, base, dialect, scd)
 
 
 # ------------------------------------------------------------ value stage --
@@ -195,8 +207,70 @@ def _require_join(ctx: _Ctx, owner: str) -> dict | None:
     if path is None:
         return _refuse(f"no N:1 join path from {ctx.base} to {owner}", ctx.legal)
     for parent, fcols, tcols, to_t in path:
+        refusal = _resolve_scd(ctx, to_t)
+        if refusal is not None:
+            return refusal
         if to_t not in ctx.joins:
             ctx.joins[to_t] = (parent, fcols, tcols)
+    return None
+
+
+def _resolve_scd(ctx: _Ctx, table: str) -> dict | None:
+    """Pin an SCD2 dimension to one version per entity, or refuse to choose.
+
+    A plain join to a type-2 table multiplies every fact row by that entity's
+    version count -- silently, with no error and a plausible-looking answer.
+    SPEC 2.4 calls it non-conforming. The two resolutions are different
+    questions ("where the customer lives now" vs "where they lived when they
+    ordered"), so the compiler refuses rather than picking, exactly as it does
+    for an ambiguous join path or an unstated fiscal calendar.
+    """
+    t = ctx.tables.get(table) or {}
+    scd = t.get("scd")
+    if not scd or scd.get("type") != 2:
+        if t.get("table_type") == "snapshot_scd2":
+            return _refuse(
+                f"'{table}' holds several rows per entity but carries no scd block, "
+                f"so its validity window cannot be resolved; joining it would "
+                f"multiply every row of {ctx.base}", ctx.legal)
+        return None
+    if ctx.scd is None:
+        return _refuse(
+            f"'{table}' is a type-2 history table (several rows per "
+            f"{', '.join(scd.get('natural_key') or ['entity'])}): pass "
+            f"scd='current' for its attributes as they are now, or scd='asof' "
+            f"for them as they were at the time of each {ctx.base} row — "
+            f"refusing to pick silently", ctx.legal)
+    if ctx.scd == "current":
+        return _scd_current(ctx, table, scd)
+    return _scd_asof(ctx, table, scd)
+
+
+def _scd_current(ctx: _Ctx, table: str, scd: dict) -> dict | None:
+    """Pin to the row that is live now: the current flag, else an open valid_to."""
+    if scd.get("is_current_flag"):
+        ctx.scd_predicates[table] = f"{table}.{scd['is_current_flag']}"
+        return None
+    if scd.get("valid_to"):
+        ctx.scd_predicates[table] = f"{table}.{scd['valid_to']} IS NULL"
+        return None
+    return _refuse(f"'{table}' has no current-row marker; use scd='asof'", ctx.legal)
+
+
+def _scd_asof(ctx: _Ctx, table: str, scd: dict) -> dict | None:
+    """Pin to the row that was live when the fact happened (SPEC 2.4)."""
+    driver = ctx.metric.get("agg_time_dimension")
+    if not driver:
+        return _refuse(
+            f"scd='asof' needs a date to resolve '{table}' against, and metric "
+            f"'{ctx.metric['name']}' has no agg_time_dimension; use scd='current'",
+            ctx.legal)
+    vf, vt = scd.get("valid_from"), scd.get("valid_to")
+    if not (vf and vt):
+        return _refuse(f"'{table}' has no validity window to resolve as-of", ctx.legal)
+    ctx.scd_predicates[table] = (
+        f"{driver} >= {table}.{vf} AND "
+        f"{driver} < COALESCE({table}.{vt}, DATE '9999-12-31')")
     return None
 
 
@@ -353,6 +427,10 @@ def _emit(ctx: _Ctx, cols: list[str], time_expr: str | list | None,
     sql = f"SELECT {', '.join(select)}\nFROM {ctx.base}"
     for dim, (parent, fcols, tcols) in ctx.joins.items():
         on = " AND ".join(f"{parent}.{f} = {dim}.{t}" for f, t in zip(fcols, tcols, strict=False))
+        # the SCD predicate belongs in ON, not WHERE: in WHERE it would turn
+        # the LEFT JOIN into an inner one and drop rows with no matching version
+        if dim in ctx.scd_predicates:
+            on += f" AND {ctx.scd_predicates[dim]}"
         sql += f"\nLEFT JOIN {dim} ON {on}"
     if where:
         sql += "\nWHERE " + " AND ".join(where)

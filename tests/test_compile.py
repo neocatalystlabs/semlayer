@@ -263,3 +263,72 @@ def test_role_playing_dim_refuses():
     ]}
     out = compile_metric({"semantic_layer": sl}, "total_amt", group_by=["date_dim.cal_dt"])
     assert out.get("refused") and "ambiguous" in out["reason"]
+
+
+# ------------------------------------------------------------- SCD2 joins --
+
+def _scd_sql(**kw):
+    out = compile_metric(DOC, "avg_tot_amt_per_order",
+                         extra_filter="cust_mstr.state_cd = 'CA'", **kw)
+    assert "sql" in out, out
+    return out["sql"]
+
+
+def _order_rows(sql):
+    """(joined rows, distinct orders) — equal iff the SCD join did not fan out."""
+    counted = sql.replace(
+        "CAST(SUM(ord_hdr.tot_amt) AS DOUBLE) / NULLIF(COUNT(ord_hdr.ord_id), 0) "
+        "AS avg_tot_amt_per_order",
+        "COUNT(ord_hdr.ord_id), COUNT(DISTINCT ord_hdr.ord_id)")
+    return _rows(counted)[0]
+
+
+def test_scd2_join_refuses_without_a_choice():
+    """Where a customer lives NOW and where they lived WHEN THEY ORDERED differ."""
+    out = compile_metric(DOC, "avg_tot_amt_per_order",
+                         extra_filter="cust_mstr.state_cd = 'CA'")
+    assert out.get("refused"), out
+    assert "type-2 history table" in out["reason"]
+    assert "scd='current'" in out["reason"] and "scd='asof'" in out["reason"]
+
+
+def test_scd2_current_does_not_fan_out():
+    sql = _scd_sql(scd="current")
+    assert "is_curr_flg" in sql
+    joined, distinct = _order_rows(sql)
+    assert joined == distinct, f"{joined} joined rows for {distinct} orders — fan-out"
+
+
+def test_scd2_asof_does_not_fan_out():
+    sql = _scd_sql(scd="asof")
+    assert "eff_start_dt" in sql and "eff_end_dt" in sql
+    assert "ord_hdr.ord_dt >=" in sql, "the window must be driven by the metric's date"
+    joined, distinct = _order_rows(sql)
+    assert joined == distinct, f"{joined} joined rows for {distinct} orders — fan-out"
+
+
+def test_scd2_current_and_asof_are_different_questions():
+    """If these agreed, refusing to choose between them would be pedantry."""
+    cur, asof = _rows(_scd_sql(scd="current"))[0][0], _rows(_scd_sql(scd="asof"))[0][0]
+    assert cur != asof
+
+
+def test_scd2_predicate_is_in_the_join_not_the_where():
+    """In WHERE it would make the LEFT JOIN inner and silently drop fact rows."""
+    sql = _scd_sql(scd="current")
+    join_line = next(ln for ln in sql.splitlines() if ln.startswith("LEFT JOIN cust_mstr"))
+    assert "is_curr_flg" in join_line
+    assert "is_curr_flg" not in sql.split("WHERE", 1)[1]
+
+
+def test_compiled_scd_sql_passes_our_own_linter():
+    """The linter flagged the compiler's own output before this fix."""
+    from semlayer.lint import lint_sql
+    for mode in ("current", "asof"):
+        result = lint_sql(DOC, _scd_sql(scd=mode))
+        assert not result["findings"], (mode, result["findings"])
+
+
+def test_unknown_scd_mode_refused():
+    out = compile_metric(DOC, "avg_tot_amt_per_order", scd="whenever")
+    assert out.get("refused") and "unknown scd mode" in out["reason"]

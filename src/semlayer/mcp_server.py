@@ -251,12 +251,17 @@ def build_server(doc: dict):
     def compile_metric(name: str, group_by: str = "", time_grain: str = "",  # noqa: PLR0913, PLR0917 — tool schema is intentionally flat
                        time_start: str = "", time_end: str = "",
                        filter: str = "", dialect: str = "duckdb",
-                       calendar: str = "") -> str:
+                       calendar: str = "", scd: str = "") -> str:
         """Compile a metric to correct SQL (joins, filters, time bucketing).
 
         group_by: comma-separated columns. On refusal the response lists
         legal alternatives — retry with those or ask the user; do NOT
         hand-assemble SQL for a refused request.
+
+        scd: "current" or "asof", required when the join path crosses a
+        history table. These are different questions — a customer's segment
+        now, or their segment when they ordered — so ask the user which they
+        meant rather than guessing.
         """
         from semlayer.compile import compile_metric as _compile
         result = _compile(doc, name,
@@ -264,7 +269,7 @@ def build_server(doc: dict):
                           time_grain=time_grain or None,
                           time_start=time_start or None, time_end=time_end or None,
                           extra_filter=filter or None, dialect=dialect,
-                          calendar=calendar or None)
+                          calendar=calendar or None, scd=scd or None)
         return json.dumps(result, default=str)
 
     return srv

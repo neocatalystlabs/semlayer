@@ -1,6 +1,33 @@
 # Changelog
 
-## v0.4.0-beta.3 (unreleased)
+## v0.4.0-beta.4 (unreleased)
+
+Spec `0.3.0`, unchanged.
+
+- **`compile_metric` silently fanned out on history tables.** A join path
+  crossing a type-2 table joined every version of the entity, so each fact row
+  was counted once per version — no error, no warning, a plausible answer that
+  was wrong. On messy_mart, filtering average order value to customers in
+  California counted 820 rows for 663 orders and overstated the answer by 1.2%.
+  Our own linter already flagged it (`scd2_without_validity`), and SPEC §2.4
+  calls a plain current-row join to an SCD2 attribute non-conforming.
+
+  `compile_metric` (and the `compile_metric` MCP tool) now takes
+  `scd: "current" | "asof"`, and refuses without it. The two are different
+  questions — where a customer lives *now* versus where they lived *when they
+  ordered* — and on this fixture they select 594 orders against 452 and return
+  different numbers, so picking one silently would be guessing on the caller's
+  behalf. Same stance the compiler already takes on ambiguous join paths and
+  unstated fiscal calendars.
+
+  `current` pins to `is_current_flag` (or an open `valid_to`); `asof` drives
+  the validity window off the metric's `agg_time_dimension`, never a
+  caller-supplied date. Both predicates are emitted in the `ON` clause, not
+  `WHERE`, where they would turn the `LEFT JOIN` inner and silently drop fact
+  rows. A `snapshot_scd2` table carrying no `scd` block is refused outright —
+  there is nothing to resolve it with.
+
+## v0.4.0-beta.3 (2026-10-02)
 
 Spec `0.3.0`, unchanged.
 
