@@ -26,6 +26,18 @@ Spec `0.3.0`, unchanged.
   `WHERE`, where they would turn the `LEFT JOIN` inner and silently drop fact
   rows. A `snapshot_scd2` table carrying no `scd` block is refused outright —
   there is nothing to resolve it with.
+- **Every metric was emitted with an empty `grain`.** The metric producers copy
+  their base table's grain, but ran ten lines before `_infer_grain` populated
+  it, so all of them carried `''`. Grain is what one row of the source
+  represents, and it is what distinguishes "average order value" from "average
+  line value" — the same column, the same SQL, a different question. Grain
+  inference now runs before the producers.
+
+  Separately, a reconciled summary table has no primary key, so `_infer_grain`
+  could not state its grain either — even though reconciliation had just
+  measured the group columns against the fact table. Those are now backfilled
+  from the proven mapping (`one row per agg_dt_key, store_id (pre-aggregated)`).
+  On messy_mart all 19 metrics now state a grain, where none did before.
 
 ## v0.4.0-beta.3 (2026-10-02)
 
