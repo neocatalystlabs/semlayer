@@ -35,17 +35,20 @@ def enrich_source(source, doc: dict, stats: dict) -> dict:
     _detect_deprecation(sl, stats)
     _infer_freshness(sl, stats)
     _classify_time_attributes(source, sl, stats)
+    # BEFORE the metric producers: every metric copies its base table's grain,
+    # and reading it earlier silently gave all of them an empty string.
+    _infer_grain(sl)
     metrics = _metric_candidates(sl)
     if metrics:
         sl["metrics"] = metrics
     aggs = _detect_aggregates(source, sl, stats)
     if aggs:
         sl["aggregate_tables"] = aggs
+    _grain_from_reconciliation(sl, aggs)
     _apply_discovered_filters_to_metrics(sl)
     _propagate_parent_filters(source, sl, stats)
     _domains_and_routing(sl, aggs)
     _snapshot_filters(sl, stats)
-    _infer_grain(sl)
     _infer_scd(sl)
     return doc
 
@@ -588,6 +591,25 @@ def _reconcile(source, qualify, stats, cand: _AggCandidate) -> tuple[str, str] |
             if ok:
                 return f"{sc['name']} <> '{v}'", evidence
     return None
+
+
+def _grain_from_reconciliation(sl, aggs: list[dict]) -> None:
+    """A summary table has no primary key, but reconciliation proved its grain.
+
+    `_infer_grain` reads a primary key and these tables have none, so their
+    grain stayed empty even though the group columns were measured against the
+    fact table. Backfill the table and any metric already built on it.
+    """
+    tables = {t["name"]: t for t in sl["tables"]}
+    for a in aggs:
+        t = tables.get(a["table"])
+        if t is None or t.get("grain") or not a.get("grain"):
+            continue
+        t["grain"] = f"one row per {', '.join(a['grain'])} (pre-aggregated)"
+        for m in sl.get("metrics", []) or []:
+            base = (m.get("measure") or m.get("numerator") or ".").split(".", 1)[0]
+            if base == t["name"] and not m.get("grain"):
+                m["grain"] = t["grain"]
 
 
 def _apply_discovered_filters_to_metrics(sl) -> None:

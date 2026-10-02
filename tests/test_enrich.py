@@ -171,3 +171,24 @@ def test_ratio_metric_synthesised_with_rule(enriched):
     assert m["denominator"] == "ord_hdr.ord_id" and m.get("filter") == "sts_cd <> 'X'"
     sql = compile_metric(enriched, "avg_tot_amt_per_order")["sql"]
     assert "COUNT(ord_hdr.ord_id)" in sql and "SUM(ord_hdr.tot_amt)" in sql and "sts_cd <> 'X'" in sql
+
+
+def test_every_metric_states_its_grain(enriched):
+    """Metrics copy their base table's grain; reading it too early made it ''."""
+    sl = enriched["semantic_layer"]
+    grains = {t["name"]: t.get("grain") for t in sl["tables"]}
+    for m in sl["metrics"]:
+        base = (m.get("measure") or m.get("numerator") or ".").split(".", 1)[0]
+        assert m.get("grain"), f"{m['name']} has no grain"
+        assert m["grain"] == grains[base], m["name"]
+
+
+def test_a_reconciled_aggregate_states_its_grain(enriched):
+    """No primary key, but reconciliation measured the group columns."""
+    sl = enriched["semantic_layer"]
+    tables = {t["name"]: t for t in sl["tables"]}
+    for a in sl.get("aggregate_tables", []):
+        grain = tables[a["table"]].get("grain")
+        assert grain, f"{a['table']} reconciled but states no grain"
+        for col in a["grain"]:
+            assert col in grain, (a["table"], col)
