@@ -117,6 +117,18 @@ def test_rejecting_discovered_filter_drops_it_everywhere(doc):
     assert validate_document(d).ok, validate_document(d).errors
 
 
+def test_discovered_filter_verdict_is_idempotent(doc):
+    """A second verdict on a rule already removed must not crash or re-remove."""
+    import copy
+    d = copy.deepcopy(doc)
+    it = next(i for i in review.collect(d) if i.kind == "discovered_filter")
+    review.apply(d, it, "reject")
+    review.apply(d, it, "reject")   # the filter is gone; nothing left to move
+    m = next(x for x in d["semantic_layer"]["metrics"] if f"metrics.{x['name']}" == it.ref)
+    assert "filter" not in m
+    assert validate_document(d).ok, validate_document(d).errors
+
+
 def test_accepting_discovered_filter_keeps_it_and_promotes(doc):
     import copy
     d = copy.deepcopy(doc)

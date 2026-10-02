@@ -199,6 +199,13 @@ def _apply_discovered_filter(sl: dict, metric: dict, verdict: str) -> None:
     applying it to every other consumer.
     """
     expr = metric.get("filter")
+    if expr is None:
+        # the rule was already removed (a second verdict, or a hand edit);
+        # the lifecycle verdict still stands, there is just nothing to move
+        metric["lifecycle"] = "reviewed" if verdict == "accept" else metric.get(
+            "lifecycle", "inferred")
+        _human(metric, f"discovered filter {verdict}: no filter on the metric")
+        return
     base = _base_table(metric)
     if verdict == "accept":
         metric["lifecycle"] = "reviewed"
