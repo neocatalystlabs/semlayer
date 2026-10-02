@@ -4,19 +4,23 @@
 
 Spec `0.3.0` (MINOR: one new optional field, one new contract section).
 
-- **Confidence is now calibrated, and the calibration is published**
-  ([docs/calibration.md](docs/calibration.md)) — SPEC §3 rule 5 requires it and
-  we were in breach. A column's `confidence` is defined as the probability that
-  *both* `semantic_type` and `entity_role` are right, measured against the 785
-  gold-typed columns in `fixtures/golds/`. Two rules were removed as wrong by
-  construction: `unique numeric` (0 of 15 correct, reported 0.6) and the weak-id
-  name rule (1 of 13, reported 0.6). Seven statistical constants were re-fitted
-  to measured hit-rate with shrinkage. Statistical-tier reliability is now
-  monotone, ECE 0.130 -> 0.093, and accuracy improved as a side effect (type
-  0.775 -> 0.786, role 0.789 -> 0.811). LLM escalation no longer keys solely off
-  the trust number: `decimal fallback` calibrates to 0.7 but is systematically
-  money-vs-quantity ambiguous, so it escalates regardless. The naming tier, FK
-  confidence and metric confidences remain uncalibrated and the report says so.
+- **`semlayer review` covers the metric tier.** Three new item kinds, queued by
+  claim kind rather than by a confidence threshold (metric confidences are rule
+  constants, not measured rates): `discovered_filter` (a business rule
+  recovered by reconciliation — accepting promotes it, rejecting removes it from
+  the metric *and* the table's `required_filters`, and flags any table that
+  inherited it), `aggregate_mapping` (accepting records the human verdict as a
+  `reviewed` lifecycle; rejecting deprecates it and removes the table from
+  routing), and `metric_plausibility` (a metric proposed on a table that is not
+  an active fact — the shape of the known precision failures). Verdicts on
+  these are the first precision labels the metric tier has had.
+- **Drift stops a stale aggregate claiming it reconciles.** An aggregate whose
+  base table or mapped source columns changed falls back to
+  `consistency: unverified` / `routing: advisory` until it reconciles again,
+  reported as a "Routing demoted" section in the changeset. The mapping itself
+  is never rewritten.
+- **Routing no longer drops aggregates.** A fact with two reconciled aggregates
+  listed one of them; `repo_knowledge.routing[].use` now carries all of them.
 
 - **Semantic SQL linter** (`semlayer.lint`, new runtime dependency
   `sqlglot`, MIT). Deterministic, no LLM: `parse_error`, `unknown_table`,

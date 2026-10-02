@@ -64,6 +64,96 @@ def test_review_accept_is_sticky(doc):
     assert it.key not in {i.key for i in review.collect(d)}
 
 
+def test_review_queues_metric_tier_claims(doc):
+    """Metrics and aggregate mappings reach the queue, by claim kind not confidence."""
+    kinds = {i.kind for i in review.collect(doc)}
+    assert "discovered_filter" in kinds, "the reconciliation-discovered rule must be reviewable"
+    assert "aggregate_mapping" in kinds, "a heuristic aggregate must ask for a verdict"
+
+
+def test_accepting_aggregate_mapping_records_the_verdict(doc):
+    """Accept promotes lifecycle only — SPEC 2.7 still reserves verified routing."""
+    import copy
+    d = copy.deepcopy(doc)
+    it = next(i for i in review.collect(d) if i.kind == "aggregate_mapping")
+    agg = next(a for a in d["semantic_layer"]["aggregate_tables"]
+               if f"aggregate_tables.{a['table']}" == it.ref)
+    review.apply(d, it, "accept")
+    assert agg["lifecycle"] == "reviewed"
+    assert agg["mapping_source"] == "heuristic", "promotion is a spec question, not settled here"
+    assert agg["routing"]["status"] == "advisory"
+    assert any(p["signal"] == "human" for p in agg["provenance"])
+    assert validate_document(d).ok, validate_document(d).errors
+    assert it.key not in {i.key for i in review.collect(d)}
+
+
+def test_rejecting_aggregate_mapping_stops_routing_to_it(doc):
+    import copy
+    d = copy.deepcopy(doc)
+    it = next(i for i in review.collect(d) if i.kind == "aggregate_mapping")
+    table = it.ref.split(".", 1)[1]
+    review.apply(d, it, "reject")
+    agg = next(a for a in d["semantic_layer"]["aggregate_tables"] if a["table"] == table)
+    assert agg["lifecycle"] == "deprecated"
+    assert agg["routing"]["status"] == "advisory"
+    routes = d["semantic_layer"]["repo_knowledge"]["routing"]
+    assert not any(table in (r.get("use") or []) for r in routes)
+    assert validate_document(d).ok, validate_document(d).errors
+
+
+def test_rejecting_discovered_filter_drops_it_everywhere(doc):
+    """The metric filter and the table rule are one claim; one verdict settles both."""
+    import copy
+    d = copy.deepcopy(doc)
+    it = next(i for i in review.collect(d) if i.kind == "discovered_filter")
+    m = next(x for x in d["semantic_layer"]["metrics"]
+             if f"metrics.{x['name']}" == it.ref)
+    expr, base = m["filter"], it.table
+    review.apply(d, it, "reject")
+    assert "filter" not in m
+    t = next(x for x in d["semantic_layer"]["tables"] if x["name"] == base)
+    rfs = (t.get("knowledge") or {}).get("required_filters", [])
+    assert not any(f["expr"] == expr for f in rfs)
+    assert validate_document(d).ok, validate_document(d).errors
+
+
+def test_accepting_discovered_filter_keeps_it_and_promotes(doc):
+    import copy
+    d = copy.deepcopy(doc)
+    it = next(i for i in review.collect(d) if i.kind == "discovered_filter")
+    m = next(x for x in d["semantic_layer"]["metrics"] if f"metrics.{x['name']}" == it.ref)
+    expr = m["filter"]
+    review.apply(d, it, "accept")
+    assert m["filter"] == expr
+    assert m["lifecycle"] == "reviewed"
+    assert validate_document(d).ok, validate_document(d).errors
+
+
+def test_drift_stops_an_aggregate_claiming_it_reconciles(doc):
+    """The mapping stands; the stale measurement behind it does not."""
+    import copy
+
+    from semlayer import drift as drift_mod
+    d = copy.deepcopy(doc)
+    agg = next(a for a in d["semantic_layer"]["aggregate_tables"]
+               if a.get("consistency", {}).get("status") == "consistent")
+    ev = drift_mod.DriftEvent(kind="column_dropped", table=agg["aggregates"],
+                              column=_mapped_column(agg), detail="")
+    cs = drift_mod.apply_drift(d, [ev])
+    assert agg["consistency"]["status"] == "unverified"
+    assert agg["routing"]["status"] == "advisory"
+    assert agg["measure_mappings"], "the mapping itself is never rewritten"
+    assert f"aggregate_tables.{agg['table']}" in cs.demoted
+    assert validate_document(d).ok, validate_document(d).errors
+
+
+def _mapped_column(agg: dict) -> str:
+    """The base column named inside the aggregate's measure mapping."""
+    import re
+    src = str(agg["measure_mappings"][0]["source"])
+    return re.search(r"SUM\((\w+)\)", src).group(1)
+
+
 def test_review_reject_removes_claim_not_column(doc):
     import copy
     d = copy.deepcopy(doc)

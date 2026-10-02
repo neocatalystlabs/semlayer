@@ -671,12 +671,19 @@ def _routing_entries(sl: dict, aggs: list[dict]) -> list[dict]:
     deprecated tables to avoid.
     """
     deprecated = [t for t in sl["tables"] if t.get("lifecycle") == "deprecated"]
-    agg_by_base = {a["aggregates"]: a["table"] for a in aggs}
+    # a fact may have several reconciled aggregates (daily-by-store AND
+    # monthly-by-customer); keying by base name alone used to drop all but the
+    # last. Order is insertion order of aggregate_tables, deduped.
+    aggs_by_base: dict[str, list[str]] = {}
+    for a in aggs:
+        names = aggs_by_base.setdefault(a["aggregates"], [])
+        if a["table"] not in names:
+            names.append(a["table"])
     routing = []
     for t in sl["tables"]:
         if t.get("table_type") != "fact" or t.get("lifecycle") == "deprecated":
             continue
-        use = [t["name"]] + ([agg_by_base[t["name"]]] if t["name"] in agg_by_base else [])
+        use = [t["name"], *aggs_by_base.get(t["name"], [])]
         entry = {"intent": f"analysis of {t['name'].replace('_', ' ')}",
                  "use": use, "lifecycle": "inferred", "confidence": 0.6}
         avoid = _avoid_list(t, deprecated)

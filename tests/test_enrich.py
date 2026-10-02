@@ -111,6 +111,22 @@ def test_routing_avoids_deprecated(enriched):
     assert any(a["table"] == "ord_hdr_legacy" for a in ord_route.get("avoid", []))
 
 
+def test_routing_lists_every_reconciled_aggregate(enriched):
+    """A fact with two reconciled aggregates must offer both, not the last one seen."""
+    sl = enriched["semantic_layer"]
+    routing = sl.get("repo_knowledge", {}).get("routing", [])
+    by_table = {t["name"]: t for t in sl["tables"]}
+    for agg in sl.get("aggregate_tables", []):
+        base = agg["aggregates"]
+        if by_table[base].get("lifecycle") == "deprecated":
+            continue
+        route = next((r for r in routing if r["use"] and r["use"][0] == base), None)
+        assert route is not None, f"no routing entry for fact {base}"
+        assert agg["table"] in route["use"], (
+            f"{agg['table']} reconciles with {base} but is missing from its routing"
+        )
+
+
 def test_dbt_export_round_trip(enriched):
     exported, losses = export_dbt(enriched)
     # YAML-serializable and structurally sane
