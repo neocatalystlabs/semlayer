@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "26fea8ed3e9d",
+ "response": "```json\n{\n  \"table_description\": \"Daily sales aggregates by store and date, containing total sales amount and order count metrics.\",\n  \"ai_context\": \"Join via agg_dt_key to date_dim and store_id to store_dim. Grain is one row per store per day. ord_cnt has only 3 distinct values\u2014likely a flag or category rather than true count.\",\n  \"table_type\": \"aggregate\",\n  \"columns\": [\n    {\n      \"name\": \"agg_dt_key\",\n      \"description\": \"Foreign key to date_dim.date_key; identifies the date of aggregation.\"\n    },\n    {\n      \"name\": \"store_id\",\n      \"description\": \"Foreign key to store_dim.store_id; identifies the store location.\"\n    },\n    {\n      \"name\": \"tot_sls_amt\",\n      \"description\": \"Total sales amount in currency for the store and date; decimal with 2 fractional digits.\"\n    },\n    {\n      \"name\": \"ord_cnt\",\n      \"description\": \"Order count or status indicator; only 3 distinct values suggest categorical rather than numeric aggregation.\"\n    }\n  ]\n}\n```",
+ "usage": {
+  "in": 606,
+  "out": 284
+ }
+}

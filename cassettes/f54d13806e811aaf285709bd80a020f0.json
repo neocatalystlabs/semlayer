@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"attr_name\",\n    \"semantic_type\": \"code\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.85,\n    \"enum_decodes\": null,\n    \"rationale\": \"20 distinct values suggest coded attribute names; dimension role in EAV pattern\"\n  },\n  {\n    \"column\": \"attr_value\",\n    \"semantic_type\": \"free_text\",\n    \"entity_role\": \"measure\",\n    \"confidence\": 0.72,\n    \"enum_decodes\": null,\n    \"rationale\": \"6307 distinct values; high cardinality suggests variable content; EAV value column\"\n  }\n]\n```",
+ "usage": {
+  "in": 491,
+  "out": 176
+ }
+}

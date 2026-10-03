@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "26fea8ed3e9d",
+ "response": "```json\n{\n  \"table_description\": \"Operational table storing support or issue tickets with unique identifiers and priority classifications linked to a priorities dimension.\",\n  \"ai_context\": \"Join to priorities table on priority_cd = priority_id to resolve priority names. 80 rows, no nulls. Filter by priority_cd for severity-based queries.\",\n  \"table_type\": \"operational\",\n  \"columns\": [\n    {\n      \"name\": \"ticket_id\",\n      \"description\": \"Unique identifier for each ticket. Primary key, 80 distinct values, no nulls.\"\n    },\n    {\n      \"name\": \"priority_cd\",\n      \"description\": \"Priority code referencing priorities.priority_id. Foreign key to 5-level priority dimension, no nulls.\"\n    }\n  ]\n}\n```",
+ "usage": {
+  "in": 481,
+  "out": 192
+ }
+}

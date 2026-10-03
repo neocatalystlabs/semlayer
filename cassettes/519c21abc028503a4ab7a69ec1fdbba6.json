@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"p_response_target\",\n    \"semantic_type\": \"quantity\",\n    \"entity_role\": \"measure\",\n    \"confidence\": 0.75,\n    \"enum_decodes\": null,\n    \"rationale\": \"BIGINT numeric field; likely count/target metric for promotion response tracking\"\n  },\n  {\n    \"column\": \"p_promo_name\",\n    \"semantic_type\": \"name\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": null,\n    \"rationale\": \"VARCHAR with 3 distinct values; descriptive promotion name field\"\n  },\n  {\n    \"column\": \"p_purpose\",\n    \"semantic_type\": \"enum\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.85,\n    \"enum_decodes\": null,\n    \"rationale\": \"Single distinct value suggests categorical purpose code; likely promotion classification\"\n  }\n]\n```",
+ "usage": {
+  "in": 694,
+  "out": 247
+ }
+}

@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "26fea8ed3e9d",
+ "response": "```json\n{\n  \"table_description\": \"Dimension table containing 100 unique products with names and category classifications. Supports product master data and order line item analysis.\",\n  \"ai_context\": \"Join to categories via category_id for category details. Join to order_items via product_id for sales analysis. All columns non-null.\",\n  \"table_type\": \"dimension\",\n  \"columns\": [\n    {\n      \"name\": \"product_id\",\n      \"description\": \"Unique product identifier. Primary key. Integer values 1\u2013100.\"\n    },\n    {\n      \"name\": \"name\",\n      \"description\": \"Product name. Descriptive text, one per product, no duplicates.\"\n    },\n    {\n      \"name\": \"category_id\",\n      \"description\": \"Foreign key to categories table. Links product to one of 19 product categories.\"\n    }\n  ]\n}\n```",
+ "usage": {
+  "in": 578,
+  "out": 214
+ }
+}

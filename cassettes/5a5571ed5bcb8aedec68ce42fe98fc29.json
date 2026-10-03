@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"hd_buy_potential\",\n    \"semantic_type\": \"enum\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.85,\n    \"enum_decodes\": null,\n    \"rationale\": \"VARCHAR with 6 distinct values, no nulls; categorical household attribute\"\n  }\n]\n```",
+ "usage": {
+  "in": 461,
+  "out": 93
+ }
+}

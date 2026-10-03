@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "26fea8ed3e9d",
+ "response": "```json\n{\n  \"table_description\": \"Monthly customer spending aggregates tracking total spend amount and order count per customer per month across 36 months and 1,484 customers.\",\n  \"ai_context\": \"Join to cust_mstr on cust_id for customer attributes. yr_mth is YYYY-MM format. Grain is one row per customer per month. Use current_flag=1 in cust_mstr for latest customer state.\",\n  \"table_type\": \"aggregate\",\n  \"columns\": [\n    {\n      \"name\": \"yr_mth\",\n      \"description\": \"Year-month period in YYYY-MM format. 36 distinct values spanning 3 years.\"\n    },\n    {\n      \"name\": \"cust_id\",\n      \"description\": \"Customer identifier. Foreign key to cust_mstr.cust_id. 1,484 unique customers.\"\n    },\n    {\n      \"name\": \"tot_spend_amt\",\n      \"description\": \"Total spending amount in currency for customer in given month. Decimal with 2 fractional digits.\"\n    },\n    {\n      \"name\": \"ord_cnt\",\n      \"description\": \"Count of orders placed by customer in given month. Only 4 distinct values; likely low cardinality distribution.\"\n    }\n  ]\n}\n```",
+ "usage": {
+  "in": 650,
+  "out": 314
+ }
+}

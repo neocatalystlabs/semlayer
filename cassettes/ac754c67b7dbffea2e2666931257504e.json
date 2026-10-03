@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "26fea8ed3e9d",
+ "response": "```json\n{\n  \"table_description\": \"Order master records with 600 unique orders linked to 145 customers. Includes order status tracking and relationships to line items and shipments.\",\n  \"ai_context\": \"Join to customers on customer_id for demographics. Join to order_items for line-level detail. status_cd values: 1=pending, 2=confirmed, 3=shipped, 4=delivered, 5=cancelled (inferred from 5 distinct values). Filter by status_cd for order state analysis.\",\n  \"table_type\": \"fact\",\n  \"columns\": [\n    {\n      \"name\": \"order_id\",\n      \"description\": \"Unique order identifier. Primary key, no nulls, 600 distinct values.\"\n    },\n    {\n      \"name\": \"customer_id\",\n      \"description\": \"Foreign key to customers table. Links each order to one of 145 customers. No nulls.\"\n    },\n    {\n      \"name\": \"status_cd\",\n      \"description\": \"Order status code (1\u20135). Tracks order lifecycle from pending through delivery or cancellation.\"\n    }\n  ]\n}\n```\n\n**Rationale:** Despite the heuristic suggesting \"dimension,\" the evidence strongly indicates **fact** table:\n- 600 rows with 600 distinct `order_id` values (one row per order event)\n- Foreign key to `customers` (many-to-one relationship)\n- Child relationships to `order_items` (fact) and `shipments` (operational)\n- `status_cd` is a dimension attribute on a transactional entity, not a slowly-changing dimension\n\nThe table represents order transactions, not a reusable lookup dimension.",
+ "usage": {
+  "in": 613,
+  "out": 395
+ }
+}

@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "26fea8ed3e9d",
+ "response": "```json\n{\n  \"table_description\": \"Operational table storing customer reviews with unique identifiers and numeric ratings. 150 rows, no nulls detected.\",\n  \"ai_context\": \"Join on review_id to related tables. Rating is 1\u20135 scale (inferred from 5 distinct values). No temporal or product keys visible; check neighbor tables for context.\",\n  \"table_type\": \"operational\",\n  \"columns\": [\n    {\n      \"name\": \"review_id\",\n      \"description\": \"Unique review identifier, primary key. 150 distinct values, no nulls.\"\n    },\n    {\n      \"name\": \"rating\",\n      \"description\": \"Numeric rating (5 distinct values, likely 1\u20135 scale). No nulls.\"\n    }\n  ]\n}\n```",
+ "usage": {
+  "in": 419,
+  "out": 191
+ }
+}

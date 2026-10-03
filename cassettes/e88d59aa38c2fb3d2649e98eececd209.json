@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"rating\",\n    \"semantic_type\": \"enum\",\n    \"entity_role\": \"measure\",\n    \"confidence\": 0.85,\n    \"enum_decodes\": null,\n    \"rationale\": \"Integer with 5 distinct values suggests ordinal scale (likely 1-5 stars). Measure in reviews context.\"\n  }\n]\n```",
+ "usage": {
+  "in": 414,
+  "out": 98
+ }
+}
