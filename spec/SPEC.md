@@ -52,7 +52,9 @@ A table carrying an `scd` block (producers MAY infer it from validity columns, w
 
 ### 2.5 Time and hierarchy grains
 
-Time bucketing MUST use a declared time hierarchy's `grain_expr` for the requested level — never ad hoc date math. "Quarter" and "year" respect `calendar.fiscal_year_start_month` when the question is fiscal, calendar otherwise; if ambiguous, ask. The level vocabulary is **closed**: a grain or dimension reference must name a declared level or `level_aliases` entry.
+Time bucketing MUST use a declared time hierarchy's level — its `column` or `grain_expr` — whenever the metric's time dimension resolves to a table that declares one, and MUST NOT re-derive that level with date math. Where no time hierarchy is declared for that table, dialect date truncation is the fallback. A level column that does not itself identify a year (a month or quarter number) MUST be grouped together with the hierarchy's year level, or the same month collapses across years.
+
+Producers SHOULD declare a time hierarchy for any date dimension whose calendar attributes they have verified against the dimension's own date column. "Quarter" and "year" respect `calendar.fiscal_year_start_month` when the question is fiscal, calendar otherwise; if ambiguous, ask. The level vocabulary is **closed**: a grain or dimension reference must name a declared level or `level_aliases` entry.
 
 ### 2.6 Disambiguation
 

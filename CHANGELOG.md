@@ -1,6 +1,41 @@
 # Changelog
 
-## v0.4.0-beta.4 (unreleased)
+## v0.4.0-beta.5 (unreleased)
+
+Spec `0.3.0`; §2.5 reworded to describe achievable behaviour (see below).
+
+- **Nothing ever built a time hierarchy, so the compiler could not obey the
+  spec that required one.** SPEC §2.5 said time bucketing MUST go through a
+  declared time hierarchy and never use ad hoc date math; `compile.py` emitted
+  `date_trunc`. Both were defensible alone and contradictory together, because
+  no inference stage produced a hierarchy for the compiler to use.
+
+  Enrich already classified each integer column on a date dimension by checking
+  it against `EXTRACT(...)` on every row — `yr_nbr` → `calendar_year`,
+  `qtr_nbr` → `calendar_quarter`, `mth_nbr` → `calendar_month`. Those are
+  levels; nothing collected them. It now emits a `kind: time` hierarchy per
+  date dimension, calendar and fiscal, levels most-general first.
+
+  `compile_metric` buckets through it: `date_dim.yr_nbr, date_dim.mth_nbr`
+  rather than `date_trunc('month', date_dim.cal_dt)` — the customer's own
+  calendar columns instead of re-deriving what they already materialised. A
+  fact's own date column still truncates, correctly, because there is no
+  declared calendar to honour.
+
+  This also removes an inconsistency: the compiler already grouped *fiscal*
+  quarters by the customer's `fiscal_quarter` column while ignoring the
+  verified `calendar_quarter` column beside it. `_fiscal_cols` and
+  `_fiscal_group_cols` are replaced by one hierarchy lookup serving both.
+
+  A month or quarter column carries no year, so grouping by it alone collapses
+  the same month across years. The year level now always travels with it, and
+  §2.5 states that as a MUST.
+
+  §2.5 is conditioned on a hierarchy existing rather than demanding one
+  unconditionally, and gains a SHOULD telling producers to declare one where
+  they have verified a date dimension's attributes.
+
+## v0.4.0-beta.4 (2026-10-02)
 
 Spec `0.3.0`, unchanged.
 

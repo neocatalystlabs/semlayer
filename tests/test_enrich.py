@@ -192,3 +192,20 @@ def test_a_reconciled_aggregate_states_its_grain(enriched):
         assert grain, f"{a['table']} reconciled but states no grain"
         for col in a["grain"]:
             assert col in grain, (a["table"], col)
+
+
+def test_date_dimension_gets_a_time_hierarchy(enriched):
+    """The verified calendar attributes are assembled, not left as loose tags."""
+    sl = enriched["semantic_layer"]
+    hs = [h for h in sl.get("hierarchies", []) if h.get("kind") == "time"]
+    assert hs, "a verified date dimension must declare a time hierarchy"
+    h = next(x for x in hs if x["name"].endswith("_calendar"))
+    levels = {lv["name"]: lv["column"] for lv in h["levels"]}
+    assert ["year", "quarter", "month", "day"] == [lv["name"] for lv in h["levels"]], \
+        "levels must run most-general to most-granular"
+    t = next(x for x in sl["tables"] if x["name"] == h["dimension_table"])
+    tagged = {c["name"]: c.get("time_attribute") for c in t["columns"]}
+    for level, col in levels.items():
+        if level == "day":
+            continue
+        assert tagged[col] == f"calendar_{level}", (level, col, tagged[col])

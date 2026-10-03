@@ -92,15 +92,26 @@ def test_fiscal_quarter_parity():
     # fiscal answers genuinely differ from Gregorian: Jan-2023 belongs to
     # FY2022 Q4 fiscally but 2023 Q1 on the calendar
     cal = compile_metric(DOC, m["name"], time_grain="quarter", calendar="calendar")
-    cal_rows = CON.execute(cal["sql"]).fetchall()
-    assert got != {(r[0].year, (r[0].month - 1) // 3 + 1): r[1] for r in cal_rows}
+    cal_rows = {(r[0], r[1]): r[2] for r in CON.execute(cal["sql"]).fetchall()}
+    assert got != cal_rows
 
 
-def test_calendar_choice_uses_date_trunc():
+def test_calendar_choice_uses_the_declared_levels():
+    """SPEC 2.5: bucket through the declared hierarchy, not ad hoc date math.
+
+    The dim already carries verified yr_nbr/qtr_nbr; using them must give the
+    same answer as re-deriving it with date_trunc, or the levels were wrong.
+    """
     m = _amt_metric()
     out = compile_metric(DOC, m["name"], time_grain="quarter", calendar="calendar")
-    assert "sql" in out and "date_trunc('quarter'" in out["sql"]
-    assert CON.execute(out["sql"]).fetchall()
+    assert "sql" in out, out
+    assert "yr_nbr" in out["sql"] and "qtr_nbr" in out["sql"]
+    assert "date_trunc" not in out["sql"]
+    got = {(r[0], r[1]): r[2] for r in CON.execute(out["sql"]).fetchall()}
+    want = {(r[0].year, (r[0].month - 1) // 3 + 1): r[1] for r in CON.execute(
+        "SELECT date_trunc('quarter', d.cal_dt), SUM(f.amt) FROM sls_fct f "
+        "LEFT JOIN dt_dim d ON f.date_key = d.date_key GROUP BY 1").fetchall()}
+    assert got == want
 
 
 def test_fiscal_year_grain():

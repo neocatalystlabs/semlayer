@@ -333,8 +333,16 @@ def _time_request_error(ctx: _Ctx, time_grain, calendar) -> dict | None:
 
 def _bucket_sql(ctx: _Ctx, time_grain: str, calendar: str | None,
                 qual: str) -> str | list | dict:
+    """Bucket through the declared time hierarchy where one exists (SPEC 2.5).
+
+    The customer's date dimension already carries verified year/quarter/month
+    columns; Enrich assembles them into a time hierarchy. Using them beats
+    re-deriving the same thing with date_trunc, and it is the only way a
+    fiscal calendar can be honoured at all.
+    """
+    owner = qual.split(".", 1)[0]
+    fiscal = _time_levels(ctx, owner, "fiscal")
     if time_grain in ("quarter", "year"):
-        fiscal = _fiscal_cols(ctx, qual.split(".", 1)[0])
         if fiscal and calendar is None:
             names = ", ".join(fiscal.values())
             return _refuse(
@@ -345,25 +353,37 @@ def _bucket_sql(ctx: _Ctx, time_grain: str, calendar: str | None,
             if not fiscal:
                 return _refuse("no verified fiscal calendar columns on the "
                                "metric's date dimension", ctx.legal)
-            return _fiscal_group_cols(qual.split(".", 1)[0], fiscal, time_grain)
+            return _level_group_cols(owner, fiscal, time_grain, "fiscal_")
+    cal = _time_levels(ctx, owner, "calendar")
+    if time_grain in cal:
+        return _level_group_cols(owner, cal, time_grain)
     return _grain_sql(ctx.dialect, time_grain, qual)
 
 
-def _fiscal_cols(ctx: _Ctx, owner: str) -> dict[str, str]:
-    """{time_attribute: column_name} for verified fiscal columns on `owner`."""
-    t = ctx.tables.get(owner)
-    if t is None:
-        return {}
-    return {c["time_attribute"]: c["name"] for c in t["columns"]
-            if c.get("time_attribute", "").startswith("fiscal_")}
+def _time_levels(ctx: _Ctx, owner: str, kind: str) -> dict[str, str]:
+    """{level name: column} for `owner`'s calendar or fiscal time hierarchy."""
+    for h in ctx.sl.get("hierarchies", []) or []:
+        if (h.get("kind") == "time" and h.get("dimension_table") == owner
+                and h.get("name", "").endswith(f"_{kind}")):
+            return {lv["name"]: lv["column"] for lv in h.get("levels", [])
+                    if lv.get("column")}
+    return {}
 
 
-def _fiscal_group_cols(owner: str, fiscal: dict[str, str], grain: str) -> list:
+def _level_group_cols(owner: str, levels: dict[str, str], grain: str,
+                      prefix: str = "") -> list:
+    """Grouping columns for one level.
+
+    A month or quarter column carries no year, so grouping by it alone would
+    collapse every January into one bucket. The year level travels with it.
+    """
+    if grain == "day" and "day" in levels:
+        return [(f"{owner}.{levels['day']}", "day")]
     cols = []
-    if "fiscal_year" in fiscal:
-        cols.append((f"{owner}.{fiscal['fiscal_year']}", "fiscal_year"))
-    if grain == "quarter" and "fiscal_quarter" in fiscal:
-        cols.append((f"{owner}.{fiscal['fiscal_quarter']}", "fiscal_quarter"))
+    if "year" in levels:
+        cols.append((f"{owner}.{levels['year']}", f"{prefix}year"))
+    if grain != "year" and grain in levels:
+        cols.append((f"{owner}.{levels[grain]}", f"{prefix}{grain}"))
     return cols
 
 

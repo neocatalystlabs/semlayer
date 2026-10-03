@@ -166,6 +166,47 @@ def _classify_time_attributes(source, sl, stats) -> None:
                 c.setdefault("provenance", []).append({
                     "signal": "statistic",
                     "detail": f"{tag}: verified against {date_col['name']}"})
+        _time_hierarchies(sl, t, date_col["name"])
+
+
+# The tags above are the levels of a calendar; nothing used to assemble them
+# into one. SPEC 2.5 requires time bucketing to go through a declared time
+# hierarchy, so without this the compiler could only fall back to ad hoc date
+# truncation -- and would ignore the customer's own calendar columns sitting
+# right there, having just verified them row by row.
+_CAL_LEVELS = [("calendar_year", "year"), ("calendar_quarter", "quarter"),
+               ("calendar_month", "month")]
+_FIS_LEVELS = [("fiscal_year", "year"), ("fiscal_quarter", "quarter"),
+               ("fiscal_period", "period")]
+
+
+def _time_hierarchies(sl: dict, t: dict, date_col: str) -> None:
+    """Assemble one date dimension's verified time attributes into hierarchies.
+
+    Levels run most-general to most-granular, which is what the format
+    requires and what lets a compiler pick the year level to pair with a
+    month or quarter.
+    """
+    tagged = {c.get("time_attribute"): c["name"] for c in t["columns"]
+              if c.get("time_attribute")}
+    for kind, wanted in (("calendar", _CAL_LEVELS), ("fiscal", _FIS_LEVELS)):
+        levels = [{"name": level, "column": tagged[tag]}
+                  for tag, level in wanted if tag in tagged]
+        if not levels:
+            continue
+        if kind == "calendar":
+            levels.append({"name": "day", "column": date_col})
+        hs = sl.setdefault("hierarchies", [])
+        name = f"{t['name']}_{kind}"
+        if any(h["name"] == name for h in hs):
+            continue
+        hs.append({
+            "name": name, "kind": "time", "dimension_table": t["name"],
+            "levels": levels, "lifecycle": "inferred", "confidence": 0.9,
+            "provenance": [{"signal": "statistic",
+                            "detail": f"{kind} levels verified against {date_col} "
+                                      f"on every row"}],
+        })
 
 
 def _time_attribute_tag(source, tq: str, d: str, c: dict, tstats, n: int) -> str | None:
