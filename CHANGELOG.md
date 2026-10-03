@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.4.0-beta.5 (unreleased)
+## v0.4.0-beta.5 (2026-10-03)
 
 Spec `0.3.0`; §2.5 reworded to describe achievable behaviour (see below).
 
