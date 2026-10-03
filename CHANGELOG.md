@@ -35,6 +35,31 @@ Spec `0.3.0`; §2.5 reworded to describe achievable behaviour (see below).
   unconditionally, and gains a SHOULD telling producers to declare one where
   they have verified a date dimension's attributes.
 
+- **`--no-sample-egress` was documented as costing accuracy it does not cost.**
+  The claim in `docs/cost-model.md` — "~1 point of typing accuracy
+  (0.904 -> 0.894)" — was measured on one fixture in July, before the typing
+  rules were calibrated. Re-measured live across 7 fixtures / 759 columns with
+  `semlayer.scoring.score_types`:
+
+  | mode | semantic type | entity role |
+  |---|---|---|
+  | `--no-llm` | 0.780 | 0.834 |
+  | default | 0.809 | 0.838 |
+  | `--no-sample-egress` | 0.809 | 0.842 |
+
+  Corpus-wide the privacy mode is free: typing identical to three decimals,
+  role marginally better. The old figure still reproduces exactly on messy_mart
+  (-0.010), but collision_heavy moves +0.016 the other way and they cancel — on
+  a warehouse built to collide names, withholding values stops the model
+  over-trusting values that look alike. Both numbers are now published.
+
+  New `tests/test_no_sample_egress.py` pins the privacy promise as well as the
+  parity. `_evidence` has an `enum_decodes` branch that is not gated on the
+  flag; it is harmless only because Describe runs before Enrich, so the only
+  decodes present are the model's own guesses from column names. The test fails
+  if that ordering ever changes, which would start sending real decode values
+  in a mode that promises it does not.
+
 ## v0.4.0-beta.4 (2026-10-02)
 
 Spec `0.3.0`, unchanged.

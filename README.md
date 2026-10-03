@@ -40,8 +40,8 @@ Everything lands with `confidence` ([calibrated, with the misses published](docs
 ## Cost & privacy
 
 - **~$0.70 per 100 tables** end-to-end on the cheap model tier, with your own API key ([measured cost model](docs/cost-model.md)). LLM calls are escalation-only; ~80% of columns resolve from statistics alone.
-- **`--no-llm`**: fully deterministic mode, zero API calls, still useful (0.81 typing accuracy on the messy fixture) — for orgs where LLM access needs procurement.
-- **`--no-sample-egress`**: cell values never leave for the LLM; measured cost ≈ 1 point of accuracy.
+- **`--no-llm`**: fully deterministic mode, zero API calls, still useful (0.780 typing / 0.834 role across 7 fixtures, against 0.809 / 0.838 with the model) — for orgs where LLM access needs procurement.
+- **`--no-sample-egress`**: no value read from a warehouse cell is sent to the LLM, at **no net accuracy cost** across our 7 fixtures (0.809 typing / 0.842 role, versus 0.809 / 0.838 with samples). Per warehouse it trades rather than being uniformly free — up to a point better or worse. Re-measured 2026-10-03; see [docs/cost-model.md](docs/cost-model.md).
 - **Read-only, minimal-grant**: `semlayer init` generates the grant script; the live test suite (`tests/test_snowflake_live.py`, runnable against your own account) proves the reader persona cannot write.
 - **Telemetry**: anonymous command counts spooled *locally only* — nothing leaves your machine in this release; opt out with `SEMLAYER_TELEMETRY=off`. ([details](SECURITY.md))
 

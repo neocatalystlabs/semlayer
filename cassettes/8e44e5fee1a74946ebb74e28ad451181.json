@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "26fea8ed3e9d",
+ "response": "```json\n{\n  \"table_description\": \"Dimension table of catalog pages with validity dates, department, catalog number, page number, and type classification.\",\n  \"ai_context\": \"Join to date_dim via cp_start_date_sk or cp_end_date_sk for temporal context. Filter by cp_end_date_sk IS NULL for current pages. ~1% nulls across most columns.\",\n  \"table_type\": \"dimension\",\n  \"columns\": [\n    {\n      \"name\": \"cp_catalog_page_sk\",\n      \"description\": \"Surrogate key, unique identifier for each catalog page record.\"\n    },\n    {\n      \"name\": \"cp_catalog_page_id\",\n      \"description\": \"Natural key, business identifier for the catalog page.\"\n    },\n    {\n      \"name\": \"cp_start_date_sk\",\n      \"description\": \"Foreign key to date_dim; page validity start date. ~1% null.\"\n    },\n    {\n      \"name\": \"cp_end_date_sk\",\n      \"description\": \"Foreign key to date_dim; page validity end date. Null indicates current. ~1% null.\"\n    },\n    {\n      \"name\": \"cp_department\",\n      \"description\": \"Department classification; single distinct value with ~1% nulls.\"\n    },\n    {\n      \"name\": \"cp_catalog_number\",\n      \"description\": \"Catalog identifier code; 109 distinct values. ~1% null.\"\n    },\n    {\n      \"name\": \"cp_catalog_page_number\",\n      \"description\": \"Page sequence number within catalog; 108 distinct values. ~1% null.\"\n    },\n    {\n      \"name\": \"cp_description\",\n      \"description\": \"Free-text description of catalog page content; 11,602 distinct values. ~1% null.\"\n    },\n    {\n      \"name\": \"cp_type\",\n      \"description\": \"Catalog page type code; 3 distinct values. ~1% null.\"\n    }\n  ]\n}\n```",
+ "usage": {
+  "in": 956,
+  "out": 484
+ }
+}

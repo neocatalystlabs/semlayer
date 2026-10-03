@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"web_name\",\n    \"semantic_type\": \"name\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": null,\n    \"rationale\": \"Website name; descriptive text for web site entity\"\n  },\n  {\n    \"column\": \"web_manager\",\n    \"semantic_type\": \"pii_name\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.85,\n    \"enum_decodes\": null,\n    \"rationale\": \"Person name managing website; likely PII\"\n  },\n  {\n    \"column\": \"web_market_manager\",\n    \"semantic_type\": \"pii_name\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.85,\n    \"enum_decodes\": null,\n    \"rationale\": \"Person name managing market; likely PII\"\n  },\n  {\n    \"column\": \"web_company_name\",\n    \"semantic_type\": \"name\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": null,\n    \"rationale\": \"Company name; organizational entity descriptor\"\n  },\n  {\n    \"column\": \"web_suite_number\",\n    \"semantic_type\": \"code\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.75,\n    \"enum_decodes\": null,\n    \"rationale\": \"Suite/unit number; address component identifier\"\n  },\n  {\n    \"column\": \"web_county\",\n    \"semantic_type\": \"geo_region\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.90,\n    \"enum_decodes\": null,\n    \"rationale\": \"County name; geographic region subdivision\"\n  },\n  {\n    \"column\": \"web_gmt_offset\",\n    \"semantic_type\": \"rate\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.85,\n    \"enum_decodes\": null,\n    \"rationale\": \"GMT offset hours; timezone rate/differential value\"\n  }\n]\n```",
+ "usage": {
+  "in": 974,
+  "out": 531
+ }
+}

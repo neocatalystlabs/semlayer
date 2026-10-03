@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "26fea8ed3e9d",
+ "response": "```json\n{\n  \"table_description\": \"Operational table recording product returns with unique return identifiers and categorized return reasons. Supports return processing and analytics.\",\n  \"ai_context\": \"Join on return_id to orders/sales tables. Filter by reason_cd for return reason analysis. 6 distinct reason codes; decode table needed for descriptions.\",\n  \"table_type\": \"operational\",\n  \"columns\": [\n    {\n      \"name\": \"return_id\",\n      \"description\": \"Unique identifier for each return transaction. Primary key.\"\n    },\n    {\n      \"name\": \"reason_cd\",\n      \"description\": \"Code categorizing return reason. 6 distinct values; decode required for full descriptions.\"\n    }\n  ]\n}\n```",
+ "usage": {
+  "in": 421,
+  "out": 177
+ }
+}

@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"cd_gender\",\n    \"semantic_type\": \"enum\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": null,\n    \"rationale\": \"Categorical demographic attribute with 2 distinct values, likely M/F or similar.\"\n  },\n  {\n    \"column\": \"cd_purchase_estimate\",\n    \"semantic_type\": \"quantity\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.85,\n    \"enum_decodes\": null,\n    \"rationale\": \"Numeric estimate of customer purchasing behavior; likely binned/bucketed into 20 ranges.\"\n  },\n  {\n    \"column\": \"cd_credit_rating\",\n    \"semantic_type\": \"enum\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.90,\n    \"enum_decodes\": null,\n    \"rationale\": \"Categorical credit assessment with 4 distinct values; typical ratings like Good/Fair/Poor/Excellent.\"\n  }\n]\n```",
+ "usage": {
+  "in": 604,
+  "out": 265
+ }
+}

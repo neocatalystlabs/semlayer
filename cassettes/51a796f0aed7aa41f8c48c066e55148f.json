@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "26fea8ed3e9d",
+ "response": "```json\n{\n  \"table_description\": \"Staging table capturing raw customer data ingestion events with JSON payloads, loaded from source files with timestamps for ETL processing.\",\n  \"ai_context\": \"Join to cust_mstr via raw_cust_id. Multiple rows per customer (300 rows, 270 distinct customers) indicate versioning or reloads. Parse raw_payload for actual customer attributes.\",\n  \"table_type\": \"staging\",\n  \"columns\": [\n    {\n      \"name\": \"raw_id\",\n      \"description\": \"Unique staging record identifier; primary key for this load batch.\"\n    },\n    {\n      \"name\": \"raw_cust_id\",\n      \"description\": \"Customer identifier linking to cust_mstr.cust_id; foreign key for customer reference.\"\n    },\n    {\n      \"name\": \"raw_payload\",\n      \"description\": \"JSON object containing raw customer attributes from source system; requires parsing for downstream use.\"\n    },\n    {\n      \"name\": \"load_ts\",\n      \"description\": \"Timestamp when record was loaded into staging; 30 distinct values suggest batch loads.\"\n    },\n    {\n      \"name\": \"file_nm\",\n      \"description\": \"Source file name; 30 distinct values correlate with load_ts batches for audit trail.\"\n    }\n  ]\n}\n```",
+ "usage": {
+  "in": 649,
+  "out": 322
+ }
+}

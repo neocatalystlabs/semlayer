@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"priority_name\",\n    \"semantic_type\": \"enum\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": null,\n    \"rationale\": \"Categorical dimension with 5 distinct values, likely priority levels (e.g., Low, Medium, High, Critical, Urgent)\"\n  }\n]\n```",
+ "usage": {
+  "in": 418,
+  "out": 103
+ }
+}

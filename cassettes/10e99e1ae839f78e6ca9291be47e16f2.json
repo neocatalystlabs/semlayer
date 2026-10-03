@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"c_salutation\",\n    \"semantic_type\": \"enum\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": null,\n    \"rationale\": \"6 distinct values; typical salutation codes (Mr/Ms/Dr/etc)\"\n  },\n  {\n    \"column\": \"c_birth_day\",\n    \"semantic_type\": \"quantity\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.92,\n    \"enum_decodes\": null,\n    \"rationale\": \"31 distinct values; day-of-month component of birth date\"\n  },\n  {\n    \"column\": \"c_birth_month\",\n    \"semantic_type\": \"quantity\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.93,\n    \"enum_decodes\": null,\n    \"rationale\": \"12 distinct values; month component of birth date\"\n  },\n  {\n    \"column\": \"c_birth_year\",\n    \"semantic_type\": \"quantity\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.90,\n    \"enum_decodes\": null,\n    \"rationale\": \"69 distinct values; year component of birth date\"\n  },\n  {\n    \"column\": \"c_login\",\n    \"semantic_type\": \"unknown\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.45,\n    \"enum_decodes\": null,\n    \"rationale\": \"Only 1 distinct value despite 1M+ rows; likely data quality issue or constant\"\n  }\n]\n```",
+ "usage": {
+  "in": 816,
+  "out": 408
+ }
+}

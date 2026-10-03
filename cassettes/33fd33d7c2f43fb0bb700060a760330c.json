@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "26fea8ed3e9d",
+ "response": "```json\n{\n  \"table_description\": \"Household demographic attributes including income band, buying potential, dependent count, and vehicle ownership across 7,200 unique households.\",\n  \"ai_context\": \"Join to income_band via hd_income_band_sk. Filter by hd_buy_potential enum values. Aggregation-ready with dependent and vehicle counts.\",\n  \"table_type\": \"dimension\",\n  \"columns\": [\n    {\n      \"name\": \"hd_demo_sk\",\n      \"description\": \"Surrogate key uniquely identifying each household demographic record.\"\n    },\n    {\n      \"name\": \"hd_income_band_sk\",\n      \"description\": \"Foreign key linking to income_band dimension table for income classification.\"\n    },\n    {\n      \"name\": \"hd_buy_potential\",\n      \"description\": \"Categorical attribute indicating household purchasing power (6 distinct values).\"\n    },\n    {\n      \"name\": \"hd_dep_count\",\n      \"description\": \"Number of dependents in the household (0\u20139 range).\"\n    },\n    {\n      \"name\": \"hd_vehicle_count\",\n      \"description\": \"Number of vehicles owned by the household (0\u20135 range).\"\n    }\n  ]\n}\n```\n\n**Rationale:** Despite the heuristic suggesting \"fact,\" the evidence points to **dimension**. The table has a single primary key, no temporal grain, no measures (dep_count and vehicle_count are attributes, not aggregated facts), and 7,200 rows matching typical household dimension cardinality. It describes *what* households are, not *what happened*. The foreign key to income_band confirms dimensional design.",
+ "usage": {
+  "in": 665,
+  "out": 398
+ }
+}

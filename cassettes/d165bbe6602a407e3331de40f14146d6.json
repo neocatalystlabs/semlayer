@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "26fea8ed3e9d",
+ "response": "```json\n{\n  \"table_description\": \"Dimension table storing 1,500 unique entities with type classification and creation timestamp metadata.\",\n  \"ai_context\": \"Join on entity_id. Filter by entity_type (2 values). created_ts has duplicates; use for temporal analysis.\",\n  \"table_type\": \"dimension\",\n  \"columns\": [\n    {\n      \"name\": \"entity_id\",\n      \"description\": \"Unique identifier for each entity. Primary key, no nulls.\"\n    },\n    {\n      \"name\": \"entity_type\",\n      \"description\": \"Classification code for entity. Two distinct values; no nulls.\"\n    },\n    {\n      \"name\": \"created_ts\",\n      \"description\": \"Timestamp when entity was created. No nulls; 1,146 distinct values.\"\n    }\n  ]\n}\n```",
+ "usage": {
+  "in": 492,
+  "out": 205
+ }
+}
