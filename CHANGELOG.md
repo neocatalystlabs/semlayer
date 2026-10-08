@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **The benchmark table reported 34/38 as 0.90.** `pass_rate` is stored as
+  `round(passed/total, 3)` and the report formatted that again to 2dp, so
+  0.8947 became 0.895 and printed as 0.90 — while the HEADLINE note and the
+  README both correctly said 0.89. The measured result never changed; only the
+  rendering was wrong. The table now formats from the raw count, so the double
+  rounding cannot recur.
+
 ## v0.4.0-beta.5 (2026-10-03)
 
 Spec `0.3.0`; §2.5 reworded to describe achievable behaviour (see below).

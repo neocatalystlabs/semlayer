@@ -8,7 +8,7 @@ under pinned engine+model via committed cassettes; re-run with:
 | Fixture | CQs | Answerer | schema_only | semantic | semantic+lint | semantic+ontology |
 |---|---|---|---|---|---|---|
 | fan_trap | 8 | claude-haiku-4-5 | 0.88 | 0.75 | 0.88 | 0.75 |
-| messy_mart | 38 | claude-haiku-4-5 | 0.42 | 0.87 | 0.90 | 0.82 |
+| messy_mart | 38 | claude-haiku-4-5 | 0.42 | 0.87 | 0.89 | 0.82 |
 | tpcds_clean | 12 | claude-haiku-4-5 | 0.67 | 0.58 | 0.58 | 0.67 |
 | messy_mart | 38 | claude-sonnet-5 | 0.55 | 0.84 | 0.84 | — |
 
@@ -49,3 +49,14 @@ under pinned engine+model via committed cassettes; re-run with:
 - Answerer model is NOT the bottleneck: Sonnet reads raw DDL better than Haiku (0.55 vs 0.42) but lands slightly BELOW Haiku with the layer (0.84 vs 0.87) — the lift for Sonnet is +52% relative, and the two models converge once the context carries the rules. The errors that remain are behavioural (refusing while naming the replacement, answering instead of asking) or gold inconsistencies (whether counts exclude cancelled orders), not reasoning failures.
 - Repair rounds: one lint-fed repair (semantic+lint only) then one execution-error repair. Raw-schema failures are valid-SQL-wrong-meaning (silent, unrepairable); semantic-layer residuals are loud or caught by lint.
 - Scoring: execution-result equality (Spider-style EA) under methodology v2 above, scalar tolerance 0.01; refusal/clarification CQs scored behaviorally. All contexts built through the same MCP-surface functions agents use; the semantic+lint condition calls check_sql exactly as an agent would.
+
+## Correction, 2026-10-07
+
+The semantic+lint cell for messy_mart read **0.90** while the HEADLINE note and
+the README both said **0.89**. The prose was right and the table was generated
+wrong: `pass_rate` is stored as `round(passed/total, 3)`, and the report then
+formatted that to 2dp — so 34/38 (0.8947) became 0.895 and then printed as
+0.90. The underlying result never changed.
+
+The renderer now formats from the raw count, so the double rounding cannot
+recur, and the table above reads 0.89.
