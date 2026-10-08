@@ -87,6 +87,15 @@ decodes what your status columns mean, and recovers the filters your summary
 tables silently apply. It writes all of it down in one open file that any AI
 agent can read.</p>
 
+<p>That includes your metrics. &ldquo;Average order value&rdquo; is not a column
+anywhere. It is a decision somebody made about what to divide by, and the two
+defensible answers can be three times apart. Which is why two people pull the same
+metric, both do it correctly, and arrive at the same meeting with different numbers
+&mdash; nobody made a mistake, they used different definitions. semlayer writes the
+decision down: which rows count, what the denominator is, and the evidence behind
+it. Trust is not only about getting a correct number. It is about the same question
+returning the same number, to everyone, every time.</p>
+
 <div class="stat">
 Same AI, same 38 business questions, same warehouse: <strong>42% answered
 correctly from the raw schema, 87% with the context semlayer inferred.</strong>
@@ -108,7 +117,8 @@ not need this.
 <h2>How it works</h2>
 
 <p>It profiles every column, discovers the foreign keys nobody declared, decodes the
-status columns, and recovers business rules hiding in your aggregate tables &mdash;
+status columns, recovers business rules hiding in your aggregate tables, and
+proposes the metrics those rules imply &mdash;
 verified against your own data, with <strong>confidence, provenance, and a review
 queue on every claim</strong>. Statistics alone never auto-accept a foreign key, and
 a doc that contradicts your data goes to review rather than being believed. Then any
