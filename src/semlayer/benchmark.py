@@ -109,7 +109,9 @@ def render_report(results: list[dict], engine_version: str, notes: list[str]) ->
         model = next(iter(conds.values()))["model"].split("-2")[0]
         row = [r["fixture"], str(r["n_cqs"]), model]
         for c in CONDITIONS:
-            row.append(f"{conds[c]['pass_rate']:.2f}" if c in conds else "—")
+            # format from the raw count, not from pass_rate: that is already
+            # rounded to 3dp, and rounding it again to 2 reported 34/38 as 0.90
+            row.append(f"{conds[c]['passed'] / r['n_cqs']:.2f}" if c in conds else "—")
         lines.append("| " + " | ".join(row) + " |")
     lines.append("")
     lines.append("## Failure breakdown by category (semantic condition)")
