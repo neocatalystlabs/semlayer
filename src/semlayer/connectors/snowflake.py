@@ -35,10 +35,14 @@ class SnowflakeSource:
         minimal-grant claim is about the role actually in effect, so inheriting
         one makes the claim unverifiable.
         """
-        import snowflake.connector
-
         from semlayer.errors import SemlayerError
 
+        # Config is validated BEFORE the driver import, deliberately. The
+        # session role is a cheap environment check and the driver is an
+        # optional extra, so importing first meant an install without
+        # `[warehouses]` reported `No module named 'snowflake'` for what is
+        # actually a missing setting -- and it made the test for this rule
+        # unrunnable anywhere the extra is absent, which is CI.
         prefix = "SNOWFLAKE_READER" if persona == "reader" else "SNOWFLAKE_ADMIN"
         session_role = os.environ.get(f"{prefix}_ROLE") or os.environ.get("SNOWFLAKE_ROLE")
         if not session_role:
@@ -49,6 +53,9 @@ class SnowflakeSource:
                      "that name rather than relying on the user's DEFAULT_ROLE, which "
                      "silently profiles under whatever privileges the account holds",
             )
+
+        import snowflake.connector
+
         con = snowflake.connector.connect(
             account=os.environ["SNOWFLAKE_ACCOUNT"],
             user=os.environ[f"{prefix}_USER"],
