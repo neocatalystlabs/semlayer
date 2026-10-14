@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 # PLR0913: eight orthogonal knobs is the limit, and this is at it. The next one
 # should become an InferOptions dataclass rather than a ninth parameter -- the
 # lint is flagging a real smell, not a false positive.
-def infer(source, llm=None, no_sample_egress: bool = False, context=None,  # noqa: PLR0913
+def infer(source, llm=None, no_sample_egress: bool = False, context=None,  # noqa: PLR0913, PLR0917
           only: set[str] | None = None, lineage=None,
           use_declared: bool = True, state=None) -> dict:
     """Run Profile -> Link -> Describe (if llm given) -> Enrich and return the document."""
@@ -26,7 +26,7 @@ def infer(source, llm=None, no_sample_egress: bool = False, context=None,  # noq
     return doc
 
 
-def infer_with_report(source, llm=None, no_sample_egress: bool = False,  # noqa: PLR0913
+def infer_with_report(source, llm=None, no_sample_egress: bool = False,  # noqa: PLR0913, PLR0917
                       context=None, only: set[str] | None = None,
                       lineage=None, use_declared: bool = True,
                       state=None) -> tuple[dict, dict]:

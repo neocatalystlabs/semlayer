@@ -14,7 +14,11 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -e ".[dev]" ruff mypy
+      # No bare `ruff mypy` here: both are in the dev extra with version
+      # bounds, and installing them unpinned alongside it resolved to the
+      # latest release -- so a minor version that added a lint rule failed
+      # CI against a green local gate.
+      - run: pip install -e ".[dev]"
       - name: Lint (zero findings)
         run: ruff check src/
       - name: Types (zero errors)

@@ -840,7 +840,7 @@ def _detect_aggregates(source, sl, stats) -> list[dict]:
     return out
 
 
-def _aggregates_for_candidate(source, qualify, stats, t, facts,  # noqa: PLR0913
+def _aggregates_for_candidate(source, qualify, stats, t, facts,  # noqa: PLR0913, PLR0917
                               agg_measures, group_cols, named) -> list[dict]:
     """Reconcile one rollup candidate against every plausible fact."""
     found: list[dict] = []
@@ -1215,7 +1215,7 @@ def _propagate_parent_filters(source, sl, stats) -> None:
         _inherit_rules(source, qualify, stats, sl, child, parent, r, rules)
 
 
-def _inherit_rules(source, qualify, stats, sl, child: dict, parent: dict,  # noqa: PLR0913
+def _inherit_rules(source, qualify, stats, sl, child: dict, parent: dict,  # noqa: PLR0913, PLR0917
                    r: dict, rules: list[dict]) -> None:
     """Attach the parent's measure rules to one child fact when per-key reconciliation proves it."""
     fk, pk = r["from"]["columns"][0], r["to"]["columns"][0]
