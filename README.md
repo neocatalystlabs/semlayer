@@ -42,13 +42,15 @@ Everything lands with `confidence` ([calibrated, with the misses published](docs
 - **~$0.70 per 100 tables** end-to-end on the cheap model tier, with your own API key ([measured cost model](docs/cost-model.md)). LLM calls are escalation-only; ~80% of columns resolve from statistics alone.
 - **`--no-llm`**: fully deterministic mode, zero API calls, still useful (0.780 typing / 0.834 role across 7 fixtures, against 0.809 / 0.838 with the model) — for orgs where LLM access needs procurement.
 - **`--no-sample-egress`**: no value read from a warehouse cell is sent to the LLM, at **no net accuracy cost** across our 7 fixtures (0.809 typing / 0.842 role, versus 0.809 / 0.838 with samples). Per warehouse it trades rather than being uniformly free — up to a point better or worse. Re-measured 2026-10-03; see [docs/cost-model.md](docs/cost-model.md).
-- **Read-only, minimal-grant**: `semlayer init` generates the grant script; the live test suite (`tests/test_snowflake_live.py`, runnable against your own account) proves the reader persona cannot write.
+- **Read-only, minimal-grant**: `semlayer init` generates the grant script; the reader persona is proved unable to write — on PostgreSQL by a test that runs in ordinary CI against a real server (`tests/test_postgres.py`, no credentials needed), and on Snowflake by a live suite runnable against your own account (`tests/test_snowflake_live.py`).
 - **Telemetry**: anonymous command counts spooled *locally only* — nothing leaves your machine in this release; opt out with `SEMLAYER_TELEMETRY=off`. ([details](SECURITY.md))
 
 ## Honest scope (beta)
 
 - **Best on messy warehouses.** On clean, well-named schemas our benchmark shows raw DDL is already sufficient — we publish that negative result rather than hide it. If your warehouse is tidy TPC-DS, you may not need us.
-- Warehouses: **Snowflake, BigQuery, DuckDB** (+ Iceberg on S3 via the [DuckDB bridge](docs/iceberg-bridge.md)). Exporter: **dbt** (losses reported, never silent). LLM: Anthropic API (Bedrock/Vertex routing is next).
+- ETL input: **dbt** (`--manifest target/manifest.json`) -- reads the model DAG to settle join targets statistics cannot. Catalog comments and `--context` docs are read as priors on every run.
+- Scale: tested to **2,000 tables / 30,000 columns**; the run says so when a warehouse is past that. Data VOLUME is not the limit -- 4TB and 45TB are the same architecture. [How to make it fast](docs/scale.md).
+- Warehouses: **Snowflake, BigQuery, PostgreSQL, DuckDB** (+ Iceberg on S3 via the [DuckDB bridge](docs/iceberg-bridge.md)). PostgreSQL also reaches Redshift and other Postgres-protocol engines, whose catalogs differ in places and are untested. Exporter: **dbt** (losses reported, never silent). LLM: Anthropic API (Bedrock/Vertex routing is next).
 - Not included: hosted service, ontology enrichment (it failed our own ablation gate — [receipts](docs/ablation-m5.md)), LookML/RDF exporters.
 - The eval harness ships in this repo — fixtures, gold layers, competency questions, benchmark runner. **Run our numbers yourself**: `python fixtures/build.py && pytest tests/ -q`.
 

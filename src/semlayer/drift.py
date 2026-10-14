@@ -18,6 +18,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from semlayer.source import row_cap
+
 
 @dataclass
 class DriftEvent:
@@ -90,7 +92,7 @@ def _unmodeled_enum_values(source, fq: str, t: dict, live_cols: set) -> list[Dri
             continue
         rows = source.query(
             f'SELECT DISTINCT "{c["name"]}" FROM {fq} '
-            f'WHERE "{c["name"]}" IS NOT NULL LIMIT 50'
+            f'WHERE "{c["name"]}" IS NOT NULL{row_cap(source, 50)}'
         )
         for v in sorted({str(r[0]) for r in rows} - known):
             events.append(DriftEvent("enum_value_added", t["name"], c["name"],

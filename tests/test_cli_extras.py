@@ -46,3 +46,29 @@ def test_telemetry_records_no_content(tmp_path, monkeypatch):
     telemetry.record("cli", command="validate")
     line = (tmp_path / "telemetry.jsonl").read_text()
     assert "cli" in line and "anon" in line
+
+
+def test_snowflake_requires_an_explicit_session_role(monkeypatch):
+    """The session role must be set, never inherited from DEFAULT_ROLE.
+
+    It was never passed to snowflake.connector.connect at all, so the session
+    ran under whatever the account's DEFAULT_ROLE happened to be. That worked
+    only because `semlayer init` creates a service user with DEFAULT_ROLE set
+    to the reader role it also creates, and broke silently the moment anyone
+    ran semlayer as their own account -- profiling under whatever privileges
+    they hold. Our minimal-grant claim is about the role in effect, so
+    inheriting one makes the claim unverifiable.
+    """
+    import pytest
+
+    from semlayer.connectors.snowflake import SnowflakeSource
+    from semlayer.errors import SemlayerError
+
+    for var in ("SNOWFLAKE_READER_ROLE", "SNOWFLAKE_ROLE"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("SNOWFLAKE_ACCOUNT", "acct")
+    monkeypatch.setenv("SNOWFLAKE_READER_USER", "u")
+    monkeypatch.setenv("SNOWFLAKE_READER_PASSWORD", "p")
+
+    with pytest.raises(SemlayerError, match="session role"):
+        SnowflakeSource.from_env(persona="reader")

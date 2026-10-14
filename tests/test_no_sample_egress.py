@@ -71,7 +71,7 @@ def test_no_sample_egress_sends_no_warehouse_cell_values():
     try:
         llm = AnthropicProvider()
         doc, stats = profile_with_stats(src, no_sample_values=True, llm=llm)
-        link_source(src, doc, stats, llm=llm)
+        link_source(src, doc, stats, llm=llm, use_declared=False)
         drun.describe_source(doc, stats, llm, no_samples=True)
     except CassetteMiss as e:
         pytest.skip(str(e))

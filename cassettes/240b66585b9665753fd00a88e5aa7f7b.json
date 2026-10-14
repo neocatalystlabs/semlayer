@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "26fea8ed3e9d",
+ "response": "```json\n{\n  \"table_description\": \"Dimension table of 40 retail store locations with geographic attributes, warehouse assignment, and opening dates. Supports sales and inventory analytics.\",\n  \"ai_context\": \"Join on store_sk (surrogate) or store_id (natural key) to fact tables. All columns non-null. 40 stores across 5 countries; 8 warehouses serve multiple stores.\",\n  \"table_type\": \"dimension\",\n  \"columns\": [\n    {\n      \"name\": \"store_sk\",\n      \"description\": \"Surrogate key; unique identifier for each store (1\u201340).\"\n    },\n    {\n      \"name\": \"store_id\",\n      \"description\": \"Natural key; store code (ST0001\u2013ST0006 pattern). Join to fact tables.\"\n    },\n    {\n      \"name\": \"store_nm\",\n      \"description\": \"Store display name; format 'store ST####'.\"\n    },\n    {\n      \"name\": \"city_nm\",\n      \"description\": \"City name where store is located (e.g., Berlin, Phoenix, Chicago).\"\n    },\n    {\n      \"name\": \"state_cd\",\n      \"description\": \"State or region code (e.g., AZ, BAV, BC, BER, IL, LDN).\"\n    },\n    {\n      \"name\": \"cntry_cd\",\n      \"description\": \"Country code (US, DE, CA, GB, FR); 5 countries represented.\"\n    },\n    {\n      \"name\": \"whs_id\",\n      \"description\": \"Foreign key to whs_dim; warehouse serving this store. 8 warehouses supply 40 stores.\"\n    },\n    {\n      \"name\": \"open_dt\",\n      \"description\": \"Store opening date; ranges 2023\u20132024. 36 distinct dates across 40 stores.\"\n    }\n  ]\n}\n```",
+ "usage": {
+  "in": 1623,
+  "out": 459
+ }
+}

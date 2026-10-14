@@ -27,7 +27,17 @@
         "hierarchies": {"type": "array", "items": {"$ref": "#/$defs/hierarchy"}},
         "aggregate_tables": {"type": "array", "items": {"$ref": "#/$defs/aggregate_table"}},
         "metrics": {"type": "array", "items": {"$ref": "#/$defs/metric"}},
-        "repo_knowledge": {"$ref": "#/$defs/repo_knowledge"}
+        "repo_knowledge": {"$ref": "#/$defs/repo_knowledge"},
+        "document_set": {
+          "type": "string",
+          "minLength": 1,
+          "description": "RESERVED, optional. Identifies a set of documents that together describe one warehouse, for warehouses too large to carry in a single document. When present, references resolve across the whole set rather than this document alone (SPEC.md §4). Producers SHOULD NOT emit this yet; it exists so that sharding is an additive change rather than a breaking one."
+        },
+        "part": {
+          "type": "string",
+          "minLength": 1,
+          "description": "RESERVED, optional. This document's name within its `document_set`, e.g. a schema or domain. Meaningless without `document_set`."
+        }
       }
     }
   },
@@ -216,6 +226,7 @@
         "sql_type": {"type": "string"},
         "semantic_type": {"$ref": "#/$defs/semantic_type"},
         "entity_role": {"$ref": "#/$defs/entity_role"},
+        "cardinality": {"$ref": "#/$defs/cardinality"},
         "enum_values": {"type": "array", "items": {"$ref": "#/$defs/enum_value"}},
         "foreign_key": {
           "type": "object",
@@ -249,6 +260,23 @@
         "verified_by": {"type": ["string", "null"]},
         "verified_at": {"type": "string", "format": "date-time"},
         "source": {"enum": ["query_log_mined", "human", "docs"]}
+      }
+    },
+    "cardinality": {
+      "type": "object",
+      "description": "What is known about this column's distinct count, and how. Carried so a consumer can judge whether a GROUP BY is sane, whether a join will fan out, and whether a filter is selective, WITHOUT issuing a query. lower_bound/upper_bound are the honest interval; `distinct` is a point estimate that always lies inside it. `method` says what produced it, and `exact` is never claimed for an estimate.",
+      "required": ["distinct", "lower_bound", "upper_bound", "method"],
+      "additionalProperties": false,
+      "properties": {
+        "distinct": {"type": "integer", "minimum": 0, "description": "Point estimate, always within the bounds."},
+        "lower_bound": {"type": "integer", "minimum": 0},
+        "upper_bound": {"type": "integer", "minimum": 0},
+        "method": {
+          "enum": ["exact", "hll_sketch", "engine_statistic", "bounds_only"],
+          "description": "exact = a full COUNT(DISTINCT), or a partition merge whose bounds coincide. hll_sketch = a merged sketch, so approximate. engine_statistic = read from the engine's own gathered statistics, which may be stale. bounds_only = partitions were merged and nothing narrowed the interval."
+        },
+        "null_count": {"type": "integer", "minimum": 0},
+        "partitions_covered": {"type": "integer", "minimum": 0, "description": "Partitions behind this figure, if the table is partitioned."}
       }
     },
     "required_filter": {

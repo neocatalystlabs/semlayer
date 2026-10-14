@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "26fea8ed3e9d",
+ "response": "```json\n{\n  \"table_description\": \"Fact table recording individual product returns from order line items, with return date, reason code, quantity, and refund amount.\",\n  \"ai_context\": \"Join to ord_ln for order context, rtn_rsn_dim for reason descriptions, date_dim for temporal analysis. Each row is one return event.\",\n  \"table_type\": \"fact\",\n  \"columns\": [\n    {\n      \"name\": \"rtn_id\",\n      \"description\": \"Unique return transaction identifier; primary key.\"\n    },\n    {\n      \"name\": \"ord_ln_id\",\n      \"description\": \"Foreign key to ord_ln; identifies which order line item was returned.\"\n    },\n    {\n      \"name\": \"rtn_dt\",\n      \"description\": \"Return date; foreign key to date_dim for calendar attributes and temporal filtering.\"\n    },\n    {\n      \"name\": \"rtn_rsn_cd\",\n      \"description\": \"Return reason code; foreign key to rtn_rsn_dim. Four distinct values map to reason descriptions.\"\n    },\n    {\n      \"name\": \"rtn_qty\",\n      \"description\": \"Quantity of units returned in this transaction; ranges 1\u20135 units.\"\n    },\n    {\n      \"name\": \"rtn_amt\",\n      \"description\": \"Refund amount in currency; monetary measure of return value.\"\n    }\n  ]\n}\n```",
+ "usage": {
+  "in": 913,
+  "out": 341
+ }
+}

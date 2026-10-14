@@ -19,12 +19,19 @@ class BigQuerySource:
         self.project = project
 
     @classmethod
-    def from_env(cls, role: str = "reader") -> BigQuerySource:
-        """Connect using .env credentials; role 'reader' (product) or 'admin' (fixtures)."""
+    def from_env(cls, persona: str = "reader") -> BigQuerySource:
+        """Connect using .env credentials; persona 'reader' (product) or 'admin'.
+
+        Called `persona` rather than `role` because on Snowflake `role` now
+        means the SESSION role actually in effect, which is a different thing:
+        this only selects which credential set to read. GCP has no session-role
+        equivalent -- the service account IS the principal -- so the IAM
+        bindings on that account are what the minimal-grant claim rests on.
+        """
         from google.cloud import bigquery
         from google.oauth2 import service_account
 
-        key = ("GOOGLE_APPLICATION_CREDENTIALS_READER" if role == "reader"
+        key = ("GOOGLE_APPLICATION_CREDENTIALS_READER" if persona == "reader"
                else "GOOGLE_APPLICATION_CREDENTIALS_ADMIN")
         creds = service_account.Credentials.from_service_account_file(os.environ[key])
         project = os.environ["GCP_PROJECT"]

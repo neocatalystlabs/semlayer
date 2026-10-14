@@ -54,7 +54,9 @@ def run_fixture(fixture: str, answer_model: str | None = None,
     mod = importlib.import_module(f"generators.{fixture}")
     con = duckdb.connect(":memory:")
     mod.build(con)
-    doc = infer(DuckDBSource(con), llm=AnthropicProvider())
+    # Discovery-only: the published benchmark must not score a key the
+    # fixture's own DDL declared. See link/run.py's use_declared note.
+    doc = infer(DuckDBSource(con), llm=AnthropicProvider(), use_declared=False)
     graph = build_base_graph(doc)
     cq_path = oss / "fixtures" / "cqs" / f"{fixture}.yaml"
     suite = yaml.safe_load(cq_path.read_text())["cq_suite"]["questions"]

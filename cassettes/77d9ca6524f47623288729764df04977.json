@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "1d25ef67b201",
+ "response": "[{\"id\":0,\"verdict\":\"accept\",\"reason\":\"Maps directly to total_tot_sls_amt metric.\"},\n{\"id\":1,\"verdict\":\"accept\",\"reason\":\"Maps directly to ord_hdr_count metric.\"},\n{\"id\":2,\"verdict\":\"accept\",\"reason\":\"Matches avg_tot_amt_per_order with non-cancelled filter.\"},\n{\"id\":3,\"verdict\":\"accept\",\"reason\":\"Maps directly to total_rtn_amt metric.\"},\n{\"id\":4,\"verdict\":\"accept\",\"reason\":\"Maps directly to sub_evt_count metric.\"},\n{\"id\":5,\"verdict\":\"accept\",\"reason\":\"Maps directly to total_tot_spend_amt metric.\"},\n{\"id\":6,\"verdict\":\"accept\",\"reason\":\"Uses defined completed and non-cancelled order metrics.\"},\n{\"id\":7,\"verdict\":\"reject\",\"reason\":\"'Active order lines' is an undefined business term.\"},\n{\"id\":8,\"verdict\":\"reject\",\"reason\":\"'Active orders' not defined; ambiguous filter mapping.\"},\n{\"id\":9,\"verdict\":\"reject\",\"reason\":\"Vague 'trend' request without defined time grain.\"},\n{\"id\":10,\"verdict\":\"accept\",\"reason\":\"Compares two clearly defined ratio metrics.\"},\n{\"id\":11,\"verdict\":\"accept\",\"reason\":\"Uses defined avg and total MRR metrics.\"}]",
+ "usage": {
+  "in": 6773,
+  "out": 1492
+ }
+}

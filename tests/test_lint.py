@@ -190,3 +190,16 @@ def test_mcp_check_sql_tool_is_registered(doc):
     import asyncio
     tools = asyncio.run(srv.list_tools())
     assert "check_sql" in {t.name for t in tools}
+
+
+def test_unknown_dialect_is_a_finding_not_an_exception(doc):
+    """An agent that guesses the dialect must get a fix hint, not a stack trace.
+
+    Found by examples/agent_pipeline: a model called check_sql with
+    dialect="sql", sqlglot raised, the error reached the agent as opaque text,
+    and it retried with "tsql" -- linting DuckDB SQL as T-SQL.
+    """
+    r = lint_sql(doc, "SELECT 1", dialect="sql")
+    assert r["ok"] is False
+    assert _rules(r) == {"unknown_dialect"}
+    assert "duckdb" in r["findings"][0]["fix"]

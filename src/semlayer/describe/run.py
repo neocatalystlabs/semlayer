@@ -113,15 +113,27 @@ def describe_source(doc: dict, stats: dict, llm, no_samples: bool = False,
     return doc
 
 
+def _from_catalog(obj: dict) -> bool:
+    """Was this description read from the warehouse's own catalog?
+
+    A human wrote it. Our generated sentence does not get to replace it --
+    CLAUDE.md's rule for prior knowledge is "never overwritten, gaps filled,
+    conflicts flagged", and this is the first place that rule is enforceable
+    because native comments were not read at all until now.
+    """
+    return any(pv.get("signal") == "catalog_prior" for pv in (obj.get("provenance") or []))
+
+
 def _apply_parsed(t: dict, parsed: dict, pass_n: int) -> None:
-    t["description"] = parsed.get("table_description", t.get("description", ""))
+    if not _from_catalog(t):
+        t["description"] = parsed.get("table_description", t.get("description", ""))
     if parsed.get("ai_context"):
         t["ai_context"] = parsed["ai_context"]
     _apply_table_type(t, parsed.get("table_type"))
     by_name = {c["name"]: c for c in t["columns"]}
     for cd in parsed.get("columns", []):
         c = by_name.get(cd.get("name"))
-        if c is not None and cd.get("description"):
+        if c is not None and cd.get("description") and not _from_catalog(c):
             c["description"] = cd["description"][:200]
     prov = {"signal": "llm", "detail": f"describe pass {pass_n + 1}"}
     t.setdefault("provenance", []).append(prov)

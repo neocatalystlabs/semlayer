@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "26fea8ed3e9d",
+ "response": "```json\n{\n  \"table_description\": \"Legacy order header fact table containing 1,500 individual orders with customer references, order dates, fulfillment status, and monetary amounts.\",\n  \"ai_context\": \"Join to cust_mstr on customer_number=cust_id for customer attributes. Filter by order_dt and status. Note: 947 unique customers across 1,500 orders indicates repeat customers.\",\n  \"table_type\": \"fact\",\n  \"columns\": [\n    {\n      \"name\": \"order_number\",\n      \"description\": \"Unique order identifier; primary key. One row per order.\"\n    },\n    {\n      \"name\": \"customer_number\",\n      \"description\": \"Foreign key to cust_mstr.cust_id. Links order to customer master dimension.\"\n    },\n    {\n      \"name\": \"order_dt\",\n      \"description\": \"Date order was placed. 812 distinct dates across 1,500 orders.\"\n    },\n    {\n      \"name\": \"status\",\n      \"description\": \"Order fulfillment status. Three distinct values; decode required from source system.\"\n    },\n    {\n      \"name\": \"amount\",\n      \"description\": \"Order total monetary value in currency units. Nearly unique per order (1,489 distinct).\"\n    }\n  ]\n}\n```",
+ "usage": {
+  "in": 714,
+  "out": 315
+ }
+}

@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "1d25ef67b201",
+ "response": "[{\"id\": 0, \"reason\": \"Vague, undefined term 'vibe', unanswerable\"}, {\"id\": 1, \"reason\": \"Profitability not modeled; no cost data\"}, {\"id\": 2, \"reason\": \"Unmodeled data: no HR/employee tables\"}, {\"id\": 3, \"reason\": \"Ambiguous, undefined 'good' threshold\"}, {\"id\": 4, \"reason\": \"Ambiguous, no referents defined\"}, {\"id\": 5, \"reason\": \"Undefined business term 'churn'\"}]",
+ "usage": {
+  "in": 6476,
+  "out": 307
+ }
+}

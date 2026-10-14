@@ -20,6 +20,8 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any
 
+from semlayer.source import row_cap
+
 _LEGACY_RE = re.compile(r"(_legacy|_old|_bak|_deprecated|_archive)$")
 _AGG_NAME_RE = re.compile(r"(^|_)(agg|summary|rollup)($|_)|^(dly|mth|wkly)_")
 
@@ -32,9 +34,13 @@ def enrich_source(source, doc: dict, stats: dict) -> dict:
     """
     sl = doc["semantic_layer"]
     _upgrade_enum_decodes(source, sl, stats)
+    # after Link, because "no relationship was discovered for this column" is
+    # what separates a natural key from a foreign key
+    _detect_natural_keys(sl)
     _detect_deprecation(sl, stats)
     _infer_freshness(sl, stats)
     _classify_time_attributes(source, sl, stats)
+    _level_hierarchies(source, sl, stats)
     # BEFORE the metric producers: every metric copies its base table's grain,
     # and reading it earlier silently gave all of them an empty string.
     _infer_grain(sl)
@@ -77,7 +83,8 @@ def _upgrade_enum_decodes(source, sl, stats) -> None:
                 continue
             ts = stats[ptn].table
             q = getattr(source, "qualify", lambda s, n: f'"{s}"."{n}"')(ts.schema, ts.name)
-            pairs = source.query(f'SELECT "{pcn}", "{label_cols[0]}" FROM {q} LIMIT 100')
+            pairs = source.query(
+                f'SELECT "{pcn}", "{label_cols[0]}" FROM {q}{row_cap(source, 100)}')
             c["enum_values"] = [
                 {"value": v, "meaning": str(m), "decode_source": "dictionary_join"}
                 for v, m in pairs if v is not None
@@ -85,6 +92,249 @@ def _upgrade_enum_decodes(source, sl, stats) -> None:
             c.setdefault("provenance", []).append({
                 "signal": "statistic",
                 "detail": f"enum decoded via join to {ptn}.{label_cols[0]}",
+            })
+
+
+# ------------------------------------------------------------ level hierarchies
+# Containment chains INSIDE one dimension: country > state > city,
+# department > category > product. `kind: "level"` was the one hierarchy kind
+# nothing produced -- Link makes `recursive`, Enrich makes `time` -- while gold
+# asserted 8 of them, so the gap was scoreable and unscored.
+#
+# Ordering cannot come from cardinality alone. messy_mart's store_dim has 12
+# distinct states and 12 distinct cities, so the functional dependency holds in
+# BOTH directions and cardinality is silent. It comes from the semantic types
+# the profiler already assigns, with the FD as verification -- which is what
+# docs/ predicted and the one live design decision of the four it listed.
+_GEO_ORDER = {"geo_country": 0, "geo_region": 1, "geo_city": 2, "geo_postal": 3}
+# messy_mart's postal_cd -> state_cd is 2% violated BY DESIGN: the dirty
+# hierarchy that an exact-FD rule misses entirely.
+_FD_TOLERANCE = 0.05
+_MAX_LEVEL_CANDIDATES = 12   # cap the FD queries on a wide denormalized table
+# A level is a grouping ATTRIBUTE. Keys are not levels (`cust_id > cust_nm` is
+# a key and its label, not containment), and neither are flags, names, free
+# text or dates.
+_NEVER_LEVELS = frozenset({"measure", "metadata", "primary_key", "natural_key",
+                           "unique_key"})
+_NEVER_LEVEL_TYPES = frozenset({"flag", "name", "free_text", "date",
+                                "timestamp_event", "identifier", "url",
+                                "json_object", "geo_coordinates"})
+# Two columns at 1:1 are usually ONE level in two encodings -- `mth_nbr` and
+# `mth_nm`, `day_nm` and `day_of_wk` -- and their FD holds in both directions,
+# so it proves nothing. The exception is a known containment family: messy_mart
+# has 12 states and 12 cities and country > state > city is still real, which
+# is why the semantic family and not cardinality decides the order.
+_MIN_LEVEL_GROWTH = 1.5
+
+
+def _level_candidates(t: dict, ts) -> list[dict]:
+    """Columns that could be a level: low-cardinality, not a measure, not unique."""
+    out = []
+    for c in t["columns"]:
+        if c.get("entity_role") in _NEVER_LEVELS:
+            continue
+        stype = c.get("semantic_type") or ""
+        if stype in _NEVER_LEVEL_TYPES:
+            continue
+        # A level GROUPS rows; PII identifies an individual. `cust_email` and
+        # `c_email_address` both formed chains with a low-cardinality column
+        # above them, and an email is never a level of anything.
+        if stype.startswith("pii_"):
+            continue
+        st = ts.columns.get(c["name"])
+        if st is None or st.is_unique or not 2 <= st.n_distinct <= 100_000:
+            continue
+        # An UNTYPED near-unique column is an identifier we failed to name --
+        # `sku_xref.ext_sku` at 399/400 distinct. Cardinality alone cannot
+        # decide this: `postal_cd` is 2213/2252 and a real geographic level,
+        # which is why the test is "untyped AND near-unique" rather than just
+        # near-unique.
+        if stype == "unknown" and st.cardinality_ratio > 0.9:
+            continue
+        out.append(c)
+    return out
+
+
+def _level_groups(cands: list[dict], denormalized: bool) -> list[list[dict]]:
+    """Split candidates into chains that could plausibly belong together.
+
+    Two groupings, because the fixtures need both. A denormalized table carries
+    several entities' attributes side by side -- obt has cust_country/cust_state/
+    cust_city AND prod_department/prod_category -- so a single chain over every
+    candidate would interleave them. But messy_mart's store_dim uses
+    cntry_cd/state_cd/city_nm, where the prefixes all differ and only the
+    semantic family holds them together.
+    """
+    geo = [c for c in cands if c.get("semantic_type") in _GEO_ORDER]
+    rest = [c for c in cands if c.get("semantic_type") not in _GEO_ORDER]
+    groups = [geo] if len(geo) >= 2 else []
+    if denormalized:
+        # Several entities' attributes sit side by side, so a single chain over
+        # every candidate would interleave them: obt carries cust_country /
+        # cust_state / cust_city AND prod_department / prod_category.
+        by_prefix: dict[str, list[dict]] = {}
+        for c in rest:
+            by_prefix.setdefault(c["name"].split("_")[0].lower(), []).append(c)
+        groups.extend(g for g in by_prefix.values() if len(g) >= 2)
+    elif len(rest) >= 2:
+        # A dimension table describes ONE entity, so its codes plausibly form a
+        # single chain -- and prefixes cannot group them: messy_mart's product
+        # hierarchy is dept_cd > category_cd, two different prefixes.
+        groups.append(rest)
+    return groups
+
+
+def _order_levels(group: list[dict], ts) -> list[dict]:
+    """Coarse to fine: the semantic family where it knows, cardinality otherwise."""
+    return sorted(group, key=lambda c: (
+        # `or ""` because semantic_type may be absent or None, and _GEO_ORDER
+        # is keyed by str -- an untyped .get() here is what broke `mypy`.
+        _GEO_ORDER.get(c.get("semantic_type") or "", 99),
+        ts.columns[c["name"]].n_distinct,
+        c["name"]))
+
+
+def _fd_holds(source, tq: str, where: str, coarse: str, fine: str) -> tuple[bool, float]:
+    """Does `fine` determine `coarse`? Returns (holds, clean fraction).
+
+    Scoped by `where` to current records on a versioned dimension. Not a
+    nicety: TPC-DS's `i_item_id -> i_class` is 34% clean across all history and
+    100% clean within the current version, because an item's class changes
+    between versions. Without the scope the detector rejects a real hierarchy.
+    """
+    # SUM(CASE ...) rather than COUNT(*) FILTER (WHERE ...): FILTER is ANSI but
+    # invalid on Oracle, MySQL and T-SQL, and sqlglot passes it through verbatim
+    # rather than rewriting it. Introduced here on 2026-10-12 and caught by the
+    # portability audit the same day.
+    row = source.query(
+        f'SELECT sum(CASE WHEN n > 1 THEN 1 ELSE 0 END), count(*) FROM '
+        f'(SELECT "{fine}", count(DISTINCT "{coarse}") n FROM {tq}{where} '
+        f'GROUP BY 1) g')[0]
+    bad, tot = int(row[0] or 0), int(row[1] or 0)
+    if not tot:
+        return False, 0.0
+    clean = (tot - bad) / tot
+    return clean >= 1 - _FD_TOLERANCE, clean
+
+
+def _scd_scope(t: dict) -> str:
+    """Restrict to current records when the table versions its rows."""
+    scd = t.get("scd") or {}
+    if scd.get("is_current_flag"):
+        return f" WHERE \"{scd['is_current_flag']}\""
+    if scd.get("valid_to"):
+        return f" WHERE \"{scd['valid_to']}\" IS NULL"
+    return ""
+
+
+def _level_hierarchies(source, sl: dict, stats) -> None:
+    """Emit `kind: level` hierarchies verified column-pair by column-pair."""
+    qualify = getattr(source, "qualify", lambda s, n: f'"{s}"."{n}"')
+    for t in sl["tables"]:
+        if t.get("table_type") in ("staging", "operational", "fact", "aggregate"):
+            continue
+        ts = stats.get(t["name"])
+        if ts is None or not ts.row_count:
+            continue
+        cands = _level_candidates(t, ts)
+        tq = qualify(ts.table.schema, ts.table.name)
+        where = _scd_scope(t)
+        denorm = t.get("table_type") == "denormalized"
+        for group in _level_groups(cands, denorm):
+            # Cap PER GROUP, after grouping. Capping the candidate pool first
+            # kept the lowest-cardinality columns globally and so cut the FINE
+            # end off real chains: obt lost cust_city (13 distinct) from
+            # country > state > city while keeping a dozen unrelated flags.
+            ordered = _order_levels(group, ts)[:_MAX_LEVEL_CANDIDATES]
+            _emit_chain(source, sl, t, ts, tq, where, ordered)
+
+
+def _emit_chain(source, sl, t, ts, tq, where, ordered) -> None:
+    """Walk an ordered group, keeping each column whose FD to the last level holds."""
+    levels: list[dict] = []
+    evidence: list[str] = []
+    for c in ordered:
+        if not levels:
+            levels.append(c)
+            continue
+        prev = levels[-1]
+        same_family = (prev.get("semantic_type") in _GEO_ORDER
+                       and c.get("semantic_type") in _GEO_ORDER)
+        grew = (ts.columns[c["name"]].n_distinct
+                >= _MIN_LEVEL_GROWTH * ts.columns[prev["name"]].n_distinct)
+        if not (grew or same_family):
+            continue   # 1:1 with the level above: one level in two encodings
+        holds, clean = _fd_holds(source, tq, where, prev["name"], c["name"])
+        if holds:
+            levels.append(c)
+            evidence.append(f"{c['name']} -> {prev['name']} {clean:.0%}")
+    if len(levels) < 2:
+        return
+    hs = sl.setdefault("hierarchies", [])
+    name = f"{t['name']}_{levels[0]['name']}_levels"
+    if any(h["name"] == name for h in hs):
+        return
+    hs.append({
+        "name": name, "kind": "level", "dimension_table": t["name"],
+        "levels": [{"name": c["name"], "column": c["name"]} for c in levels],
+        "lifecycle": "inferred", "confidence": 0.7,
+        "provenance": [{"signal": "functional_dependency",
+                        "detail": "containment verified per level: " + "; ".join(evidence)
+                                  + (f" (current records only{where})" if where else "")}],
+    })
+
+# ------------------------------------------------------------ natural keys
+def _detect_natural_keys(sl: dict) -> None:
+    """Mark a dimension's business key as `natural_key`, not a foreign key.
+
+    The star-schema pair: a dimension carries a surrogate key as its primary
+    key (`s_store_sk`) and the source system's own identifier beside it
+    (`s_store_id`). The second one is a natural key -- per SPEC it is what
+    `COUNT(DISTINCT ...)` counts entities by, and what an SCD table repeats
+    across versions.
+
+    Nothing emitted this role before: the typing rule is "unique -> key,
+    otherwise foreign key", so a business key came out `unique_key` when the
+    table happened to be small enough for it to be unique and `foreign_key`
+    when it was not. Both are wrong, and which one you got depended on the row
+    count -- `store.s_store_id` is unique at 1 row and repeats at 12 once SCD2
+    versioning kicks in. Gold asserts 31 of these across the corpus, 29 of them
+    on plain dimension tables.
+
+    The discriminator is that a foreign key POINTS somewhere. This runs after
+    Link, so a column with no discovered relationship, on a dimension, with an
+    identifier name, and not itself the primary key, is a business key.
+    """
+    linked = {(r.get("from", {}).get("table", "").lower(), c.lower())
+              for r in sl.get("relationships") or []
+              for c in r.get("from", {}).get("columns") or []}
+
+    for t in sl["tables"]:
+        # Surrogate-vs-business key is a dimensional-modelling distinction and
+        # does not apply to raw landing tables, where an id is ETL bookkeeping.
+        # Note this uses table_type only to EXCLUDE, so it does not inherit the
+        # dimension -> fact confusion that makes gating on `dimension` useless.
+        if t.get("table_type") in ("staging", "operational"):
+            continue
+        pk = {c.lower() for c in t.get("primary_key") or []}
+        if not pk:
+            continue  # no surrogate to be the business key's counterpart
+        for col in t["columns"]:
+            name = col["name"]
+            if name.lower() in pk:
+                continue
+            if (t["name"].lower(), name.lower()) in linked:
+                continue  # it points at something: genuinely a foreign key
+            if col.get("entity_role") not in ("foreign_key", "unique_key"):
+                continue
+            if col.get("semantic_type") != "identifier":
+                continue
+            col["entity_role"] = "natural_key"
+            col["confidence"] = min(col.get("confidence", 0.7), 0.7)
+            col.setdefault("provenance", []).append({
+                "signal": "statistic",
+                "detail": "business key on a dimension: identifier-named, not "
+                          "the primary key, and Link found no relationship for it",
             })
 
 
@@ -222,8 +472,19 @@ def _time_attribute_tag(source, tq: str, d: str, c: dict, tstats, n: int) -> str
         f" FROM {tq}")[0]
     q_match, m_match, y_match, y_dev, lo, hi = (float(x or 0) for x in row)
     if quarter_shaped and 1 <= lo and hi <= 4:
-        return "calendar_quarter" if q_match == n else (
-            "fiscal_quarter" if q_match < 0.9 * n else None)
+        if q_match == n:
+            return "calendar_quarter"
+        # A TWO-valued column on a date dimension is a semester or half, not a
+        # fiscal quarter: its values 1 and 2 pass the quarter shape test, fail
+        # the exact-match check, and used to fall through to `fiscal_quarter`.
+        # AdventureWorksDW has both CalendarSemester and FiscalSemester, and
+        # BOTH came out as fiscal_quarter -- the first of them not even fiscal.
+        # The spec enum has no semester tag, so emit nothing rather than a
+        # wrong one; adding one is a MINOR bump and needs a decision. Every
+        # real quarter column in the corpus has exactly 4 distinct values.
+        if cs.n_distinct >= 3 and q_match < 0.9 * n:
+            return "fiscal_quarter"
+        return None
     if month_shaped and 1 <= lo and hi <= 13:
         return "calendar_month" if m_match == n else (
             "fiscal_period" if m_match < 0.9 * n else None)
@@ -298,7 +559,17 @@ def _monetary_metrics(t: dict, status_col: dict | None, seen: set) -> list[dict]
 
 
 def _count_metric(t: dict, pk: str | None, seen: set) -> dict | None:
-    """Row-count metric on a fact table's primary key."""
+    """Row-count metric on a fact table's SINGLE-column primary key.
+
+    Skipped for a compound key. The caller passes `primary_key[0]`, and one
+    member of a compound key is not the grain: `COUNT(DISTINCT ss_item_sk)` on
+    tpcds_clean's store_sales is 180 against 28,810 rows. The metric would also
+    grant that column a `count_distinct` affordance that silently answers a
+    different question. Composite-key row counts need a tuple-aware metric,
+    which the format has no vocabulary for yet.
+    """
+    if len(t.get("primary_key") or []) > 1:
+        return None
     if not (pk and t.get("table_type") == "fact"):
         return None
     name = f"{t['name']}_count"
@@ -500,11 +771,31 @@ def _reconcile_candidate(
                             group_cols, filt, evidence)
 
 
+_SUMMABLE = ("INT", "DECIMAL", "NUMERIC", "DOUBLE", "FLOAT", "REAL", "BIGNUM")
+
+
+def _summable(c: dict) -> bool:
+    """Can SQL actually SUM this column?
+
+    `semantic_type` is inferred partly from the NAME, so a text column called
+    `Tot_Mdcr_Pymt_Amt` is typed `monetary_value` while being VARCHAR. CMS's
+    API returns every value as a string, and real warehouses store numbers as
+    text all the time -- CSV loads, staging tables, anything built by hand.
+    Reconciliation emitted `SUM("...")` over it and DuckDB raised, which
+    crashed `infer` outright. A warehouse we cannot reconcile must still
+    profile.
+    """
+    return any(k in (c.get("sql_type") or "").upper() for k in _SUMMABLE)
+
+
 def _match_fact_for_aggregate(source, qualify, stats, t: dict, f: dict,
                               agg_measures: list[dict], group_cols: list[str]) -> dict | None:
     """Find the first (agg measure, fact measure) pair on `f` reconciling against `t`, if any."""
     f_measures = [c for c in f["columns"] if c.get("entity_role") == "measure"
-                  and c.get("semantic_type") == "monetary_value"]
+                  and c.get("semantic_type") == "monetary_value" and _summable(c)]
+    agg_measures = [c for c in agg_measures if _summable(c)]
+    if not agg_measures:
+        return None
     gmap, date_pairs = _agg_group_mapping(group_cols, f)
     if not gmap and not date_pairs:
         return None
@@ -528,20 +819,139 @@ def _detect_aggregates(source, sl, stats) -> list[dict]:
     out = []
     qualify = getattr(source, "qualify", lambda s, n: f'"{s}"."{n}"')
     for t in sl["tables"]:
-        if not (_AGG_NAME_RE.search(t["name"]) or t.get("table_type") == "aggregate"):
-            continue
+        # Decided by SHAPE, not by name. The gate used to be
+        # `_AGG_NAME_RE.search(t["name"])`, so rule recovery -- the capability
+        # we describe as central -- only ever ran on summary tables NAMED the
+        # way we named ours (`dly_sls_agg`, `mth_cust_agg`). CMS calls its
+        # per-provider totals `Prov`; a real warehouse might call its rollup
+        # `sales_monthly` or `t_sls_mth`, and every one was skipped in silence.
+        #
+        # The name is still used, as confidence rather than as a gate.
+        if t.get("table_type") in ("staging", "operational"):
+            continue  # ETL bookkeeping is not a rollup of anything
         agg_measures = [c for c in t["columns"] if c.get("entity_role") == "measure"]
         group_cols = [c["name"] for c in t["columns"]
                       if c.get("entity_role") in ("foreign_key", "dimension")]
         if not agg_measures or not group_cols:
             continue
-        for f in facts:
-            entry = _match_fact_for_aggregate(
-                source, qualify, stats, t, f, agg_measures, group_cols
-            )
-            if entry is not None:
-                out.append(entry)
+        named = bool(_AGG_NAME_RE.search(t["name"]) or t.get("table_type") == "aggregate")
+        out.extend(_aggregates_for_candidate(
+            source, qualify, stats, t, facts, agg_measures, group_cols, named))
     return out
+
+
+def _aggregates_for_candidate(source, qualify, stats, t, facts,  # noqa: PLR0913
+                              agg_measures, group_cols, named) -> list[dict]:
+    """Reconcile one rollup candidate against every plausible fact."""
+    found: list[dict] = []
+    attempted: list[str] = []
+    for f in facts:
+        if f["name"] == t["name"]:
+            continue
+        # An aggregate is strictly smaller than the detail it rolls up. This is
+        # the prune that makes dropping the name gate affordable: it runs
+        # before any reconciliation SQL, and `_agg_group_mapping` then requires
+        # the group columns to actually map onto the fact.
+        if not _is_coarser(stats, t["name"], f["name"]):
+            continue
+        gmap, _date_pairs = _agg_group_mapping(group_cols, f)
+        if _grain_covers(source, qualify, stats, t, f, gmap):
+            attempted.append(f["name"])
+        entry = _match_fact_for_aggregate(
+            source, qualify, stats, t, f, agg_measures, group_cols)
+        if entry is None:
+            continue
+        if not named:
+            entry["confidence"] = round(entry["confidence"] - 0.1, 2)
+            entry["provenance"].append({
+                "signal": "statistic",
+                "detail": "identified by shape, not by name: coarser grain over "
+                          f"{f['name']} with reconciling measures",
+            })
+        found.append(entry)
+    if attempted and not found:
+        # the SUMMABLE count, not the raw measure count: the note is about
+        # what reconciliation could actually have tried
+        _record_unreconciled(t, attempted, len([c for c in agg_measures if _summable(c)]))
+    return found
+
+
+_NEAR_MISS_GROUPS = 2        # mapped group columns needed before the test is worth running
+_GRAIN_SLACK = 0.05         # a rollup may cover grain combinations absent from the detail
+
+
+def _grain_covers(source, qualify, stats, t: dict, f: dict, gmap: dict) -> bool:
+    """Does `t` have exactly one row per distinct combination of its grain in `f`?
+
+    This is what actually separates a rollup from a dimension or a sibling
+    fact, and counting mapped column NAMES does not. Any two tables sharing
+    two column names pass a name count -- which claimed `DimEmployee` was a
+    rollup of `ProspectiveBuyer`, and `FactInternetSales` a rollup of
+    `FactResellerSales`. Seven such notes on AdventureWorksDW, almost all
+    nonsense, which is worse than silence.
+
+    A genuine rollup's row count equals the number of distinct grain
+    combinations in its detail: `dly_sls_agg` has one row per day x store in
+    `ord_hdr`. One extra query per surviving pair, and the pairs are already
+    pruned by row count and group mapping.
+    """
+    if len(gmap) < _NEAR_MISS_GROUPS:
+        return False
+    a_rows = stats[t["name"]].row_count
+    if not a_rows:
+        return False
+    f_ts = stats[f["name"]].table
+    cols = ", ".join(f'"{c}"' for c in gmap.values())
+    try:
+        distinct = source.query(
+            f"SELECT count(*) FROM (SELECT DISTINCT {cols} "
+            f"FROM {qualify(f_ts.schema, f_ts.name)})")[0][0]
+    except Exception:  # an unsupported grouping expression is not a rollup claim
+        return False
+    if not distinct:
+        return False
+    # One-directional on purpose. A rollup may carry rows for grain
+    # combinations that have NO detail rows -- which is exactly CMS, where 13
+    # of 400 providers have every service line suppressed, a 3.25% gap that a
+    # symmetric 2% tolerance rejected while being the very phenomenon the note
+    # exists to report. It may not have FEWER rows than the detail's distinct
+    # combinations: then it is not a rollup of that table at all.
+    excess = a_rows - distinct
+    return 0 <= excess <= max(1.0, _GRAIN_SLACK * a_rows)
+
+
+def _record_unreconciled(t: dict, attempted: list[str], n_measures: int) -> None:
+    """Say so when a table LOOKS like a rollup and none of its measures tie out.
+
+    Before aggregate detection became shape-based, "no aggregate_tables entry"
+    and "never even examined" were the same thing, so silence was honest. Now
+    a candidate can be examined against several facts, have its grouping
+    columns map, and still reconcile with nothing -- and silence reads as "no
+    summary table here", which is a different and wrong statement.
+
+    The near miss is worth reporting because it is usually informative rather
+    than absent: CMS's per-provider totals do not tie out against its detail
+    because the detail carries AVERAGES, so the totals reconcile as
+    SUM(avg * count) -- a product the engine cannot express. "This looks like a
+    rollup whose measure is derived" is actionable; nothing is not.
+    """
+    notes = t.setdefault("knowledge", {}).setdefault("usage_notes", [])
+    note = (f"Looks like a pre-aggregated rollup of {', '.join(sorted(attempted))} "
+            f"— its grouping columns map and it carries {n_measures} summable "
+            "measures — but no measure reconciled per group. Its measures may be "
+            "derived (an average or ratio rather than a sum), or the detail may be "
+            "incomplete. Treat as unverified: do NOT route queries to it as a "
+            "pre-aggregate without checking how its measures are built.")
+    if note not in notes:
+        notes.append(note)
+
+
+def _is_coarser(stats, agg_table: str, fact_table: str) -> bool:
+    """Is `agg_table` plausibly a rollup of `fact_table` on row count alone?"""
+    a, f = stats.get(agg_table), stats.get(fact_table)
+    if a is None or f is None:
+        return False
+    return 0 < a.row_count < f.row_count
 
 
 # Per-group reconciliation thresholds (council D7: grand totals are not
@@ -560,7 +970,7 @@ def _group_sums(source, table_q: str, key_col: str, m_col: str,
                 filter_sql: str = "") -> dict | None:
     w = f" WHERE {filter_sql}" if filter_sql else ""
     q = (f'SELECT "{key_col}", round(sum("{m_col}"),2) FROM {table_q}{w} '
-         f"GROUP BY 1 LIMIT {_MAX_GROUPS}")
+         f"GROUP BY 1{row_cap(source, _MAX_GROUPS)}")
     rows = source.query(q)
     if len(rows) >= _MAX_GROUPS:
         return None  # too big to verify honestly -> treat as unverified
@@ -805,7 +1215,7 @@ def _propagate_parent_filters(source, sl, stats) -> None:
         _inherit_rules(source, qualify, stats, sl, child, parent, r, rules)
 
 
-def _inherit_rules(source, qualify, stats, sl, child: dict, parent: dict,  # noqa: PLR0913, PLR0917
+def _inherit_rules(source, qualify, stats, sl, child: dict, parent: dict,  # noqa: PLR0913
                    r: dict, rules: list[dict]) -> None:
     """Attach the parent's measure rules to one child fact when per-key reconciliation proves it."""
     fk, pk = r["from"]["columns"][0], r["to"]["columns"][0]
@@ -852,7 +1262,8 @@ def _child_measures_reconcile(source, qualify, stats, child: dict, parent: dict,
         if not sums:
             continue
         for pm in p_meas:
-            rows = source.query(f'SELECT "{pk}", round("{pm}", 2) FROM {pq} LIMIT {_MAX_GROUPS}')
+            rows = source.query(f'SELECT "{pk}", round("{pm}", 2) FROM {pq}'
+                                f'{row_cap(source, _MAX_GROUPS)}')
             pvals = {k: float(v) for k, v in rows if k is not None and v is not None}
             common = [k for k in sums if k in pvals]
             if len(common) < 20:

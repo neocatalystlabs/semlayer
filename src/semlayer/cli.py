@@ -27,22 +27,39 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("-q", "--quiet", action="store_true", help="Only print failures")
 
     p = sub.add_parser("init", help="Generate minimal-grant setup script for a warehouse")
-    p.add_argument("warehouse", choices=["snowflake", "bigquery"])
+    p.add_argument("warehouse", choices=["snowflake", "bigquery", "postgres"])
     p.add_argument("--database", default="<your_database>")
     p.add_argument("--project", default="<your_project>")
     p.add_argument("--warehouse-name", default="<your_warehouse>")
+    p.add_argument("--schema", default="<your_schema>", help="Postgres: schema to grant on")
 
     p = sub.add_parser("infer", help="Infer a semantic layer from a warehouse")
-    p.add_argument("source", help="duckdb:<path> | snowflake | bigquery")
+    p.add_argument("source",
+                   help="duckdb:<path> | postgresql://... | snowflake | bigquery | postgres")
     p.add_argument("-o", "--out", default="semantic_layer.yaml")
     p.add_argument("--no-llm", action="store_true", help="Deterministic dry-run (no LLM calls)")
     p.add_argument("--no-sample-egress", action="store_true",
                    help="Never include cell values in LLM prompts")
+    p.add_argument("--state", metavar="PATH",
+                   help="Partition-wise profiling with a state sidecar: "
+                        "re-read only partitions whose change token moved")
+    p.add_argument("--no-declared-constraints", action="store_true",
+                   help="Ignore catalog PK/FK declarations and infer them "
+                        "(this is how our published accuracy is measured)")
+    p.add_argument("--manifest", metavar="PATH",
+                   help="dbt target/manifest.json: read how the tables were authored")
     p.add_argument("--context", action="append", metavar="PATH",
                    help="Knowledge docs as inference priors: files, dirs, or globs of "
                         ".md/.txt/.rst/.html prose or .csv/.tsv data dictionaries "
                         "(repeatable). Doc text IS sent to the LLM — don't pass secrets. "
                         "Docs never override data: contradictions land in review.")
+    p.add_argument("--only", metavar="TABLES",
+                   help="Profile only these tables (comma-separated, schema-qualified "
+                        "or bare). The targeted half of incremental re-inference: "
+                        "`semlayer drift` reports which tables changed and what depends "
+                        "on them, and this profiles just those instead of the whole "
+                        "warehouse. The output is a layer covering only these tables — "
+                        "merging it into an existing layer is not yet supported.")
 
     p = sub.add_parser("review", help="Review inferred claims (terminal queue)")
     p.add_argument("doc", help="semantic layer YAML path")
@@ -59,7 +76,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--json", action="store_true", help="machine-readable output")
     p = sub.add_parser("drift", help="Detect warehouse drift vs a semantic layer")
     p.add_argument("doc", help="semantic layer YAML path")
-    p.add_argument("source", help="duckdb:<path> | snowflake | bigquery")
+    p.add_argument("source",
+                   help="duckdb:<path> | postgresql://... | snowflake | bigquery | postgres")
     p.add_argument("--apply", action="store_true",
                    help="Apply orphaning/conflicts to the doc (writes in place)")
     p.add_argument("--cqs", help="CQ suite YAML to regression-check")
@@ -111,8 +129,8 @@ def _cmd_validate(args: argparse.Namespace) -> int:
 def _cmd_init(args: argparse.Namespace) -> int:
     from semlayer.init_cmd import render
 
-    print(render(args.warehouse, database=args.database,
-                 project=args.project, warehouse_name=args.warehouse_name))
+    print(render(args.warehouse, database=args.database, project=args.project,
+                 warehouse_name=args.warehouse_name, schema=args.schema))
     return 0
 
 
@@ -128,6 +146,17 @@ def _cmd_infer(args: argparse.Namespace) -> int:
         from semlayer.llm.provider import AnthropicProvider
 
         llm = AnthropicProvider()
+    state = None
+    if args.state:
+        from semlayer.incremental import LocalStateStore
+
+        state = LocalStateStore(args.state)
+    lineage = None
+    if args.manifest:
+        from semlayer.lineage import load_dbt_manifest
+
+        lineage = load_dbt_manifest(args.manifest)
+        print(f"manifest: {len(lineage.parents)} tables with declared lineage")
     context = None
     if args.context:
         from semlayer.context import load_context
@@ -136,8 +165,13 @@ def _cmd_infer(args: argparse.Namespace) -> int:
         print(f"context: {len(context.chunks)} doc sections, "
               f"{len(context.dictionary)} dictionary rows")
     src = open_source_from_uri(args.source)
+    only = {x.strip() for x in args.only.split(",") if x.strip()} if args.only else None
+    if only:
+        print(f"profiling {len(only)} table(s) only: {', '.join(sorted(only))}")
     doc, report = infer_with_report(src, llm=llm, no_sample_egress=args.no_sample_egress,
-                                    context=context)
+                                    context=context, only=only, lineage=lineage,
+                                    use_declared=not args.no_declared_constraints,
+                                    state=state)
     if context:
         report["context"] = {"chunks": len(context.chunks),
                              "dictionary_rows": len(context.dictionary)}
