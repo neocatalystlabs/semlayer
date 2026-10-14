@@ -23,13 +23,23 @@ dependencies = [
 warehouses = [
     "snowflake-connector-python>=3.12",
     "google-cloud-bigquery>=3.25",
+    "psycopg[binary]>=3.2",
 ]
 dev = [
     "pytest>=8.0",
     "python-dotenv>=1.0",
-    "ruff>=0.15",
+    # Upper-bounded deliberately: CI installed ruff unpinned, so a minor
+    # release that ADDS a rule (0.16 added PLR0917) turned a green local
+    # gate into a red CI run. Same failure mode as the mcp<2 pin.
+    "ruff>=0.17,<0.18",
     "mypy>=2.0",
     "pip-audit>=2.10",
+    # pgserver bundles a PostgreSQL binary, so tests/test_postgres.py is a real
+    # integration test against a real server with no credentials and no Docker
+    # -- unlike the Snowflake and BigQuery live tests, it runs in CI. It skips
+    # if absent, so this is the only thing making that coverage happen.
+    "pgserver>=0.1.4; sys_platform != 'win32'",
+    "psycopg[binary]>=3.2",
 ]
 
 [project.urls]
@@ -85,6 +95,7 @@ max-branches = 14
 "fixtures/*" = ["D", "PLR", "T20", "E501", "C901"]
 "src/semlayer/cli.py" = ["T20"]          # the CLI prints by design
 "src/semlayer/benchmark.py" = ["T20"]
+"examples/*" = ["T20"]                   # the examples print their report
 # E501 inside a FROZEN prompt string (cassette-key bytes); cannot rewrap
 "src/semlayer/describe/run.py" = ["E501"]
 

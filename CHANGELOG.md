@@ -2,6 +2,306 @@
 
 ## Unreleased
 
+- **SPEC (additive, MINOR at release): every column carries a `cardinality`
+  block.** What is known about its distinct count, and how that was obtained:
+
+  ```yaml
+  cardinality:
+    distinct: 60000          # point estimate, always inside the bounds
+    lower_bound: 59753
+    upper_bound: 60000
+    method: hll_sketch       # exact | hll_sketch | engine_statistic | bounds_only
+    null_count: 0
+    as_of: 2026-10-13T06:06:54+00:00
+    partitions_covered: 6
+  ```
+
+  Published because a consumer can then decide whether a `GROUP BY` is sane,
+  whether a join will fan out, and whether a filter is selective, without
+  issuing a query -- and because the UNCERTAINTY travels with the number
+  instead of being dropped. A whole-table profile counts exactly and says
+  `exact`; a partition-wise profile often only has an interval, and
+  `bounds_only` admits that rather than presenting a bound as a measurement.
+  `exact` is never claimed for an estimate.
+
+  Note for the release cut: `calendar_semester`/`fiscal_semester` is the other
+  additive change waiting, and both can ride one MINOR bump.
+
+- **The Snowflake session role is passed explicitly, and required.**
+  `snowflake.connector.connect` never received a `role=`, so the session ran
+  under whatever the account's `DEFAULT_ROLE` happened to be. That worked only
+  because `semlayer init` creates a service user with `DEFAULT_ROLE` set to the
+  reader role it also creates, and broke silently the moment anyone ran
+  semlayer as their own account -- profiling under every privilege they hold.
+  A minimal-grant claim is about the role actually IN EFFECT, so inheriting one
+  made the claim unverifiable.
+
+  `SNOWFLAKE_READER_ROLE` (or `SNOWFLAKE_ROLE`) is now required, with an error
+  naming the variable, and the role in effect is recorded in the run report
+  under `access.session_role`. `semlayer init snowflake` prints the exports.
+  `from_env(role=...)` is renamed `persona=...` on both connectors, since
+  `role` now means the session role; BigQuery has no session-role equivalent,
+  so its minimal-grant claim rests on the service account's IAM bindings.
+
+- **Native COMMENT text is read as prior knowledge.** If a warehouse has
+  column comments, a human has already written down what we are inferring, and
+  their sentence is better evidence than any naming heuristic -- yet we ignored
+  them entirely while nine separate naming vocabularies were failing on schemas
+  we did not author.
+
+  Table and column comments become a `description` carrying provenance
+  `catalog_prior` (already in the spec's signal enum, so the format is
+  unchanged), and **Describe no longer overwrites one**. That enforces the
+  "priors are never overwritten, gaps are filled" rule for the first time,
+  because comments were not read at all before.
+
+  DuckDB is verified end to end, and exposes comments ONLY through
+  `duckdb_tables()`/`duckdb_columns()` -- not `information_schema`, which is
+  why a generic query finds nothing. Snowflake is implemented from its plain
+  `comment` column; the nightly live test has no commented objects, so it is
+  unverified and degrades to no priors rather than a failure. **BigQuery is
+  deliberately not implemented**: its descriptions live in
+  `INFORMATION_SCHEMA.COLUMN_FIELD_PATHS` and `TABLE_OPTIONS`, dataset-scoped
+  rather than project-wide, and SQL I cannot run would fail silently as "this
+  warehouse has no comments" -- indistinguishable from the truth and worse than
+  a recorded gap.
+
+- **`table_type` is now scored, and reported DIRECTIONALLY.** It was never in
+  `scoring.py` -- only `fixtures/coverage_audit.py` computed it -- so a
+  classifier sitting at 0.65 corpus-wide never appeared in any gate. `Score`
+  gains `n_tables`, `table_type_accuracy`, `dim_called_fact`,
+  `fact_called_dim` and `table_type_confusions`.
+
+  Split because the two directions are not equally costly and one number hides
+  that. A dimension called a fact produces spurious metrics, which land in the
+  review queue where a human rejects them: visible and cheap. A fact called a
+  dimension produces NOTHING and silently drops the table out of aggregate
+  reconciliation -- the mechanism that recovers an undocumented filter -- with
+  no wrong answer to notice. Across three fixtures: **5 dimension->fact
+  against 1 fact->dimension**, so the expensive direction is the rare one,
+  which the single 0.73 figure did not say.
+
+- **`role_accuracy_strict`, and a number of ours it corrects.** Lenient role
+  accuracy credits primary/unique/natural key confusions as adjacent --
+  reasonable while nothing emitted `natural_key`, misleading the moment
+  something did. The `natural_key` detector was reported in this release as
+  worth +0.009 on `tpcds_clean`, which is the lenient figure; the leniency had
+  been crediting the exact confusion the detector removed. Strictly it is
+  **0.800 -> 0.854, +0.054** -- six times larger. Reported alongside rather
+  than replacing, so no published number moves.
+
+- **A table that looks like a rollup and reconciles with nothing now says so.**
+  Before aggregate detection became shape-based, "no `aggregate_tables` entry"
+  and "never examined" were the same thing and silence was honest. Now a
+  candidate can be examined against several facts, have its grouping map, and
+  still tie out with nothing -- and silence reads as "no summary table here",
+  a different and wrong statement. CMS's per-provider totals are exactly this:
+  they do not reconcile because the detail carries AVERAGES, so the totals are
+  `SUM(avg * count)`, a product the engine cannot express.
+
+  Gated on grain coverage -- one row per distinct combination of its grain in
+  the detail -- not on matching column names. A name count was the first
+  attempt and produced seven notes on AdventureWorksDW claiming `DimEmployee`
+  was a rollup of `ProspectiveBuyer` and `FactInternetSales` a rollup of
+  `FactResellerSales`. The test is one-directional: a rollup MAY cover grain
+  combinations absent from the detail, which is precisely CMS's 13 of 400
+  fully suppressed providers, and a symmetric 2% tolerance rejected the very
+  phenomenon the note exists to report. One note on CMS, zero across four
+  other warehouses.
+
+- **`infer --only` profiles just the named tables.** The targeted half of
+  incremental re-inference: `drift.py` already computes which tables changed
+  and what depends on them, and this lets that answer be acted on instead of
+  re-profiling the warehouse. The filter applies after `list_tables()` so no
+  connector changes -- enumeration is one information_schema query,
+  per-column profiling is the expensive part. A name matching nothing is an
+  error with a hint, not a quietly thinner layer. Merging a subset back INTO
+  an existing layer is deliberately not included: it has to interact with
+  drift's orphaning state machine, which governs what may disappear.
+
+- **Key discovery consulted naming before statistics, so a textbook foreign
+  key could be invisible.** `link/candidates.py` built its parent and child
+  lists from `_KEYISH_RE` (`(_id|_key|_sk|_cd|_code|_no|_nbr|_number)$`) and
+  from entity roles that themselves came from naming rules. A column outside
+  that vocabulary never became a candidate, so its uniqueness and inclusion
+  were never measured. The tier order is documented as statistics, then
+  naming, then LLM; naming was in fact the gate.
+
+  Found on CMS's Medicare Physician files. `Rndrng_NPI` is the National
+  Provider Identifier: unique across 400 summary rows, non-unique across the
+  detail, **100% inclusion**. It ends in `_npi`, so Link returned **zero
+  relationships on a two-table warehouse**. It now returns the one correct
+  relationship and nothing else.
+
+  Parents are now any unique, populated, key-capable column, whatever it is
+  called. Continuous numerics are excluded -- a unique DOUBLE is a measure
+  that happens not to repeat -- and a one-row table is excluded, because it
+  makes every column unique. Named candidates are ordered first so
+  `MAX_PARENTS` truncates the speculative tail rather than dropping a real key
+  by dict order. Children are any non-unique dimension of a key-capable type,
+  not only numeric ones: widening parents alone changed nothing, because the
+  CMS detail column is a VARCHAR typed enum/dimension and failed every child
+  test too.
+
+  Two guards were needed, both discovered by measurement rather than design:
+
+  **Alternate-key paths are collapsed, role-playing is kept.** Natural-key
+  paths were previously invisible, so widening newly produced
+  `ord_hdr.ord_dt -> date_dim.cal_dt` alongside the existing
+  `ord_hdr.date_key -> date_dim.date_key`. Both have 100% inclusion and a
+  unique parent; statistics cannot separate them. Asserting both hands the
+  compiler two equally-short paths between the tables and it refuses to group
+  through the ambiguity, so the redundant path costs a capability. The
+  distinction is that role-playing uses different child columns referencing
+  the SAME parent column (`cs_sold_date_sk` and `cs_ship_date_sk` both reach
+  `d_date_sk`) while alternate keys reference DIFFERENT parent columns. Keying
+  the de-duplication on the parent column instead collapsed role-playing and
+  took `tpcds_clean` from 102 relationships to 79.
+
+  **Dates and names are not key references.** `ord_rtn.rtn_dt` is 100%
+  contained in `date_dim.cal_dt` with an exactly matching token, and
+  `etl_log.job_nm -> job_ctrl.job_nm` scores 1.20 on naming -- identical to
+  the CMS case we want. Statistics and naming both say yes; only the semantic
+  type says no. Admitting them took messy_mart's FK precision from 0.973 to
+  0.900 against a floor of 0.95 that this release would otherwise have
+  shipped broken.
+
+  Final state: `cms_physician` 0 -> 1 correct relationship; `messy_mart`,
+  `tpcds_clean`, `collision_heavy` and AdventureWorksDW byte-identical to
+  before (37/33, 102/101, 11/11, and 39 found / 32 correct at recall 0.78).
+
+- **A dimension with two numeric columns was classified as a fact.** Every
+  graph-signal dimension rule required `n_measures == 0`, which caught only 39
+  of 99 gold dimensions corpus-wide; the rest fell through to the measure-heavy
+  fact rule. `customer` in `tpcds_clean` is referenced by **eleven tables** and
+  was called a fact because it has 2 measures. Fan-in beats measure count: a
+  dimension with a few numeric attributes is still a dimension. Measured over
+  the corpus, `fk_in > fk_out` catches 74 of 99 dimensions and only 2 facts.
+  The strong fact rule also now requires `fk_in == 0` — nothing references a
+  fact — which lifts its precision from 5 wrong dimensions to zero.
+
+  Table naming rules now fold the name the same way column rules do. This was
+  the third place the PascalCase blind spot was hiding: `DimCustomer`
+  lowercased to `dimcustomer`, which the `_`-delimited dimension rule never
+  matched, so on a PascalCase warehouse every `Dim*` table was left to the
+  graph heuristics.
+
+  Fan-in alone over-reaches, because a fact can be referenced by other
+  facts: `fan_trap`'s `orders` has `payments` and `shipments` pointing at it,
+  and the ungated rule relabelled it a dimension — breaking the fixture built
+  to test that shape, and the only pre-existing table_type floor test we have
+  (`test_describe.py`, fan_trap >= 0.99), which the `--no-llm` audit never
+  exercised. The rule is guarded on shape instead: a dimension is DESCRIPTIVE
+  and therefore wide, so a table with five columns or fewer that carries a
+  measure is a transaction record, not a dimension. The guard costs 22 of the
+  74 dimensions the bare rule catches.
+
+  **`table_type` accuracy 0.65 -> 0.72 corpus-wide, 0.50 -> 0.79 on
+  `tpcds_clean`, and 0.58 -> 0.92 on AdventureWorksDW** scored against the
+  vendor's own Dim/Fact prefixes. Every existing test stays green, no fixture
+  regresses, and semantic type and entity role are unchanged at 0.815/0.845.
+  This metric had never been scored before this week — `scoring.py` covers
+  semantic type, entity role and primary keys only.
+
+  The 27 remaining corpus errors are mostly `dimension -> unknown|operational`
+  on tables where Link found no relationships at all (`fk_in == 0`), so they
+  are blocked on Link recall rather than on this classifier.
+
+- **Numeric columns with few distinct values were labelled codes, so nobody
+  could total them.** `store.s_floor_space` holds square footage; on a small
+  table it has six distinct values, and the numeric fallback read "few distinct
+  values" as "this is a status code". A code is something you group by, so
+  total floor space became unaskable. 16 columns on `tpcds_clean` alone.
+
+  Three separate changes, each measured on its own because the first attempt
+  bundled them and traded one tier against the other:
+
+  1. The fallback now returns `quantity` with role `dimension` — the right
+     type, and the grouping role the low cardinality actually evidences.
+     Returning `measure` would have been equally wrong: for 44 of 57 such
+     columns in `tpcds_clean` gold says `dimension`. In the population that
+     reaches this fallback gold says `quantity` 81 times and `code` never,
+     because every numeric code in the corpus is name-signalled.
+  2. A generic `_cd`/`_code` suffix rule, plus grade/bucket/band/tier. The
+     existing code rule matched a vocabulary of stems (typ, cat, class, seg,
+     chnl, rsn), so `zone_cd` and `priority_cd` fell through to the numeric
+     fallback and came out as quantities.
+  3. `cntry` added to the geo_country vocabulary. The new generic rule
+     shadowed it: `cntry_cd` previously fell through to the LLM, which
+     correctly called it `geo_country`, and the generic rule overwrote that
+     with a plain `code` on three tables.
+
+  Deterministic type accuracy **0.786 -> 0.815** across 785 gold columns, role
+  unchanged at 0.845, and no fixture regresses on either.
+
+  The LLM tier is unchanged at **0.904/0.778** on messy_mart (0.894 with
+  `--no-sample-egress`), which took two further corrections to achieve. The
+  generic rules are pinned at confidence **0.5**, not 0.55: `_rule_name_table`
+  adds +0.15 to any code with <= 30 distinct values, so 0.55 landed on exactly
+  0.70 — not *below* `ESCALATE_BELOW` — and those columns stopped reaching the
+  LLM. Since `_role_for` maps every code to `dimension`, three columns that are
+  really primary or foreign keys then regressed. The type signal from a `_cd`
+  suffix is reliable; the role signal is not, so the LLM must still be asked.
+  No committed cassette is invalidated.
+
+- **Every PascalCase key column in the world typed as a measure.** Found by
+  acquiring AdventureWorksDW, a real Microsoft sample warehouse, as the first
+  external evaluation dataset. Every naming rule in `profile/typing_rules.py`
+  matches `_`-delimited tokens — `_ID_NAME_RE` is `(^|_)(id|key|sk|pk)$` — so
+  `DateKey` lowercased to `datekey`, matched nothing, and fell through to the
+  numeric fallback as `semantic_type=quantity, entity_role=measure`.
+
+  One miss, and the whole chain fell over: with no identifier columns there were
+  no keys to test for uniqueness or inclusion, so on that warehouse we found
+  **0 of 41 declared foreign keys and 1 of 28 declared primary keys**, and
+  `DimDate` and `DimCustomer` were classified as fact tables.
+
+  `classify()` now folds names to lower_snake_case at the entry point
+  (`normalise_name`), so every existing rule sees tokens regardless of the
+  warehouse's convention. Measured against Microsoft's own declared
+  constraints: **FK recall 0.00 -> 0.78** (32 of 41, precision 0.82), **PK
+  0.04 -> 0.75** (21 of 28), review queue 306 -> 159 items. Snake_case names
+  are unchanged, and `messy_mart` scores byte-identically before and after
+  (type 0.818, role 0.778, PK precision 0.870, recall 0.690) — the fixture
+  corpus never exercised this because we authored all of it in snake_case.
+
+- **New: `fixtures/external/`** — acquired real-world evaluation datasets. The
+  repo ships the fetch script, the licence record and the checksum; the data is
+  gitignored and never committed. Datasets are classified into two tracks: **P**
+  (permissive explicit licence or a US-government work — gold may ship and
+  numbers may be published) and **I** (share-alike, non-commercial, unknown, or
+  credentialed — runs locally, no derived number may ever be published). A
+  published number is valid only if every dataset behind it is track P, and P
+  and I figures are never averaged.
+
+- **New: `fixtures/coverage_audit.py`** — reports, per fixture, which shapes are
+  present in the data, which are asserted in gold, and which the engine emits.
+  These are three different findings with three different fixes, and conflating
+  them produced four wrong gap claims in an earlier planning document.
+
+- **New: `examples/agent_pipeline/`** — three agents in a chain (pull revenue,
+  break it down by category, escalate a plan breach) run twice over the same
+  warehouse: once with `list_schema` + `run_sql` only, once with the semlayer
+  MCP server attached over real stdio. Replays from committed cassettes, so it
+  needs no API key. Raw mode reports $16,300,242.85 against a true
+  $14,621,503.30 and files a ticket for a $300,242.85 plan breach that did not
+  happen; layer mode reports the right number and files nothing. The whole
+  divergence is one `WHERE sts_cd <> 'X'` the layer recorded and the bare
+  warehouse could not express. `tests/test_agent_pipeline.py` pins the result.
+
+  Two things the example documents rather than hides: the layer worked here by
+  **prevention, not correction** (the agent read the filter from `table_detail`
+  and got it right first try), and fan-out never arose in this chain, so the
+  fan-out guard is demonstrated by `test_fan_trap.py` instead of staged here.
+
+- **`check_sql` turned an unknown dialect into a stack trace.** Found by the
+  example above: a model called it with `dialect="sql"`, sqlglot raised
+  `Unknown dialect`, the agent received opaque text and retried with `"tsql"`
+  — linting DuckDB SQL as T-SQL. `lint_sql` now validates the dialect up front
+  and returns an `unknown_dialect` finding whose `fix` lists the valid names,
+  which the agent can act on. Recoverable by the loop, as every other finding
+  already was.
+
 - **The benchmark table reported 34/38 as 0.90.** `pass_rate` is stored as
   `round(passed/total, 3)` and the report formatted that again to 2dp, so
   0.8947 became 0.895 and printed as 0.90 — while the HEADLINE note and the
@@ -288,3 +588,25 @@ First public beta.
 Known gaps: Bedrock/Vertex routing; LookML/RDF/Ossie exporters; hierarchy
 auto-inference (review-queued by design pending corroboration signals);
 hosted service.
+
+- **SPEC (additive, MINOR at release): `document_set` and `part` are reserved.**
+  Insurance against a one-way door, taken before it costs anything.
+
+  §4 required every reference to resolve *within the document*, with no notion
+  of a document set anywhere in the spec or schema. A document measures ~1.2 KB
+  per column, so a warehouse of 30,000 tables is ~544 MB in one file — meaning
+  a large warehouse could not be described at all without splitting, and
+  splitting would have broken §4 for every conforming consumer. In an
+  Apache-2.0 spec whose point is interoperability, that is a breaking change to
+  other people's code.
+
+  Both fields are **optional and unemitted**. A document without `document_set`
+  is self-contained and a validator that sees none behaves exactly as before —
+  nothing changes for any producer or consumer today. §4 now reads "within the
+  document — or, where the document declares a `document_set`, within that
+  set", and a consumer handed one part of a set it cannot resolve SHOULD refuse
+  rather than report the missing objects as dangling. `validate` does exactly
+  that.
+
+  The point is the asymmetry: one optional field now, versus a MAJOR break
+  later.

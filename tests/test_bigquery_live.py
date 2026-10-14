@@ -27,7 +27,7 @@ pytestmark = pytest.mark.skipif(
 @pytest.fixture(scope="module")
 def reader():
     from semlayer.connectors.bigquery import BigQuerySource
-    src = BigQuerySource.from_env(role="reader")
+    src = BigQuerySource.from_env(persona="reader")
     yield src
     src.close()
 

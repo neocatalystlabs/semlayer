@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "5d5ce4dbf19e",
+ "response": "```json\n[\n  {\"id\": 0, \"verdict\": \"plausible\", \"confidence\": 0.95, \"reason\": \"hire_dt \u2192 cal_dt: dates naturally reference date dimension\"},\n  {\"id\": 1, \"verdict\": \"plausible\", \"confidence\": 0.98, \"reason\": \"store_id \u2192 store_id: direct ID match, perfect cardinality\"},\n  {\"id\": 2, \"verdict\": \"plausible\", \"confidence\": 0.96, \"reason\": \"raw_cust_id \u2192 cust_id: staging to master customer reference\"},\n  {\"id\": 3, \"verdict\": \"plausible\", \"confidence\": 0.95, \"reason\": \"open_dt \u2192 cal_dt: store opening date references date dimension\"},\n  {\"id\": 4, \"verdict\": \"plausible\", \"confidence\": 0.99, \"reason\": \"whs_id \u2192 whs_id: perfect match, store to warehouse reference\"},\n  {\"id\": 5, \"verdict\": \"plausible\", \"confidence\": 0.97, \"reason\": \"subscription event cust_id references customer master\"},\n  {\"id\": 6, \"verdict\": \"plausible\", \"confidence\": 0.96, \"reason\": \"evt_dt \u2192 cal_dt: event date references date dimension\"},\n  {\"id\": 7, \"verdict\": \"plausible\", \"confidence\": 0.99, \"reason\": \"evt_typ_cd \u2192 evt_typ_cd: perfect cardinality match, type code\"},\n  {\"id\": 8, \"verdict\": \"plausible\", \"confidence\": 0.97, \"reason\": \"web_evt cust_id references customer master, near-complete coverage\"},\n  {\"id\": 9, \"verdict\": \"plausible\", \"confidence\": 0.98, \"reason\": \"web_evt ord_id \u2192 ord_hdr: web events reference order headers\"},\n  {\"id\": 10, \"verdict\": \"implausible\", \"confidence\": 0.92, \"reason\": \"ord_id unlikely references ord_ln_id; different semantic domains\"}\n]\n```",
+ "usage": {
+  "in": 1035,
+  "out": 495
+ }
+}

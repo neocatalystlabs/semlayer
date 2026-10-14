@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"store_nm\",\n    \"semantic_type\": \"name\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": null,\n    \"rationale\": \"Store name identifier; VARCHAR with 40 distinct values, unique, human-readable labels\"\n  }\n]\n```",
+ "usage": {
+  "in": 566,
+  "out": 93
+ }
+}

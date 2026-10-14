@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "1d25ef67b201",
+ "response": "[{\"id\": 0, \"verdict\": \"accept\", \"reason\": \"Maps directly to total_tot_sls_amt metric with date filter.\"},\n{\"id\": 1, \"verdict\": \"accept\", \"reason\": \"Maps directly to ord_hdr_count metric.\"},\n{\"id\": 2, \"verdict\": \"accept\", \"reason\": \"Matches avg_tot_amt_per_order metric and synonym exactly.\"},\n{\"id\": 3, \"verdict\": \"accept\", \"reason\": \"Maps directly to total_rtn_amt metric.\"},\n{\"id\": 4, \"verdict\": \"accept\", \"reason\": \"Maps directly to sub_evt_count metric.\"},\n{\"id\": 5, \"verdict\": \"accept\", \"reason\": \"Matches avg_mrr_amt_per_subscription_event metric exactly.\"},\n{\"id\": 6, \"verdict\": \"accept\", \"reason\": \"Computable from total_tot_amt_completed and total_tot_amt metrics.\"},\n{\"id\": 7, \"verdict\": \"reject\", \"reason\": \"'All order lines' ambiguous vs filtered total_line_amt metric.\"},\n{\"id\": 8, \"verdict\": \"reject\", \"reason\": \"No metric exists for average spend per customer.\"},\n{\"id\": 9, \"verdict\": \"reject\", \"reason\": \"Vague 'relationship/trend' with mismatched metric filters.\"},\n{\"id\": 10, \"verdict\": \"reject\", \"reason\": \"'All order lines' ambiguous since total_unit_price is filtered.\"},\n{\"id\": 11, \"verdict\": \"reject\", \"reason\": \"No metric for completed order count to compute return rate.\"}]",
+ "usage": {
+  "in": 6800,
+  "out": 2271
+ }
+}

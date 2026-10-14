@@ -144,3 +144,45 @@ def test_no_fiscal_warehouse_needs_no_choice():
     out = compile_metric(doc, "total_tot_amt", time_grain="quarter")
     assert "sql" in out and "date_trunc" in out["sql"]
     con.close()
+
+
+def test_a_semester_is_not_a_fiscal_quarter():
+    """A two-valued date-dimension column must not be tagged a fiscal quarter.
+
+    `quarter_shaped` was `2 <= n_distinct <= 4`, so a semester's values (1, 2)
+    passed the shape test, failed the exact EXTRACT(QUARTER) match, and fell
+    through to `fiscal_quarter`. AdventureWorksDW carries both CalendarSemester
+    and FiscalSemester and BOTH came out `fiscal_quarter` -- the first of them
+    not even fiscal.
+
+    The spec's `time_attribute` enum has no semester, so the correct output is
+    NO tag rather than a wrong one. Adding `calendar_semester`/
+    `fiscal_semester` is a MINOR spec bump and needs a decision. Every real
+    quarter column in the corpus has exactly 4 distinct values, so requiring 3
+    costs nothing.
+    """
+    from semlayer.enrich.run import _time_attribute_tag
+
+    class _C:
+        def __init__(self, n):
+            self.n_distinct = n
+
+    class _TS:
+        def __init__(self, n):
+            self.columns = {"c": _C(n)}
+
+    class _Src:
+        """Values 1 and 2 against a date column: no row matches EXTRACT(QUARTER)."""
+
+        def __init__(self, q_match):
+            self.q_match = q_match
+
+        def query(self, _sql):
+            # (q_match, m_match, y_match, y_dev, lo, hi)
+            return [(self.q_match, 0, 0, 2000, 1, 2)]
+
+    col = {"name": "c", "sql_type": "INTEGER"}
+    # a semester: 2 distinct values, no quarter agreement -> no tag at all
+    assert _time_attribute_tag(_Src(0), "t", "d", col, _TS(2), 100) is None
+    # a genuine fiscal quarter keeps its tag
+    assert _time_attribute_tag(_Src(0), "t", "d", col, _TS(4), 100) == "fiscal_quarter"

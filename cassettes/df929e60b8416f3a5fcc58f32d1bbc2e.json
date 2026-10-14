@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "a2ec036e2008",
+ "response": "[\n {\"id\": 0, \"correct\": false, \"useful\": true, \"issue\": \"correlation with load_ts unverified\"},\n {\"id\": 1, \"correct\": true, \"useful\": true, \"issue\": \"\"},\n {\"id\": 2, \"correct\": true, \"useful\": true, \"issue\": \"\"},\n {\"id\": 3, \"correct\": false, \"useful\": true, \"issue\": \"crt_dt likely subscription creation, not metadata\"},\n {\"id\": 4, \"correct\": true, \"useful\": true, \"issue\": \"\"},\n {\"id\": 5, \"correct\": false, \"useful\": true, \"issue\": \"order transactions unsupported by evidence\"},\n {\"id\": 6, \"correct\": true, \"useful\": true, \"issue\": \"\"},\n {\"id\": 7, \"correct\": true, \"useful\": true, \"issue\": \"\"},\n {\"id\": 8, \"correct\": true, \"useful\": true, \"issue\": \"\"}\n]",
+ "usage": {
+  "in": 2322,
+  "out": 1033
+ }
+}

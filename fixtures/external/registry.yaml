@@ -1,0 +1,200 @@
+# Real-world evaluation datasets. The repo ships the RECIPE, never the data.
+#
+# track: P  publishable  -- permissive, explicit licence (or a US-government
+#                           work). Gold may ship; numbers may be published.
+#           I  internal   -- share-alike, non-commercial, unknown, or
+#                           credentialed. Runs locally only. NO number derived
+#                           from a track-I dataset may appear in docs/, the
+#                           README, benchmark default output, or any collateral,
+#                           with or without a caveat.
+#
+# A published number is valid only if EVERY dataset behind it is track P.
+# Never average a P figure with an I figure.
+#
+# licence_verified is the date a human opened the actual licence file. It is not
+# the date someone read a README, a blog post, or recalled the terms.
+
+datasets:
+
+  - name: adventureworks_dw
+    track: P
+    domain: manufacturing_sales_finance
+    source: https://github.com/microsoft/sql-server-samples
+    licence: MIT
+    licence_url: https://github.com/microsoft/sql-server-samples/blob/master/license.txt
+    licence_verified: 2026-10-09
+    licence_notes: >
+      MIT covers the sql-server-samples repository; the AdventureWorksDW
+      install-script archive is published from that repo's release page.
+    redistributable: true          # we still ship only the fetch script
+    tables: 29
+    columns: 349
+    rows: 1047466
+    features:
+      # PRESENT IN THE DATA, NOT YET DETECTED: Link discovers only 1 of the 3
+      # declared FactInternetSales -> DimDate FKs, so the role-playing shape is
+      # in this warehouse but the engine does not yet see it. Listed because it
+      # is what this dataset can validate once Link's recall improves.
+      - role_playing_dimension     # FactInternetSales -> DimDate x3 (order/due/ship)
+      - fiscal_calendar            # DimDate.FiscalYear / FiscalQuarter / FiscalSemester
+      - recursive_hierarchy        # Account, DepartmentGroup, Employee, Organization
+      - level_hierarchy            # ProductCategory 4 -> Subcategory 37 -> Product 606
+      - pascal_case_naming         # the convention that exposed the typing blind spot
+    gold: vendor_declared
+    gold_scope: >
+      28 primary keys and 41 foreign keys, parsed from the vendor's own loader
+      script into declared_keys.json and deliberately NOT applied to the
+      database, so Link must discover them. Semantic types and descriptions are
+      not asserted; nobody can be asked what this schema's unwritten rules are.
+    fetch: fetch_adventureworks_dw.py
+    sha256: 73c27309d17cd30bf5351665401106abf649d9f9a9ecb0c770682f6be965aba8
+    notes: >
+      No table exceeds 1M rows (largest is FactProductInventory at 776,286), so
+      this does NOT exercise the sampling path. First acquisition; its PascalCase
+      naming immediately exposed a typing bug worth more than the dataset.
+
+  - name: bird_dev
+    track: I
+    domain: mixed                  # banking, schools, football, card games, ...
+    source: https://bird-bench.github.io/
+    licence: CC BY-SA 4.0
+    licence_url: https://bird-bench.github.io/
+    licence_verified: 2026-10-09
+    licence_notes: >
+      Share-alike. A gold file we author for these databases is plausibly
+      derivative, which would put a CC BY-SA island inside an Apache-2.0 repo
+      and could pass an obligation to users of our output. INTERNAL ONLY: no
+      number derived from this dataset may be published anywhere, with or
+      without a caveat.
+    redistributable: false
+    tables: 75                     # across 11 databases, 6.8 avg, max 13
+    columns: 798
+    rows: unknown                  # financial alone is 1,079,680
+    features:
+      - human_column_descriptions  # database_description/*.csv, the describe answer key
+      - documented_value_meanings  # decoded codes: "OWNER"/"USER"/"DISPONENT"
+      - real_dirty_schemas
+      - gold_sql                   # 1,534 questions with reference SQL
+    gold: vendor_declared
+    gold_scope: >
+      76 column-description CSVs with original_column_name, column_description,
+      data_format and value_description, plus 1,534 gold SQL queries. Gold
+      RESULT SETS are not published; execute the gold SQL to obtain them.
+    fetch: fetch_bird_dev.py
+    sha256: cdd6d19faeb45a23970b98d3ef6c40a87987c95459c2cf12076897a60cf5a630
+    notes: >
+      Schemas are small -- a description-and-SQL corpus, not a warehouse corpus,
+      and not a substitute for a warehouse fixture. Databases are SQLite;
+      convert with DuckDB's sqlite extension. Acquired to exercise the internal
+      track and to find out how the describe stage fares against descriptions
+      written by someone else.
+
+  - name: cms_physician
+    track: P
+    domain: healthcare_billing
+    source: https://data.cms.gov
+    licence: US Government Works
+    licence_url: https://www.usa.gov/government-works
+    licence_verified: 2026-10-11
+    licence_notes: >
+      Read directly from data.cms.gov/data.json: all 6,615 distributions carry
+      license=https://www.usa.gov/government-works. Dataset-level `license` is
+      null; the per-distribution field is the authoritative one. Both files
+      confirmed by title: "Medicare Physician & Other Practitioners - by
+      Provider : 2023-12-31" and "- by Provider and Service : 2023-12-31".
+    redistributable: true          # we still ship only the fetch script
+    tables: 2
+    columns: 109
+    rows: 209                      # at --providers 30; scales with the sample
+    features:
+      - detail_plus_official_summary   # the reason this was acquired
+      - suppression_rule               # lines under 11 beneficiaries omitted
+      - domain_identifiers             # NPI, HCPCS: identifiers we do not recognise
+      - pii_in_a_real_schema           # physicians' practice names and addresses
+    gold: vendor_declared
+    gold_scope: >
+      CMS's own by-Provider totals are the answer key for reconciliation. No
+      hand-authored gold: the engine cannot yet link these two tables, so there
+      is nothing to score types against until that is fixed.
+    fetch: fetch_cms_physician.py
+    sha256: n/a                    # API-paged, not a fixed archive
+    notes: >
+      ACQUIRED TO TEST RULE RECOVERY ON A REAL WAREHOUSE, AND THE ENGINE FAILS.
+      The reconciliation is real and verified by hand: 27 of 28 sampled
+      providers have a summary total exceeding their detail sum, the gap is
+      never negative, and min(Tot_Benes) in the detail is exactly 11 -- the
+      documented suppression threshold is observable in the data. The engine
+      recovers none of it, for two name-gating reasons recorded in
+      docs/calibration.md. Sampling is by whole provider; an arbitrary row
+      slice would make the gap an artefact of our own sampling.
+
+
+  - name: dbt_synthea
+    track: P
+    domain: clinical_research_omop
+    source: https://github.com/OHDSI/dbt-synthea
+    licence: Apache-2.0
+    licence_url: https://github.com/OHDSI/dbt-synthea/blob/main/LICENSE
+    licence_verified: 2026-10-12
+    licence_notes: >
+      Read the repository's own LICENSE file at pinned commit 33fdbfa: the
+      standard Apache-2.0 text, "Licensed under the Apache License, Version
+      2.0" at line 191. The appendix copyright line is the unfilled template
+      "Copyright [yyyy] [name of copyright owner]", which is untidy but does
+      not alter the grant. Attribution required; we ship only the fetch script.
+    redistributable: true          # we still ship only the fetch script
+    tables: 87                     # schema `main`; 29 more seed tables in other schemas
+    columns: 995
+    rows: 408455
+    features:
+      # THE REASON THIS WAS ACQUIRED: it is the first fixture that ships the
+      # ETL which built it. target/manifest.json carries the compiled SQL and
+      # the model DAG, which is the input the ETL-reading stage needs and
+      # which no other dataset we hold has at all.
+      - authoring_etl                 # dbt manifest: 87 models, compiled_code, DAG
+      - declared_foreign_keys         # 235 deduped edges from relationships tests
+      - conditional_foreign_keys      # 82 of them are relationships_where: an FK
+                                      # that holds only under a filter. No fixture
+                                      # we authored has this shape.
+      - declared_column_types         # 421 expect_column_values_to_be_in_type_list
+      - hub_and_spoke_fk              # 131 of 235 edges point at `concept`
+      - intermediate_vs_published_pair # see notes: statistically identical tables
+    gold: vendor_declared
+    gold_scope: >
+      235 deduped foreign-key edges parsed from the project's own
+      `relationships` and `relationships_where` tests, plus 421 declared column
+      types. Semantic types, descriptions and metrics are NOT asserted: OMOP
+      CDM documents the structure, not this warehouse's unwritten rules.
+    fetch: fetch_dbt_synthea.py
+    sha256: n/a                    # pinned by git commit, which is stronger:
+                                   # 33fdbfa9b354f00def5ee6e45525cb2da80e0ddf
+    notes: >
+      BASELINE MEASURED 2026-10-12, deterministic mode: FK recall 61/235 =
+      26.0% (42/153 unconditional, 19/82 conditional), 249 relationships
+      emitted, 116 tables, 2m43s.
+
+      The 26% is NOT mostly missed joins -- it is the engine choosing a
+      different parent from the one the humans declared, and the reason is
+      worth the whole acquisition. `person` and `int__person` hold identical
+      27-row person_id sets, both materialised as tables, and all 27 person_id
+      edges were pointed at `int__person`. The manifest says `person` is built
+      FROM `int__person`, so the published table is the one the gold declares.
+      Statistics cannot separate the two; the DAG can. That is the clearest
+      evidence we have that lineage reading is not a nice-to-have, and it was
+      invisible until a fixture shipped its own ETL.
+      Same pattern explains 0/12 to stg_synthea__encounters, 0/10 to provider,
+      0/9 to visit_detail and 0/9 to visit_occurrence, against 93% to
+      stg_synthea__patients where no competing intermediate exists.
+
+      LIMITS: 27 patients, 604 visits, 59 conditions. It exercises ETL reading
+      and is a poor test of statistical inference; cross-checking an
+      ETL-derived claim against observed data is thin on 59 rows. Declared FKs
+      are plentiful here because OMOP CDM is a PUBLISHED data model -- measured
+      alongside it, Cal-ITP has 19 enabled across 624 models and Tuva Health 0
+      across 353, so this validates the declared-constraint path and NOT the
+      common enterprise case where joins must be parsed from SQL.
+
+      Needs dbt-core and dbt-duckdb, which are not semlayer dependencies, plus
+      one online `dbt deps`. Builds offline otherwise: PASS=1717 ERROR=0 in 93s.
+      `dbt seed` MUST precede `dbt build`; the fetch script does this and says
+      why.

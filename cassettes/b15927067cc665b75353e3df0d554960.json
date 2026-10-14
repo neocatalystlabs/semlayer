@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "1d25ef67b201",
+ "response": "[{\"id\": 0, \"verdict\": \"accept\", \"reason\": \"Maps directly to total_tot_sls_amt metric.\"}, {\"id\": 1, \"verdict\": \"accept\", \"reason\": \"Maps directly to ord_hdr_count metric.\"}, {\"id\": 2, \"verdict\": \"accept\", \"reason\": \"Matches avg_tot_amt_per_order synonym exactly.\"}, {\"id\": 3, \"verdict\": \"accept\", \"reason\": \"Maps directly to total_rtn_amt metric.\"}, {\"id\": 4, \"verdict\": \"accept\", \"reason\": \"Maps directly to sub_evt_count metric.\"}, {\"id\": 5, \"verdict\": \"accept\", \"reason\": \"Maps directly to total_mrr_amt metric.\"}, {\"id\": 6, \"verdict\": \"accept\", \"reason\": \"Computable from two defined order amount metrics.\"}, {\"id\": 7, \"verdict\": \"accept\", \"reason\": \"Computable from defined line amount metrics.\"}, {\"id\": 8, \"verdict\": \"accept\", \"reason\": \"Both ratio metrics explicitly defined and comparable.\"}, {\"id\": 9, \"verdict\": \"reject\", \"reason\": \"Vague 'relationship' between mismatched granularity metrics.\"}, {\"id\": 10, \"verdict\": \"accept\", \"reason\": \"Computable from ord_ln_count and ord_hdr_count metrics.\"}, {\"id\": 11, \"verdict\": \"accept\", \"reason\": \"Both ratio metrics explicitly defined and comparable.\"}]",
+ "usage": {
+  "in": 6783,
+  "out": 1088
+ }
+}

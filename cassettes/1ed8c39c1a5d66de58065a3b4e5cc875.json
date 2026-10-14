@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "26fea8ed3e9d",
+ "response": "```json\n{\n  \"table_description\": \"Dimension table defining subscription event types (start, cancel, renew, upgrade, downgrade) with codes and descriptions for lifecycle tracking.\",\n  \"ai_context\": \"Join to sub_evt on evt_typ_cd. Contains 5 static event types. Use for filtering or labeling subscription lifecycle events.\",\n  \"table_type\": \"dimension\",\n  \"columns\": [\n    {\n      \"name\": \"evt_typ_cd\",\n      \"description\": \"Event type code: CANCEL, DOWNGRADE, RENEW, START, UPGRADE\"\n    },\n    {\n      \"name\": \"evt_typ_desc\",\n      \"description\": \"Human-readable event type description for subscription lifecycle events\"\n    }\n  ]\n}\n```",
+ "usage": {
+  "in": 568,
+  "out": 183
+ }
+}

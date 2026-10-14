@@ -48,14 +48,26 @@ _NAME_RULES: list[tuple[re.Pattern, str, float]] = [
         re.compile(r"(^|_)(street|address|addr_ln|address_line|addr1|addr2)($|_)"),
         "pii_address", 0.75,
     ),
-    (re.compile(r"(^|_)(country|ctry)(_cd|_code)?($|_)"), "geo_country", 0.85),
+    # `cntry` is a common abbreviation we did not know. Before the generic
+    # `_cd` rule below existed, `cntry_cd` fell through to the LLM, which
+    # correctly called it geo_country; the generic rule then shadowed that
+    # right answer with a plain `code` on three messy_mart tables. The fix is
+    # the missing vocabulary, not a weaker generic rule.
+    (re.compile(r"(^|_)(country|ctry|cntry)(_cd|_code)?($|_)"), "geo_country", 0.85),
     (re.compile(r"(^|_)(state|province|region|rgn)(_cd|_code)?($|_)"), "geo_region", 0.8),
     (re.compile(r"(^|_)city($|_)"), "geo_city", 0.85),
     (re.compile(r"(^|_)(zip|postal)(_cd|_code)?($|_)"), "geo_postal", 0.85),
     (re.compile(r"(^|_)(lat|latitude|lon|lng|longitude)($|_)"), "geo_coordinates", 0.85),
     (
         re.compile(
-            r"(^|_)(amt|amount|price|cost|total|revenue|rev|sales|paid|balance|bal|mrr|fee"
+    # `sales` removed from the money vocabulary: it is an ENTITY word, not a
+    # money word -- sales order, sales reason, sales territory. It typed
+    # AdventureWorksDW's `SalesOrderNumber` as monetary_value/measure at
+    # confidence 0.8, above the escalation cutoff, so the LLM never got to
+    # correct it and the bridge table's key became a measure. Nothing in the
+    # gold corpus depends on it: only `order_total` relies on this rule, via
+    # the `total` token, which stays.
+            r"(^|_)(amt|amount|price|cost|total|revenue|rev|paid|balance|bal|mrr|fee"
             r"|charge)($|_)"
         ),
         "monetary_value", 0.8,
@@ -75,9 +87,50 @@ _NAME_RULES: list[tuple[re.Pattern, str, float]] = [
     (re.compile(r"(^|_)(url|link|href)($|_)"), "url", 0.85),
     (re.compile(r"(^|_)(desc|description|comment|notes?|txt|text|title)($|_)"), "free_text", 0.7),
     (re.compile(r"(^|_)(nm|name)$"), "name", 0.65),
+    # Generic coded-value conventions, LAST so every specific rule above wins
+    # (`country_cd` is geo_country, not a bare code). The rule above matches a
+    # vocabulary of stems -- typ, cat, class, seg, chnl, rsn -- so a `_cd`
+    # suffix on an unknown stem (`zone_cd`, `priority_cd`) fell through to the
+    # numeric fallback and was typed as a quantity.
+    #
+    # Confidence must land BELOW ESCALATE_BELOW (0.7) *after* the +0.15
+    # enum-confirmation bonus this rule list applies to any code with <= 30
+    # distinct values -- so 0.5, not 0.55, which landed on exactly 0.70 and
+    # stopped escalating. A `_cd` suffix is a reliable signal for the TYPE but
+    # says nothing about the role: _role_for maps every code to `dimension`,
+    # and `dept_dim.dept_cd` is that table's primary key. These columns must
+    # keep reaching the LLM for the role, or three of them regress.
+    (re.compile(r"(^|_)(cd|code)$"), "code", 0.5),
+    (re.compile(r"(^|_)(grade|bucket|band|tier)($|_)"), "code", 0.5),
 ]
 
 _ID_NAME_RE = re.compile(r"(^|_)(id|key|sk|pk)$|^id($|_)")
+
+# Key-ish tails. A trailing ordinal is only stripped when what remains still
+# looks like a key, so `concept_id_1` folds to `concept_id` while `sales_2024`
+# and `q1_revenue` are left alone -- stripping those would invent a reference
+# to a `sales` table.
+_KEY_TAILS = ("id", "key", "sk", "cd", "no", "nbr", "num", "code")
+_ORDINAL_RE = re.compile(r"^(.*?)_(\d{1,3})$")
+
+
+def strip_ordinal(col: str) -> str:
+    """Fold a trailing positional suffix off a key column, or return it unchanged.
+
+    OMOP's `concept_relationship` has `concept_id_1` and `concept_id_2`, both
+    referencing `concept.concept_id`. Unfolded they score 0.500 against it --
+    below the 0.6 auto-accept threshold -- because the trailing `_1` breaks the
+    `endswith(parent_core)` test and then token matching compares ["1"] against
+    ["concept"]. Folded, both match exactly and both survive as role-playing
+    references to the same parent column, which is what they are.
+    """
+    m = _ORDINAL_RE.match(col)
+    if not m:
+        return col
+    stem = m.group(1)
+    tail = stem.rsplit("_", 1)[-1]
+    return stem if tail in _KEY_TAILS else col
+
 _METADATA_NAME_RE = re.compile(
     r"(^|_)(crt|created|updt|updated|upd|load|etl|ingest|src_sys|source_system|batch|audit)(_|$)|_(at|ts)$"
 )
@@ -140,7 +193,12 @@ def _rule_nested(stats: ColumnStats, name: str, t: str, no_sample_values: bool) 
 
 
 def _rule_id_name(stats: ColumnStats, name: str, t: str, no_sample_values: bool) -> Typing | None:
-    if not _ID_NAME_RE.search(name):
+    # Folded first: `concept_id_1` and `concept_id_2` in OMOP's
+    # concept_relationship are identifiers, but _ID_NAME_RE anchors on $ so the
+    # trailing ordinal hid them. They typed as `quantity`/`measure`, which
+    # excluded them from being a foreign-key CHILD at all -- so the same naming
+    # blind spot cost us the typing AND then the link.
+    if not _ID_NAME_RE.search(strip_ordinal(name)):
         return None
     role = "primary_key" if stats.is_unique else "foreign_key"
     conf = 0.85 if stats.is_unique else 0.7
@@ -187,7 +245,8 @@ def _rule_numeric_fallback(
     if "DECIMAL" in t or "DOUBLE" in t or "FLOAT" in t or "NUMERIC" in t:
         return Typing("monetary_value", "measure", 0.7, "statistic", _DECIMAL_FALLBACK)
     if stats.n_distinct <= 30:
-        return Typing("code", "dimension", 0.25, "statistic", "small int domain")
+        return Typing("quantity", "dimension", 0.2, "statistic",
+                      f"integer with {stats.n_distinct} distinct values: grouped, not summed")
     return Typing("quantity", "measure", 0.15, "statistic", "integer fallback")
 
 
@@ -220,9 +279,31 @@ _RULES = [
 ]
 
 
+_CAMEL_ACRONYM_RE = re.compile(r"([A-Z]+)([A-Z][a-z])")
+_CAMEL_BOUNDARY_RE = re.compile(r"([a-z0-9])([A-Z])")
+
+
+def normalise_name(raw: str) -> str:
+    """Fold a column name to lower_snake_case so every naming rule sees tokens.
+
+    Every rule in this module matches on `_`-delimited tokens -- `(^|_)key$`
+    and friends. A PascalCase warehouse therefore matched NOTHING: `DateKey`
+    lowercases to `datekey`, which has no underscore, so the identifier rule
+    missed it and the column fell through to the numeric fallback as a
+    measure. On AdventureWorksDW that misclassified every surrogate key,
+    which in turn cost all 28 primary keys, all 41 foreign keys, and made
+    `DimDate` look like a fact table.
+
+    Snake_case names are unaffected, so the fixture corpus is unchanged.
+    """
+    s = _CAMEL_ACRONYM_RE.sub(r"\1_\2", raw)      # ProductSKUName -> ProductSKU_Name
+    s = _CAMEL_BOUNDARY_RE.sub(r"\1_\2", s)       # DateKey        -> Date_Key
+    return re.sub(r"__+", "_", s).strip("_").lower()
+
+
 def classify(stats: ColumnStats, no_sample_values: bool = False) -> Typing:
     """Infer a column's semantic type + entity role by walking the ordered rule pipeline."""
-    name = stats.name.lower()
+    name = normalise_name(stats.name)
     t = stats.sql_type.upper()
     for rule in _RULES:
         result = rule(stats, name, t, no_sample_values)

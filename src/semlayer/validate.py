@@ -241,6 +241,20 @@ def validate_document(doc: dict) -> ValidationResult:
         return result  # reference checks assume a structurally valid doc
 
     sl = doc["semantic_layer"]
+    if sl.get("document_set"):
+        # SPEC §4: a document declaring a `document_set` is one PART of a
+        # warehouse, so its references may point at objects held in sibling
+        # documents. We cannot resolve those from here, and reporting them as
+        # dangling would be a false positive -- the spec says such a consumer
+        # SHOULD refuse rather than accuse. Reserved and unemitted today, so
+        # this branch exists to keep the eventual split additive.
+        part = sl.get("part") or "<unnamed>"
+        result.errors.append(
+            f"document declares document_set={sl['document_set']!r} part={part!r}: "
+            f"references cannot be resolved from one part of a set, and this "
+            f"validator holds only this part")
+        return result
+
     tables = {t["name"]: t for t in sl.get("tables", [])}
     columns = {
         f"{tname}.{col['name']}": col

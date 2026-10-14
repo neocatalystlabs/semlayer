@@ -106,4 +106,6 @@ A consumer that writes SQL itself (rather than compiling a metric) SHOULD verify
 
 ## 4. References
 
-Reference syntax used throughout: `table`, `table.column`, `hierarchy.level`, `hierarchy.*` (all levels), `metric_name`. Producers MUST ensure all references resolve within the document; validators reject dangling references.
+Reference syntax used throughout: `table`, `table.column`, `hierarchy.level`, `hierarchy.*` (all levels), `metric_name`. Producers MUST ensure all references resolve within the document — or, where the document declares a `document_set`, within that set — and validators reject dangling references.
+
+`document_set` and `part` are **reserved and optional**, for warehouses too large to carry in one document. No producer emits them today and no consumer need handle them: a document without `document_set` is self-contained, and a validator that sees none MUST behave exactly as it does now. They exist so that splitting a warehouse across documents is later an additive change rather than a breaking one — a document is ~1.2 KB per column, so a warehouse of 30,000 tables would otherwise need a contract change to describe at all. A consumer handed one document of a set it cannot resolve SHOULD refuse rather than report the missing objects as dangling.

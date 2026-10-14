@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from semlayer.source import QueryExecutor, TableMeta
+from semlayer.source import QueryExecutor, TableMeta, row_cap
 
 SAMPLE_THRESHOLD = 1_000_000  # full-scan stats below this row count
 TOP_K = 10
@@ -148,7 +148,7 @@ def profile_table(ex: QueryExecutor, t: TableMeta) -> TableStats:
                 (str(v), int(n))
                 for v, n in ex.query(
                     f"SELECT {qc}, count(*) FROM {fq} WHERE {qc} IS NOT NULL "
-                    f"GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT {TOP_K}"
+                    f"GROUP BY 1 ORDER BY 2 DESC, 1{row_cap(ex, TOP_K)}"
                 )
             ]
         cols[c.name] = stats

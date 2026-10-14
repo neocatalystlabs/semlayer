@@ -45,9 +45,28 @@ pytest tests/test_snowflake_live.py -q
    To change a prompt: bump its `PROMPT_VERSION`, re-record cassettes
    (requires an API key), and include both in the PR. Never edit prompt text
    incidentally.
-3. **Golds change only by adjudication.** Fixture gold files are ground truth;
+3. **To check whether a cassette is still needed, use an EMPTY key, not an
+   unset one.** `env -u ANTHROPIC_API_KEY pytest` does not give a replay-only
+   run: several tests call `load_dotenv()` themselves and restore the key from
+   `.env`, so the run RECORDS whatever is missing and then passes. A recording
+   run always passes, so it cannot answer the question — and it looks exactly
+   like proof that the cassettes were unnecessary.
+
+   ```bash
+   ANTHROPIC_API_KEY= pytest -q -rs        # genuinely replay-only
+   ```
+
+   An empty value works because python-dotenv does not override a key already
+   present in the environment, and `allow_live` resolves to `False`. A correct
+   replay-only run on a healthy tree skips exactly one test
+   (`test_drift.py`, a logic skip). Any further skip or `CassetteMiss` names a
+   recording the tree needs. This was got wrong twice: a batch was declared
+   orphaned and deleted on the strength of a run that had quietly re-recorded
+   it.
+
+4. **Golds change only by adjudication.** Fixture gold files are ground truth;
    they change only when the fixture *generator source* proves them wrong,
    with the adjudication documented in the commit message.
-4. **Comments state constraints, not narration.** Say why the code must be
+5. **Comments state constraints, not narration.** Say why the code must be
    this way; never restate what the next line does.
 5. **Zero behavior change in refactors** — the suite must pass identically.

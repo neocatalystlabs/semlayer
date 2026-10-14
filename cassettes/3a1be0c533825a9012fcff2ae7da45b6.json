@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "26fea8ed3e9d",
+ "response": "```json\n{\n  \"table_description\": \"Dimension table containing currency codes, names, and USD conversion rates for 4 currencies used in order transactions.\",\n  \"ai_context\": \"Join on curr_cd to ord_hdr for currency conversion. Rates are static; verify freshness for historical analysis.\",\n  \"table_type\": \"dimension\",\n  \"columns\": [\n    {\n      \"name\": \"curr_cd\",\n      \"description\": \"Currency code (primary key); 4 distinct values, no nulls.\"\n    },\n    {\n      \"name\": \"curr_nm\",\n      \"description\": \"Currency name; 4 distinct values, no nulls.\"\n    },\n    {\n      \"name\": \"to_usd_rate\",\n      \"description\": \"Exchange rate to USD; 4 distinct decimal values, no nulls.\"\n    }\n  ]\n}\n```",
+ "usage": {
+  "in": 551,
+  "out": 209
+ }
+}

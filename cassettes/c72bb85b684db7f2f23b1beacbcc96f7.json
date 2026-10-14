@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "26fea8ed3e9d",
+ "response": "```json\n{\n  \"table_description\": \"Dimension table of sales representatives with hire date and store assignment. 80 unique reps across 33 stores.\",\n  \"ai_context\": \"Join to store_dim via store_id. Use rep_id as primary key. Filter by hire_dt for tenure analysis. 80 rows, no nulls.\",\n  \"table_type\": \"dimension\",\n  \"columns\": [\n    {\n      \"name\": \"rep_id\",\n      \"description\": \"Sales representative unique identifier (primary key). Format REP00001\u2013REP00080.\"\n    },\n    {\n      \"name\": \"rep_nm\",\n      \"description\": \"Sales representative name/code. Prefixed with 'rep ' and rep_id value.\"\n    },\n    {\n      \"name\": \"store_id\",\n      \"description\": \"Foreign key to store_dim. Assigns each rep to one of 33 stores.\"\n    },\n    {\n      \"name\": \"hire_dt\",\n      \"description\": \"Representative hire date. Ranges 2023\u20132024; 73 distinct dates across 80 reps.\"\n    }\n  ]\n}\n```",
+ "usage": {
+  "in": 1068,
+  "out": 278
+ }
+}

@@ -8,10 +8,14 @@ PK candidates come from full-column uniqueness + id-naming.
 
 from __future__ import annotations
 
+import logging
 from importlib.metadata import version
 
+from semlayer.errors import SemlayerError
 from semlayer.profile.stats import TableStats, profile_table
 from semlayer.profile.typing_rules import ALWAYS_ESCALATE, classify
+
+logger = logging.getLogger(__name__)
 
 # Derived, never restated: a hardcoded copy silently drifts from the released
 # version, and SPEC 3 rule 4 makes engine version its own drift class — a
@@ -22,37 +26,192 @@ ENGINE_VERSION = version("semlayer")
 ESCALATE_BELOW = 0.7  # tier-1 confidence under this goes to the LLM (if provided)
 
 
-def profile_source(source, no_sample_values: bool = False, llm=None) -> dict:
+def _native_comments(source) -> dict:
+    """Read the warehouse's own COMMENT text, if the connector exposes any.
+
+    A human comment is better evidence than any naming heuristic we could
+    write, and we ignored them entirely while nine separate naming
+    vocabularies were failing on schemas we did not author. Optional by
+    design: a source without comments returns {} and nothing changes.
+    """
+    getter = getattr(source, "list_comments", None)
+    if getter is None:
+        return {}
+    try:
+        return getter() or {}
+    except Exception:   # a catalog we cannot read must not fail the run
+        return {}
+
+
+def _apply_dbt_docs(doc: dict, ts, lineage) -> int:
+    """Seed descriptions from the dbt project's own documentation.
+
+    Same standing as a native warehouse COMMENT: a sentence a human wrote beats
+    anything we generate. And it is free -- 447 column descriptions sat in the
+    dbt_synthea manifest, a file we already open and parse for the DAG, and we
+    threw every one of them away.
+
+    Applied AFTER native comments and only where nothing is there yet, which
+    keeps the existing precedence rule intact: never overwrite a description a
+    human wrote, fill the gaps, flag the conflicts. Where both exist and differ
+    they are recorded as a conflict rather than silently resolved -- two humans
+    documenting the same column differently is worth a review, not a coin toss.
+    """
+    if lineage is None:
+        return 0
+    if not getattr(lineage, "table_descriptions", None) and \
+            not getattr(lineage, "column_descriptions", None):
+        return 0
+    table = ts.table.name
+    applied = 0
+    td = lineage.table_descriptions.get(table)
+    if td:
+        if not doc.get("description"):
+            doc["description"] = td
+            applied += 1
+        elif doc["description"].strip() != td.strip():
+            doc.setdefault("conflicts", []).append({
+                "field": "description",
+                "detail": "the warehouse COMMENT and the dbt description differ",
+            })
+        doc.setdefault("provenance", []).append({
+            "signal": "catalog_prior",
+            "detail": "table description read from the dbt project",
+        })
+    for col in doc["columns"]:
+        cd = lineage.column_descriptions.get((table, col["name"]))
+        if not cd:
+            continue
+        if not col.get("description"):
+            col["description"] = cd[:200]
+            applied += 1
+        col.setdefault("provenance", []).append({
+            "signal": "catalog_prior",
+            "detail": "column description read from the dbt project",
+        })
+    return applied
+
+
+def _apply_comments(doc: dict, ts, comments: dict) -> int:
+    """Seed descriptions from native comments. Returns how many were applied."""
+    if not comments:
+        return 0
+    schema, table = ts.table.schema, ts.table.name
+    applied = 0
+    tc = comments.get((schema, table, None))
+    if tc:
+        doc["description"] = tc
+        doc.setdefault("provenance", []).append({
+            "signal": "catalog_prior",
+            "detail": "table COMMENT read from the warehouse catalog",
+        })
+        applied += 1
+    for col in doc["columns"]:
+        cc = comments.get((schema, table, col["name"]))
+        if not cc:
+            continue
+        col["description"] = cc[:200]
+        col.setdefault("provenance", []).append({
+            "signal": "catalog_prior",
+            "detail": "column COMMENT read from the warehouse catalog",
+        })
+        applied += 1
+    return applied
+
+
+def profile_source(source, no_sample_values: bool = False, llm=None,
+                   only: set[str] | None = None) -> dict:
     """Run the profile stage and return the draft semantic-layer document (stats discarded)."""
-    doc, _ = profile_with_stats(source, no_sample_values=no_sample_values, llm=llm)
+    doc, _ = profile_with_stats(source, no_sample_values=no_sample_values, llm=llm, only=only)
     return doc
 
 
-def profile_with_stats(source, no_sample_values: bool = False, llm=None, context=None):
+def profile_with_stats(source, no_sample_values: bool = False, llm=None, context=None,
+                       only: set[str] | None = None, state=None, lineage=None):
     """Returns (document, stats_by_table) — Link consumes both.
 
     `context` (v0.2): a semlayer.context.ContextBundle; relevant prose excerpts
     join the typing-escalation evidence as priors.
+
+    `only`: profile just these table names. The filter is applied AFTER
+    `list_tables()` so no connector changes: metadata enumeration is one
+    information_schema query, while per-column profiling is the expensive part
+    and the only thing worth scoping.
+
+    This is the targeted half of incremental re-inference. `drift.py` already
+    computes which tables changed (`diff_snapshots`) and what depends on them
+    (`blast_radius`); this is what lets that answer be acted on instead of
+    re-profiling the warehouse. Merging a subset back INTO an existing layer is
+    deliberately not here — it has to interact with drift's orphaning state
+    machine, which governs what may disappear.
     """
     tables_meta = source.list_tables()
+    comments = _native_comments(source)
+    if state is not None:
+        tables_meta = _drop_partition_children(source, tables_meta, state)
+    n_comments = 0
+    if only is not None:
+        wanted = {n.lower() for n in only}
+        matched = {n for t in tables_meta for n in (t.name.lower(),
+                                                    f"{t.schema}.{t.name}".lower())} & wanted
+        tables_meta = [t for t in tables_meta
+                       if t.name.lower() in wanted
+                       or f"{t.schema}.{t.name}".lower() in wanted]
+        # Say so rather than quietly profiling fewer tables than asked for. A
+        # typo in a table name is the likeliest reason a targeted re-profile
+        # comes back thinner than expected, and silence makes it look like the
+        # table had nothing in it.
+        missing = sorted(wanted - matched)
+        if missing:
+            raise SemlayerError(
+                f"--only named {len(missing)} table(s) not in this warehouse: "
+                f"{', '.join(missing)}",
+                hint="check spelling and schema qualification; "
+                     "run without --only to list what is there")
+    partitions = _partitions_or_empty(source) if state is not None else {}
+
     out_tables = []
     stats_by_table: dict = {}
+    reused_total = 0
+    profiled_total = 0
     for t in sorted(tables_meta, key=lambda x: (x.schema, x.name)):
-        ts = profile_table(source, t)
+        parts = partitions.get((t.schema, t.name)) if partitions else None
+        inc = None
+        if parts:
+            from semlayer.incremental import apply_cardinality, profile_partitioned
+            from semlayer.source import source_identity
+
+            inc = profile_partitioned(source, t, parts, state, source_identity(source))
+            ts = inc.stats
+            reused_total += len(inc.reused)
+            profiled_total += len(inc.profiled)
+        else:
+            ts = profile_table(source, t)
         stats_by_table[t.name] = ts
         doc = _table_doc(ts, no_sample_values)
+        if inc is not None:
+            # The merged bounds and the method that produced them, replacing the
+            # "exact" a whole-table profile would have claimed.
+            apply_cardinality(doc, inc)
+        n_comments += _apply_comments(doc, ts, comments)
+        n_comments += _apply_dbt_docs(doc, ts, lineage)
         if llm is not None:
             _escalate(llm, ts, doc, no_sample_values, context=context)
         out_tables.append(doc)
     model = "none/heuristic" if llm is None else f"{llm.model}/escalation"
-    return {
+    out: dict = {
         "semantic_layer": {
             "spec_version": "0.3.0",
             "name": "profiled",
             "generated_by": {"engine": ENGINE_VERSION, "model": model},
             "tables": out_tables,
         }
-    }, stats_by_table
+    }
+    if partitions:
+        # Stripped before serialisation, like _link_audit. Without it a user who
+        # passed --state has no way to see whether it saved them anything.
+        out["_partition_audit"] = {"profiled": profiled_total, "reused": reused_total}
+    return out, stats_by_table
 
 
 def _rule_detail(col: dict) -> str | None:
@@ -164,6 +323,117 @@ def _apply_promoted_verdict(c: dict, v: dict) -> None:
     _apply_core(c, v)
 
 
+
+# The scale line we hold, and why these two numbers rather than terabytes.
+#
+# Measured (docs/calibration.md): data volume does NOT force an architecture
+# change -- it is linear and bounded once the large tables are partitioned.
+# TABLE and COLUMN counts do, because they drive fixed per-object costs:
+#
+#   ~150 tables     Link's candidate space. 163 key-shaped parent columns at 116
+#                   tables against MAX_PARENTS = 200, so the cap is already
+#                   consuming its whole budget. Parent columns grow ~1.4 per
+#                   table, so at 30,000 tables we would consider 0.5% of them.
+#                   The fix is blocking, not a bigger cap.
+#   ~2,000 tables   serial execution: ~8.8 s of fixed cost per table (round
+#                   trips plus two LLM calls). Concurrency, not architecture.
+#   ~30,000 columns the output document: 1,209 bytes per column measured, so
+#                   450,000 columns is ~544 MB in ONE file. Nothing downstream
+#                   loads that, and sharding is a FORMAT change (SPEC.md #4
+#                   requires every reference to resolve within the document).
+#
+# COLUMNS is the better primary signal: three of the four limits scale with
+# columns and only latency scales with tables. Both are reported.
+SCALE_TABLES = 2_000
+SCALE_COLUMNS = 30_000
+
+
+def _scale_warning(n_tables: int, n_columns: int) -> str | None:
+    """Say so when a warehouse is past the size this architecture is tested at.
+
+    A warning, never a refusal: the run still completes, and a user who knows
+    their warehouse may be right to proceed. What we must not do is produce a
+    quietly degraded layer and let them believe it is complete -- Link's cap
+    truncates silently, which is the failure mode this exists to surface.
+    """
+    over = []
+    if n_tables > SCALE_TABLES:
+        over.append(f"{n_tables:,} tables (tested to {SCALE_TABLES:,})")
+    if n_columns > SCALE_COLUMNS:
+        over.append(f"{n_columns:,} columns (tested to {SCALE_COLUMNS:,})")
+    if not over:
+        return None
+    return (f"warehouse exceeds the tested scale: {', '.join(over)}. "
+            f"Foreign-key discovery truncates its candidate list above this size "
+            f"and the output document becomes impractical to load. Narrow the run "
+            f"with --only or a schema filter; see docs/scale.md.")
+
+
+def _partitions_or_empty(source) -> dict:
+    """Physical partitions, or {} if the source cannot say.
+
+    Partition-wise profiling is attempted only when a state store was supplied
+    AND the source can enumerate partitions, so the default path stays
+    byte-for-byte what it has always been.
+    """
+    lister = getattr(source, "list_partitions", None)
+    if lister is None:
+        return {}
+    try:
+        return lister() or {}
+    except Exception as e:
+        logger.warning("partitions unavailable, profiling whole tables: %s", e)
+        return {}
+
+
+def _drop_partition_children(source, tables_meta: list, state) -> list:
+    """Remove physical partitions from the table list when profiling the parent.
+
+    A partition is a table in its own right -- Postgres lists `evt_2024_01`
+    alongside `evt` -- so without this the same rows are profiled twice and the
+    layer gains 120 monthly "tables" nobody models against.
+    """
+    parts = _partitions_or_empty(source)
+    children = {(p.schema, p.name) for ps in parts.values() for p in ps}
+    if not children:
+        return tables_meta
+    return [t for t in tables_meta if (t.schema, t.name) not in children]
+
+
+def _cardinality(cs) -> dict:
+    """What we honestly know about this column's distinct count.
+
+    A whole-table profile counts exactly, so the bounds coincide and `method`
+    is "exact". A partition-wise profile may only have an interval, and
+    `semlayer.incremental` overwrites this block with the merged bounds and the
+    method that produced them -- "hll_sketch" when a sketch narrowed it,
+    "bounds_only" when nothing did.
+
+    Published so a consumer can decide whether a GROUP BY is sane or a join
+    will fan out without issuing a query, and so the UNCERTAINTY travels with
+    the number instead of being dropped.
+
+    NO TIMESTAMP. This block used to carry `as_of: datetime.now()`, which made
+    `infer` non-deterministic: two runs over an unchanged warehouse differed by
+    198 lines on messy_mart, every one of them a timestamp. That breaks the
+    workflow the product is built around -- inference output lands as a PR in
+    the customer's repo, and a re-run that rewrites 198 lines for no reason
+    makes the diff unreviewable and drift detection cry wolf. It also silently
+    broke cassette replay for examples/agent_pipeline, because the layer feeds
+    the agent prompt.
+
+    Recording staleness per statistic is still worth doing -- it is what tells
+    a consumer that an incremental run reused an old partition's numbers -- but
+    it belongs in the state file next to `change_token`, which is the thing
+    that knows what moved, and it must then surface only where it DIFFERS from
+    the current run. See docs/calibration.md for the design and why the old
+    field could not do that job.
+    """
+    return {"distinct": cs.n_distinct, "lower_bound": cs.n_distinct,
+            "upper_bound": cs.n_distinct, "method": "exact",
+            "null_count": cs.n_null}
+
+
 def _table_doc(ts: TableStats, no_sample_values: bool) -> dict:
     cols = []
     pk_candidates = []
@@ -178,6 +448,7 @@ def _table_doc(ts: TableStats, no_sample_values: bool) -> dict:
             "lifecycle": "inferred",
             "provenance": [{"signal": typ.signal, "detail": typ.detail}],
         }
+        col["cardinality"] = _cardinality(cs)
         if typ.semantic_type.startswith("pii_"):
             col["pii"] = True
         if typ.entity_role == "measure":

@@ -45,7 +45,7 @@ def _pipeline(fixture):
     llm = AnthropicProvider()
     try:
         doc, stats = profile_with_stats(DuckDBSource(con), llm=llm)
-        link_source(DuckDBSource(con), doc, stats, llm=llm)
+        link_source(DuckDBSource(con), doc, stats, llm=llm, use_declared=False)
         describe_source(doc, stats, llm)
     except CassetteMiss as e:
         pytest.skip(str(e))

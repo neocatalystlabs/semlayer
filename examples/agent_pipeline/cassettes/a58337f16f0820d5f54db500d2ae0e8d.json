@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "cb544816d372",
+ "response": "CALL list_schema {}",
+ "usage": {
+  "in": 259,
+  "out": 9
+ }
+}

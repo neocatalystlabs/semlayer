@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "1d25ef67b201",
+ "response": "[{\"id\": 0, \"verdict\": \"accept\", \"reason\": \"Matches total_tot_sls_amt metric directly.\"},\n{\"id\": 1, \"verdict\": \"accept\", \"reason\": \"Matches ord_hdr_count metric directly.\"},\n{\"id\": 2, \"verdict\": \"accept\", \"reason\": \"Matches avg_tot_amt_per_order synonym 'average order value'.\"},\n{\"id\": 3, \"verdict\": \"accept\", \"reason\": \"Matches total_rtn_amt metric directly.\"},\n{\"id\": 4, \"verdict\": \"accept\", \"reason\": \"Matches sub_evt_count metric directly.\"},\n{\"id\": 5, \"verdict\": \"accept\", \"reason\": \"Matches total_mrr_amt metric directly.\"},\n{\"id\": 6, \"verdict\": \"accept\", \"reason\": \"Both completed and non-cancelled total amt metrics exist.\"},\n{\"id\": 7, \"verdict\": \"reject\", \"reason\": \"Mixes order-level and line-level status filters inconsistently.\"},\n{\"id\": 8, \"verdict\": \"accept\", \"reason\": \"Both ratio metrics share same active-order filter.\"},\n{\"id\": 9, \"verdict\": \"reject\", \"reason\": \"Vague 'relationship', mismatched monthly vs order granularity.\"},\n{\"id\": 10, \"verdict\": \"reject\", \"reason\": \"Mixes header-status and line-status filters inconsistently.\"},\n{\"id\": 11, \"verdict\": \"reject\", \"reason\": \"'All orders' conflicts with metric's non-cancelled filter.\"}]",
+ "usage": {
+  "in": 6759,
+  "out": 3880
+ }
+}

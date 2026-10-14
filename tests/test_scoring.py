@@ -52,3 +52,55 @@ def test_query_watchdog_interrupts_runaway_sql(monkeypatch):
         assert "nterrupt" in str(e)
     assert time.perf_counter() - t < 10
     assert answer._execute(con, "SELECT count(*) FROM t") == [(2000000,)]
+
+
+def test_table_type_is_scored_and_reported_directionally():
+    """table_type must be in the Score, and its two error directions separated.
+
+    It was unscored until 2026-10-11 and computed only by
+    fixtures/coverage_audit.py, so a classifier sitting at 0.65 corpus-wide
+    never appeared in any gate. The directions are not equally costly: a
+    dimension called a fact produces spurious metrics that land in the review
+    queue for a human to reject, while a fact called a dimension produces
+    nothing and silently drops the table out of aggregate reconciliation.
+    """
+    from semlayer.scoring import score_types
+
+    def doc(types):
+        return {"semantic_layer": {"tables": [
+            {"name": n, "table_type": t, "columns": [
+                {"name": "c", "semantic_type": "identifier", "entity_role": "primary_key"}]}
+            for n, t in types.items()]}}
+
+    gold = doc({"a": "dimension", "b": "fact", "c": "dimension"})
+    draft = doc({"a": "fact", "b": "dimension", "c": "dimension"})
+    s = score_types(draft, gold)
+    assert s.n_tables == 3
+    assert s.table_type_accuracy == 1 / 3
+    assert s.dim_called_fact == 1
+    assert s.fact_called_dim == 1
+    assert len(s.table_type_confusions) == 2
+
+
+def test_strict_role_accuracy_exposes_key_confusions_leniency_credits():
+    """The lenient role metric credits primary/unique/natural key confusions.
+
+    Reasonable while nothing emitted `natural_key`, and misleading once
+    something did: on tpcds_clean the lenient number moved +0.009 when the
+    detector landed while the strict number moved +0.054, because the leniency
+    had been crediting the very confusion the fix removed. Reported alongside
+    rather than replacing, so no published number moves.
+    """
+    from semlayer.scoring import score_types
+
+    def doc(role):
+        return {"semantic_layer": {"tables": [{"name": "t", "columns": [
+            {"name": "c", "semantic_type": "identifier", "entity_role": role}]}]}}
+
+    gold = doc("natural_key")
+    adjacent = score_types(doc("unique_key"), gold)
+    assert adjacent.role_accuracy == 1.0        # credited as adjacent
+    assert adjacent.role_accuracy_strict == 0.0  # and visibly not exact
+
+    exact = score_types(doc("natural_key"), gold)
+    assert exact.role_accuracy == exact.role_accuracy_strict == 1.0

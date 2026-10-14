@@ -22,16 +22,40 @@ try:
 except ImportError:
     pass
 
+# SNOWFLAKE_READER_ROLE is as much a credential as the password: the connector
+# refuses to connect without an explicit session role, deliberately, so that the
+# minimal-grant claim is about a role we named rather than whatever DEFAULT_ROLE
+# the account carries. An unset role is therefore "not configured" and skips,
+# the same as an absent password -- it was raising SemlayerError and turning
+# three tests into ERRORs in every suite run.
 pytestmark = pytest.mark.skipif(
-    not os.environ.get("SNOWFLAKE_ACCOUNT") or not os.environ.get("SNOWFLAKE_READER_PASSWORD"),
-    reason="Snowflake credentials not configured (.env)",
+    not os.environ.get("SNOWFLAKE_ACCOUNT")
+    or not os.environ.get("SNOWFLAKE_READER_PASSWORD")
+    or not (os.environ.get("SNOWFLAKE_READER_ROLE") or os.environ.get("SNOWFLAKE_ROLE")),
+    reason="Snowflake credentials not configured (.env: ACCOUNT, READER_PASSWORD, READER_ROLE)",
 )
 
 
 @pytest.fixture(scope="module")
 def reader():
+    """The reader persona, or a SKIP if the account cannot be reached.
+
+    Credentials being PRESENT is not the same as the account being usable: a
+    Snowflake trial that has expired suspends every warehouse, and the
+    connection then fails with "Your free trial has ended". That turned three
+    tests into ERRORs in every suite run, which reads as a regression and is
+    not one -- the tests are unrunnable, not failing. Config problems
+    (SemlayerError, e.g. an unset session role) still fail loudly, because
+    those are ours to fix.
+    """
     from semlayer.connectors.snowflake import SnowflakeSource
-    src = SnowflakeSource.from_env(role="reader")
+    try:
+        src = SnowflakeSource.from_env(persona="reader")
+    except Exception as e:
+        from semlayer.errors import SemlayerError
+        if isinstance(e, SemlayerError):
+            raise                                # our own misconfiguration
+        pytest.skip(f"Snowflake account not reachable: {str(e)[:120]}")
     yield src
     src.close()
 

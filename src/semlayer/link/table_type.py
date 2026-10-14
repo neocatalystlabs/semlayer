@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import re
 
+from semlayer.profile.typing_rules import normalise_name
+
 _STAGING_RE = re.compile(r"(^|_)(stg|staging|raw|tmp|temp)($|_)")
 _OPS_RE = re.compile(r"(^|_)(etl|log|audit|job|run|batch)($|_)")
 _AGG_RE = re.compile(r"(^|_)(agg|summary|rollup|dly|daily|mth|monthly|wkly|weekly)($|_)")
@@ -32,7 +34,11 @@ def classify_table(t: dict, fk_out: int, fk_in: int) -> tuple[str, float, str]:
     "confidently staging", not "good table". Canonical-ness lives in lifecycle
     and repo_knowledge.routing, not here.
     """
-    name = t["name"].lower()
+    # Folded, not just lowercased: every rule below matches `_`-delimited
+    # tokens, so `DimCustomer` lowercased to `dimcustomer` and the 0.95
+    # dimension rule never fired on a PascalCase warehouse. On
+    # AdventureWorksDW that left every Dim* table to the graph heuristics.
+    name = normalise_name(t["name"])
     cols = t["columns"]
     col_names = {c["name"].lower() for c in cols}
     n_measures = sum(1 for c in cols if c.get("entity_role") == "measure")
@@ -58,13 +64,30 @@ def classify_table(t: dict, fk_out: int, fk_in: int) -> tuple[str, float, str]:
          "aggregate naming + measures"),
         (bool(_DIM_RE.search(name)), "dimension", 0.95, "dimension naming"),
         (n_cols > 50, "denormalized", 0.6, f"{n_cols} columns"),
-        # graph signals
-        (fk_out >= 2 and n_measures >= 1, "fact", 0.75,
+        # Graph signals. Fan-in beats measure count: a dimension with a couple
+        # of numeric attributes is still a dimension. Requiring n_measures == 0
+        # caught only 39 of 99 gold dimensions and sent the rest to the
+        # measure-heavy fact rule -- `customer` is referenced by ELEVEN tables
+        # and was called a fact because it has 2 measures. Measured over the
+        # corpus: `fk_in > fk_out` catches 74 of 99 dimensions and only 2
+        # facts, where the old pure rule caught 39.
+        (fk_out >= 2 and n_measures >= 1 and fk_in == 0, "fact", 0.95,
+         f"{fk_out} FKs out + {n_measures} measures, nothing references it"),
+        (fk_in >= 1 and n_measures == 0 and fk_out == 0, "dimension", 0.95,
+         f"referenced by {fk_in} tables, no measures, no FKs out"),
+        # Guarded against the parent-fact shape: a fact CAN be referenced by
+        # other facts -- fan_trap's `orders` has payments and shipments
+        # pointing at it, so fan-in alone calls it a dimension and breaks the
+        # fixture built to test exactly that. A dimension is DESCRIPTIVE, so it
+        # is wide; a four-column table carrying a measure is a transaction
+        # record. The guard costs 22 of the 74 dimensions this rule would
+        # otherwise catch, which is the price of not regressing fan_trap.
+        (fk_in > fk_out and not (n_measures >= 1 and n_cols <= 5), "dimension", 0.9,
+         f"referenced by {fk_in} tables, references {fk_out}: fan-in dominates"),
+        (fk_out >= 2 and n_measures >= 1, "fact", 0.7,
          f"{fk_out} FKs out + {n_measures} measures"),
         (fk_out >= 1 and n_measures >= 1 and fk_in == 0, "fact", 0.65,
          f"{fk_out} FK out + {n_measures} measures, nothing references it"),
-        (fk_in >= 1 and n_measures == 0 and fk_out == 0, "dimension", 0.95,
-         f"referenced by {fk_in} tables, no measures, no FKs out"),
         (fk_in >= 1 and n_measures == 0, "dimension", 0.5,
          f"referenced by {fk_in} tables, no measures"),
         (n_cols <= 4 and n_measures == 0 and has_name_col, "dimension", 0.65,

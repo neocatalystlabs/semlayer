@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "cb544816d372",
+ "response": "CALL run_sql {\"sql\": \"SELECT SUM(tot_amt) as revenue FROM ord_hdr\"}",
+ "usage": {
+  "in": 1742,
+  "out": 28
+ }
+}

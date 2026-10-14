@@ -371,6 +371,12 @@ def lint_sql(doc: dict, sql: str, dialect: str = "duckdb") -> dict:
     Returns {"ok": bool, "findings": [...], "errors": n, "warnings": n}.
     `ok` is False when any error-level finding exists.
     """
+    if dialect not in sqlglot.dialects.Dialects.__members__.values():
+        names = ", ".join(sorted(d.value for d in sqlglot.dialects.Dialects if d.value))
+        f = Finding("unknown_dialect", "error",
+                    f"{dialect!r} is not a SQL dialect this linter knows",
+                    fix=f"pass one of: {names} (default: duckdb)")
+        return {"ok": False, "findings": [asdict(f)], "errors": 1, "warnings": 0}
     layer = _Layer(doc, dialect)
     try:
         tree = sqlglot.parse_one(sql, read=dialect)

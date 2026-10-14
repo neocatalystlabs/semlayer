@@ -20,9 +20,32 @@ class Score:
     type_macro_f1: float = 0.0
     per_type: dict = field(default_factory=dict)
     role_accuracy: float = 0.0
+    # Lenient role accuracy credits primary_key/unique_key/natural_key
+    # confusions as adjacent. That was reasonable while nothing emitted
+    # natural_key -- it avoided punishing an unavoidable confusion -- but it
+    # also means the work that made the engine emit it is invisible: 25 of 25
+    # correct natural keys on tpcds_clean moved role_accuracy by +0.009.
+    # Reported alongside rather than replacing it, so no published number
+    # moves.
+    role_accuracy_strict: float = 0.0
     pk_precision: float = 0.0
     pk_recall: float = 0.0
     mismatches: list = field(default_factory=list)
+    # table_type was unscored until 2026-10-11 and only ever computed by
+    # fixtures/coverage_audit.py, so a classifier sitting at 0.65 corpus-wide
+    # never showed up in any gate.
+    n_tables: int = 0
+    table_type_accuracy: float = 0.0
+    # Reported directionally because the two directions are NOT equally
+    # costly, and one number hides that. A dimension called a fact produces
+    # spurious metrics, which land in the review queue where a human rejects
+    # them: visible and cheap. A fact called a dimension produces NOTHING and
+    # silently drops the table out of aggregate reconciliation -- the
+    # mechanism that recovers an undocumented filter -- with no wrong answer
+    # to notice. An error you can see is worth several you cannot.
+    dim_called_fact: int = 0
+    fact_called_dim: int = 0
+    table_type_confusions: list = field(default_factory=list)
 
 
 def _columns(doc: dict) -> dict[str, dict]:
@@ -53,6 +76,27 @@ _ACCEPTABLE = {
 }
 
 
+def _score_table_types(draft: dict, gold: dict, s: Score) -> None:
+    """Score table_type, and count the two confusion directions separately."""
+    d = {t["name"]: t.get("table_type") for t in draft["semantic_layer"]["tables"]}
+    g = {t["name"]: t.get("table_type") for t in gold["semantic_layer"]["tables"]}
+    shared = [n for n in g if n in d]
+    s.n_tables = len(shared)
+    if not shared:
+        return
+    ok = 0
+    for n in shared:
+        if d[n] == g[n]:
+            ok += 1
+            continue
+        s.table_type_confusions.append((n, d[n], g[n]))
+        if g[n] == "dimension" and d[n] == "fact":
+            s.dim_called_fact += 1
+        elif g[n] == "fact" and d[n] == "dimension":
+            s.fact_called_dim += 1
+    s.table_type_accuracy = ok / len(shared)
+
+
 def score_types(draft: dict, gold: dict, lenient: bool = True) -> Score:
     """Join draft and gold columns by table.column and compute type/role/PK metrics."""
     d_cols, g_cols = _columns(draft), _columns(gold)
@@ -65,7 +109,7 @@ def score_types(draft: dict, gold: dict, lenient: bool = True) -> Score:
     tp: dict[str, int] = defaultdict(int)
     fp: dict[str, int] = defaultdict(int)
     fn: dict[str, int] = defaultdict(int)
-    correct = role_correct = 0
+    correct = role_correct = role_exact = 0
 
     for key, d, g in joined:
         dt, gt = d.get("semantic_type", "unknown"), g.get("semantic_type", "unknown")
@@ -83,11 +127,16 @@ def score_types(draft: dict, gold: dict, lenient: bool = True) -> Score:
             frozenset({"primary_key", "unique_key"}),
             frozenset({"unique_key", "natural_key"}),
         }
-        if dr == gr or (dr and gr and frozenset({dr, gr}) in adjacent):
+        if dr == gr:
+            role_correct += 1
+            role_exact += 1
+        elif dr and gr and frozenset({dr, gr}) in adjacent:
             role_correct += 1
 
     s.type_accuracy = correct / len(joined)
     s.role_accuracy = role_correct / len(joined)
+    s.role_accuracy_strict = role_exact / len(joined)
+    _score_table_types(draft, gold, s)
 
     f1s = []
     for typ in set(list(tp) + list(fp) + list(fn)):

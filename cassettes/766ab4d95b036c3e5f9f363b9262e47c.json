@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "26fea8ed3e9d",
+ "response": "```json\n{\n  \"table_description\": \"Dimension table containing four payment methods with codes and descriptions. Links to order header fact table via payment method code.\",\n  \"ai_context\": \"Join on pmt_mthd_cd to ord_hdr. Only 4 rows; use for payment method decoding. No nulls or updates expected.\",\n  \"table_type\": \"dimension\",\n  \"columns\": [\n    {\n      \"name\": \"pmt_mthd_cd\",\n      \"description\": \"Payment method code: ACH, CC, COD, GC. Primary key for joins.\"\n    },\n    {\n      \"name\": \"pmt_mthd_desc\",\n      \"description\": \"Payment method description: ACH Bank Transfer, Credit Card, Cash on Delivery, Gift Card.\"\n    }\n  ]\n}\n```",
+ "usage": {
+  "in": 573,
+  "out": 199
+ }
+}
