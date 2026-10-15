@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "4df9b8e6e218",
+ "response": "{\"action\": \"sql\", \"sql\": \"SELECT curr_cd, COUNT(ord_id) AS ord_cnt FROM ord_hdr GROUP BY curr_cd ORDER BY curr_cd\", \"reason\": \"Count of orders per currency; count metric doesn't require sts_cd filter.\"}",
+ "usage": {
+  "in": 7537,
+  "out": 106
+ }
+}

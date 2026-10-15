@@ -17,6 +17,7 @@
 datasets:
 
   - name: adventureworks_dw
+    version: "sql-server-samples@73c27309"   # by archive sha256, below
     track: P
     domain: manufacturing_sales_finance
     source: https://github.com/microsoft/sql-server-samples
@@ -54,6 +55,7 @@ datasets:
       naming immediately exposed a typing bug worth more than the dataset.
 
   - name: bird_dev
+    version: "dev set, sha256 cdd6d19f"
     track: I
     domain: mixed                  # banking, schools, football, card games, ...
     source: https://bird-bench.github.io/
@@ -90,6 +92,7 @@ datasets:
       written by someone else.
 
   - name: cms_physician
+    version: "2023 annual release, downloaded 2026-10-11"
     track: P
     domain: healthcare_billing
     source: https://data.cms.gov
@@ -130,6 +133,7 @@ datasets:
 
 
   - name: dbt_synthea
+    version: "33fdbfa"                        # pinned git commit
     track: P
     domain: clinical_research_omop
     source: https://github.com/OHDSI/dbt-synthea

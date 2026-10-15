@@ -1,0 +1,5993 @@
+semantic_layer:
+  spec_version: 0.3.0
+  name: profiled
+  generated_by:
+    engine: 0.4.0b5
+    model: claude-haiku-4-5-20251001/escalation
+  tables:
+  - name: category_dim
+    source: main.category_dim
+    table_type: dimension
+    lifecycle: inferred
+    columns:
+    - name: category_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: dimension
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> code
+      cardinality:
+        distinct: 12
+        lower_bound: 12
+        upper_bound: 12
+        method: exact
+        null_count: 0
+      description: Unique category code (e.g., APR-MEN, ELEC-TV). Primary key.
+    - name: category_nm
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: dimension
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> code
+      cardinality:
+        distinct: 12
+        lower_bound: 12
+        upper_bound: 12
+        method: exact
+        null_count: 0
+      description: Category name (e.g., Audio, Beverages, Kitchen). Human-readable category label.
+    - name: dept_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: foreign_key
+      confidence: 0.9
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> code
+      - signal: llm
+        detail: Department code with 5 distinct values; likely FK to department dimension
+      - signal: inclusion_dependency
+        detail: "ratio 1.0, name score 1.2, llm: dept_cd \u2192 dept_cd: natural dimension reference"
+      - signal: statistic
+        detail: enum decoded via join to dept_dim.dept_nm
+      cardinality:
+        distinct: 5
+        lower_bound: 5
+        upper_bound: 5
+        method: exact
+        null_count: 0
+      enum_values:
+      - value: ELEC
+        meaning: Electronics
+        decode_source: dictionary_join
+      - value: APPRL
+        meaning: Apparel
+        decode_source: dictionary_join
+      - value: HOME
+        meaning: Home & Garden
+        decode_source: dictionary_join
+      - value: GROC
+        meaning: Grocery
+        decode_source: dictionary_join
+      - value: TOYS
+        meaning: Toys
+        decode_source: dictionary_join
+      foreign_key:
+        references: dept_dim.dept_cd
+        relationship: many_to_one
+      description: Department code (ELEC, HOME, APPRL, GROC, TOYS). Foreign key to dept_dim.
+    confidence: 0.95
+    provenance:
+    - signal: statistic
+      detail: 'table_type: dimension naming'
+    - signal: llm
+      detail: describe pass 1
+    - signal: llm
+      detail: describe pass 2
+    description: Dimension table containing 12 product categories, each mapped to a parent department.
+      Supports retail product classification and analytics.
+    ai_context: Join to dept_dim on dept_cd for department context. Join to prod_ref on category_cd for
+      product details. All 12 categories are active.
+  - name: chnl_dim
+    source: main.chnl_dim
+    table_type: dimension
+    lifecycle: inferred
+    columns:
+    - name: chnl_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: dimension
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> code
+      cardinality:
+        distinct: 4
+        lower_bound: 4
+        upper_bound: 4
+        method: exact
+        null_count: 0
+      description: 'Channel code: CALL, MOBILE, STORE, WEB. Primary key for joins.'
+    - name: chnl_nm
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: dimension
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> code
+      cardinality:
+        distinct: 4
+        lower_bound: 4
+        upper_bound: 4
+        method: exact
+        null_count: 0
+      description: 'Channel name: Call Center, Mobile App, Physical Store, Web Storefront. Human-readable
+        label.'
+    confidence: 0.95
+    provenance:
+    - signal: statistic
+      detail: 'table_type: dimension naming'
+    - signal: llm
+      detail: describe pass 1
+    - signal: llm
+      detail: describe pass 2
+    description: 'Channel dimension with 4 sales channels: Call Center, Mobile App, Physical Store, Web
+      Storefront. Lookup table for order and campaign analytics.'
+    ai_context: Join on chnl_cd to ord_hdr and mktg_cmpgn_dim. Small dimension (4 rows); all values non-null.
+      Use for channel filtering and grouping.
+  - name: curr_dim
+    source: main.curr_dim
+    table_type: dimension
+    lifecycle: inferred
+    columns:
+    - name: curr_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: primary_key
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> code
+      - signal: llm
+        detail: ISO 4217 currency code; unique, non-null, dimension table key
+      cardinality:
+        distinct: 4
+        lower_bound: 4
+        upper_bound: 4
+        method: exact
+        null_count: 0
+      enum_values:
+      - value: CAD
+        meaning: Canadian Dollar
+        decode_source: llm_guess
+      - value: EUR
+        meaning: Euro
+        decode_source: llm_guess
+      - value: GBP
+        meaning: British Pound
+        decode_source: llm_guess
+      - value: USD
+        meaning: US Dollar
+        decode_source: llm_guess
+      description: ISO 4217 currency code (CAD, EUR, GBP, USD). Primary key.
+    - name: curr_nm
+      sql_type: VARCHAR
+      semantic_type: name
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> name
+      - signal: llm
+        detail: Full currency name; descriptive attribute in dimension table
+      cardinality:
+        distinct: 4
+        lower_bound: 4
+        upper_bound: 4
+        method: exact
+        null_count: 0
+      description: Full currency name (e.g., Canadian Dollar, Euro, British Pound, US Dollar).
+    - name: to_usd_rate
+      sql_type: DECIMAL(10,4)
+      semantic_type: rate
+      entity_role: measure
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> rate
+      cardinality:
+        distinct: 4
+        lower_bound: 4
+        upper_bound: 4
+        method: exact
+        null_count: 0
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        - count
+        default: sum
+      description: Exchange rate to USD. USD rate is 1.0000; others show relative value.
+    confidence: 0.95
+    provenance:
+    - signal: statistic
+      detail: 'table_type: dimension naming'
+    - signal: llm
+      detail: describe pass 1
+    - signal: llm
+      detail: describe pass 2
+    description: Dimension table of four major currencies with ISO codes, full names, and USD conversion
+      rates for order transactions.
+    ai_context: Join on curr_cd to ord_hdr for multi-currency reporting. Rates are static; use for historical
+      currency conversions only.
+  - name: cust_addr
+    source: main.cust_addr
+    table_type: dimension
+    lifecycle: inferred
+    columns:
+    - name: addr_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=True
+      cardinality:
+        distinct: 2252
+        lower_bound: 2252
+        upper_bound: 2252
+        method: exact
+        null_count: 0
+      description: Unique address identifier; primary key.
+    - name: cust_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      confidence: 0.9
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=False
+      - signal: inclusion_dependency
+        detail: "ratio 1.0, name score 1.2, llm: cust_id \u2192 cust_id: standard customer master FK"
+      cardinality:
+        distinct: 1500
+        lower_bound: 1500
+        upper_bound: 1500
+        method: exact
+        null_count: 0
+      foreign_key:
+        references: cust_mstr.cust_id
+        relationship: many_to_one
+      description: Foreign key to cust_mstr; identifies customer owning address.
+    - name: addr_typ_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: dimension
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> code
+      cardinality:
+        distinct: 2
+        lower_bound: 2
+        upper_bound: 2
+        method: exact
+        null_count: 0
+      description: 'Address type: SHIP (shipping) or BILL (billing).'
+    - name: line1
+      sql_type: VARCHAR
+      semantic_type: pii_address
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: no rule matched
+      - signal: llm
+        detail: Street address line; high cardinality; PII sensitive data element
+      cardinality:
+        distinct: 2011
+        lower_bound: 2011
+        upper_bound: 2011
+        method: exact
+        null_count: 0
+      pii: true
+      description: Street address line 1; contains PII.
+    - name: city_nm
+      sql_type: VARCHAR
+      semantic_type: geo_city
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> geo_city
+      cardinality:
+        distinct: 12
+        lower_bound: 12
+        upper_bound: 12
+        method: exact
+        null_count: 0
+      description: City name; 12 distinct cities across US, Canada, Germany, France, UK.
+    - name: state_cd
+      sql_type: VARCHAR
+      semantic_type: geo_region
+      entity_role: dimension
+      confidence: 0.8
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> geo_region
+      cardinality:
+        distinct: 12
+        lower_bound: 12
+        upper_bound: 12
+        method: exact
+        null_count: 0
+      description: State or region code (e.g., CA, NY, ON, BAV, IDF, MAN).
+    - name: postal_cd
+      sql_type: VARCHAR
+      semantic_type: geo_postal
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> geo_postal
+      cardinality:
+        distinct: 2213
+        lower_bound: 2213
+        upper_bound: 2213
+        method: exact
+        null_count: 0
+      description: Postal code; high cardinality (2213 distinct values).
+    - name: cntry_cd
+      sql_type: VARCHAR
+      semantic_type: geo_country
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> geo_country
+      cardinality:
+        distinct: 5
+        lower_bound: 5
+        upper_bound: 5
+        method: exact
+        null_count: 0
+      description: 'Country code; 5 countries: US, DE, CA, GB, FR.'
+    primary_key:
+    - addr_id
+    confidence: 0.65
+    provenance:
+    - signal: statistic
+      detail: 'table_type: no decisive signal'
+    - signal: llm
+      detail: 'table_type: llm filled unknown -> dimension'
+    - signal: llm
+      detail: describe pass 1
+    - signal: llm
+      detail: describe pass 2
+    description: Stores customer shipping and billing addresses with geographic details. One customer
+      may have multiple address records by type.
+    ai_context: Join to cust_mstr on cust_id. Filter by addr_typ_cd (SHIP/BILL) for address type. PII
+      present; handle per policy.
+    grain: one row per addr_id
+  - name: cust_mstr
+    source: main.cust_mstr
+    table_type: snapshot_scd2
+    lifecycle: inferred
+    columns:
+    - name: cust_sk
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=True
+      cardinality:
+        distinct: 2101
+        lower_bound: 2101
+        upper_bound: 2101
+        method: exact
+        null_count: 0
+      description: Surrogate key uniquely identifying each customer dimension record (2,101 distinct values).
+    - name: cust_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: natural_key
+      confidence: 0.7
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=False
+      - signal: statistic
+        detail: 'business key on a dimension: identifier-named, not the primary key, and Link found no
+          relationship for it'
+      cardinality:
+        distinct: 1500
+        lower_bound: 1500
+        upper_bound: 1500
+        method: exact
+        null_count: 0
+      description: Business key linking to source systems and fact tables. 1,500 unique customers with
+        multiple SCD2 versions.
+    - name: cust_nm
+      sql_type: VARCHAR
+      semantic_type: pii_name
+      entity_role: dimension
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> pii_name
+      cardinality:
+        distinct: 1500
+        lower_bound: 1500
+        upper_bound: 1500
+        method: exact
+        null_count: 0
+      pii: true
+      description: Customer name. PII field. One value per unique customer across all versions.
+    - name: email
+      sql_type: VARCHAR
+      semantic_type: pii_email
+      entity_role: dimension
+      confidence: 0.9
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> pii_email
+      cardinality:
+        distinct: 1500
+        lower_bound: 1500
+        upper_bound: 1500
+        method: exact
+        null_count: 0
+      pii: true
+      description: Customer email address. PII field. One value per unique customer across all versions.
+    - name: city_nm
+      sql_type: VARCHAR
+      semantic_type: geo_city
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> geo_city
+      cardinality:
+        distinct: 12
+        lower_bound: 12
+        upper_bound: 12
+        method: exact
+        null_count: 0
+      description: Customer city of residence. 12 distinct values (Munich, New York, Manchester, Phoenix,
+        Houston, Toronto, etc.).
+    - name: state_cd
+      sql_type: VARCHAR
+      semantic_type: geo_region
+      entity_role: dimension
+      confidence: 0.8
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> geo_region
+      cardinality:
+        distinct: 12
+        lower_bound: 12
+        upper_bound: 12
+        method: exact
+        null_count: 0
+      description: 'State or region code (BAV, NY, MAN, AZ, ON, TX). Mixed formats: US/CA abbreviations
+        and international codes.'
+    - name: cntry_cd
+      sql_type: VARCHAR
+      semantic_type: geo_country
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> geo_country
+      cardinality:
+        distinct: 5
+        lower_bound: 5
+        upper_bound: 5
+        method: exact
+        null_count: 0
+      description: Country code (US, DE, GB, CA, FR). 5 distinct countries represented.
+    - name: seg_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: dimension
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> code
+      cardinality:
+        distinct: 3
+        lower_bound: 3
+        upper_bound: 3
+        method: exact
+        null_count: 0
+      description: 'Customer segment code: SMB (Small/Medium Business), ENT (Enterprise), CON (Consumer).'
+    - name: src_sys_id
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: metadata
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: id-named but low cardinality
+      - signal: llm
+        detail: Source system identifier; 3 distinct coded values; metadata tracking data lineage
+      cardinality:
+        distinct: 3
+        lower_bound: 3
+        upper_bound: 3
+        method: exact
+        null_count: 0
+      enum_values:
+      - value: CRM1
+        meaning: Primary CRM system
+        decode_source: llm_guess
+      - value: CRM2
+        meaning: Secondary CRM system
+        decode_source: llm_guess
+      - value: LEGACY
+        meaning: Legacy system
+        decode_source: llm_guess
+      description: 'Source system identifier: CRM1 (Primary CRM), CRM2 (Secondary CRM), LEGACY (Legacy
+        system).'
+    - name: eff_start_dt
+      sql_type: DATE
+      semantic_type: date
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: date type
+      cardinality:
+        distinct: 703
+        lower_bound: 703
+        upper_bound: 703
+        method: exact
+        null_count: 0
+      description: Effective start date of this customer version. Marks when attribute changes took effect.
+    - name: eff_end_dt
+      sql_type: DATE
+      semantic_type: date
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: date type
+      cardinality:
+        distinct: 395
+        lower_bound: 395
+        upper_bound: 395
+        method: exact
+        null_count: 1500
+      description: Effective end date of this customer version. NULL (71% null) for current records; populated
+        for historical versions.
+    - name: is_curr_flg
+      sql_type: INTEGER
+      semantic_type: flag
+      entity_role: dimension
+      confidence: 0.7
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> flag
+      cardinality:
+        distinct: 2
+        lower_bound: 2
+        upper_bound: 2
+        method: exact
+        null_count: 0
+      description: 'Current record flag: 1=current version, 0=historical version. Use to filter active
+        customer attributes.'
+    - name: crt_dt
+      sql_type: DATE
+      semantic_type: timestamp_event
+      entity_role: metadata
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: audit/etl timestamp name
+      cardinality:
+        distinct: 550
+        lower_bound: 550
+        upper_bound: 550
+        method: exact
+        null_count: 0
+      description: Record creation date in warehouse. Metadata tracking when dimension row was loaded.
+    primary_key:
+    - cust_sk
+    confidence: 0.8
+    provenance:
+    - signal: statistic
+      detail: 'table_type: validity-window columns'
+    - signal: llm
+      detail: describe pass 1
+    - signal: llm
+      detail: describe pass 2
+    - signal: naming
+      detail: scd2 validity columns eff_start_dt/eff_end_dt, current flag is_curr_flg
+    description: Slowly Changing Dimension Type 2 tracking customer master data with effective dating
+      and current flags. Supports historical customer attribute changes across 1,500 unique customers.
+    ai_context: Join on cust_id to fact tables (ord_hdr, sub_evt, web_evt). Filter is_curr_flg=1 for current
+      records. Use eff_start_dt/eff_end_dt for temporal queries. PII fields present.
+    freshness:
+      expected_cadence: daily
+      inferred_from: 703 distinct eff_start_dt over 1096 days
+    grain: one row per cust_sk (one row per version of each entity)
+    scd:
+      type: 2
+      valid_from: eff_start_dt
+      valid_to: eff_end_dt
+      is_current_flag: is_curr_flg
+      natural_key:
+      - cust_id
+    knowledge:
+      usage_notes:
+      - 'SCD type 2: multiple rows per entity. For attributes as of a fact''s date, join ON key AND fact_date
+        BETWEEN eff_start_dt AND COALESCE(eff_end_dt, DATE ''9999-12-31''); use is_curr_flg = 1 only for
+        ''current'' questions; count entities with COUNT(DISTINCT key), not COUNT(*)'
+  - name: cust_mstr_legacy
+    source: main.cust_mstr_legacy
+    table_type: dimension
+    lifecycle: deprecated
+    columns:
+    - name: cust_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: primary_key
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=True
+      cardinality:
+        distinct: 500
+        lower_bound: 500
+        upper_bound: 500
+        method: exact
+        null_count: 0
+      description: 'Unique customer identifier, primary key. Format: C followed by 6 digits.'
+    - name: cust_nm
+      sql_type: VARCHAR
+      semantic_type: pii_name
+      entity_role: dimension
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> pii_name
+      cardinality:
+        distinct: 500
+        lower_bound: 500
+        upper_bound: 500
+        method: exact
+        null_count: 0
+      pii: true
+      description: Customer name. PII. All samples prefixed with 'legacy customer'.
+    - name: email
+      sql_type: VARCHAR
+      semantic_type: pii_email
+      entity_role: dimension
+      confidence: 0.95
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: 'value pattern: email'
+      cardinality:
+        distinct: 500
+        lower_bound: 500
+        upper_bound: 500
+        method: exact
+        null_count: 0
+      pii: true
+      description: 'Customer email address. PII. Domain: old-example.com.'
+    - name: city_nm
+      sql_type: VARCHAR
+      semantic_type: geo_city
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> geo_city
+      cardinality:
+        distinct: 12
+        lower_bound: 12
+        upper_bound: 12
+        method: exact
+        null_count: 0
+      description: Customer city of residence. 12 distinct values across UK, US, France.
+    - name: state_cd
+      sql_type: VARCHAR
+      semantic_type: geo_region
+      entity_role: dimension
+      confidence: 0.8
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> geo_region
+      cardinality:
+        distinct: 12
+        lower_bound: 12
+        upper_bound: 12
+        method: exact
+        null_count: 0
+      description: State or region code. Non-standard abbreviations (LDN, MAN, IDF) mixed with US state
+        codes (CA, IL, NY).
+    - name: load_dt
+      sql_type: DATE
+      semantic_type: timestamp_event
+      entity_role: metadata
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: audit/etl timestamp name
+      cardinality:
+        distinct: 185
+        lower_bound: 185
+        upper_bound: 185
+        method: exact
+        null_count: 0
+      description: 'Data load date. Metadata field tracking when record entered warehouse. Range: 2023-01-08
+        to 2023-07-07.'
+    primary_key:
+    - cust_id
+    confidence: 0.95
+    provenance:
+    - signal: statistic
+      detail: 'table_type: dimension naming'
+    - signal: llm
+      detail: describe pass 1
+    description: Legacy customer master dimension containing 500 unique customers with contact and geographic
+      attributes. Loaded incrementally from 2023.
+    ai_context: Join on cust_id to fact tables. Filter by load_dt for temporal analysis. Contains PII
+      (name, email). State codes are non-standard abbreviations (e.g., LDN, MAN, IDF).
+    deprecation:
+      replacement: cust_mstr
+      reason: legacy-named table; superseded by cust_mstr
+    grain: one row per cust_id
+  - name: date_dim
+    source: main.date_dim
+    table_type: dimension
+    lifecycle: inferred
+    columns:
+    - name: date_key
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=True
+      cardinality:
+        distinct: 1096
+        lower_bound: 1096
+        upper_bound: 1096
+        method: exact
+        null_count: 0
+      description: Surrogate integer key; unique identifier for each calendar date.
+    - name: cal_dt
+      sql_type: DATE
+      semantic_type: date
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: date type
+      cardinality:
+        distinct: 1096
+        lower_bound: 1096
+        upper_bound: 1096
+        method: exact
+        null_count: 0
+      description: Actual calendar date (DATE type); enables natural date filtering and range queries.
+    - name: day_of_wk
+      sql_type: INTEGER
+      semantic_type: enum
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: 'integer with 7 distinct values: grouped, not summed'
+      - signal: llm
+        detail: Integer 1-7 representing weekdays; matches day_nm cardinality.
+      cardinality:
+        distinct: 7
+        lower_bound: 7
+        upper_bound: 7
+        method: exact
+        null_count: 0
+      enum_values:
+      - value: '1'
+        meaning: Monday
+        decode_source: llm_guess
+      - value: '2'
+        meaning: Tuesday
+        decode_source: llm_guess
+      - value: '3'
+        meaning: Wednesday
+        decode_source: llm_guess
+      - value: '4'
+        meaning: Thursday
+        decode_source: llm_guess
+      - value: '5'
+        meaning: Friday
+        decode_source: llm_guess
+      - value: '6'
+        meaning: Saturday
+        decode_source: llm_guess
+      - value: '7'
+        meaning: Sunday
+        decode_source: llm_guess
+      description: Day-of-week code (1=Monday, 7=Sunday); supports weekday-level analysis and joins.
+    - name: day_nm
+      sql_type: VARCHAR
+      semantic_type: name
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> name
+      - signal: llm
+        detail: Weekday names; descriptive dimension attribute for day_of_wk.
+      cardinality:
+        distinct: 7
+        lower_bound: 7
+        upper_bound: 7
+        method: exact
+        null_count: 0
+      description: "Day-of-week name (Monday\u2013Sunday); human-readable alternative to day_of_wk code."
+    - name: wk_of_yr
+      sql_type: INTEGER
+      semantic_type: quantity
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: integer fallback
+      - signal: llm
+        detail: Week number 1-52; ordinal quantity within calendar year.
+      cardinality:
+        distinct: 52
+        lower_bound: 52
+        upper_bound: 52
+        method: exact
+        null_count: 0
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        - count
+        default: sum
+      description: "ISO week number (1\u201352); enables week-level aggregation and fiscal week grouping."
+    - name: mth_nbr
+      sql_type: INTEGER
+      semantic_type: enum
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: 'integer with 12 distinct values: grouped, not summed'
+      - signal: llm
+        detail: Month number 1-12; matches mth_nm cardinality and values.
+      - signal: statistic
+        detail: 'calendar_month: verified against cal_dt'
+      cardinality:
+        distinct: 12
+        lower_bound: 12
+        upper_bound: 12
+        method: exact
+        null_count: 0
+      enum_values:
+      - value: '1'
+        meaning: January
+        decode_source: llm_guess
+      - value: '2'
+        meaning: February
+        decode_source: llm_guess
+      - value: '3'
+        meaning: March
+        decode_source: llm_guess
+      - value: '4'
+        meaning: April
+        decode_source: llm_guess
+      - value: '5'
+        meaning: May
+        decode_source: llm_guess
+      - value: '6'
+        meaning: June
+        decode_source: llm_guess
+      - value: '7'
+        meaning: July
+        decode_source: llm_guess
+      - value: '8'
+        meaning: August
+        decode_source: llm_guess
+      - value: '9'
+        meaning: September
+        decode_source: llm_guess
+      - value: '10'
+        meaning: October
+        decode_source: llm_guess
+      - value: '11'
+        meaning: November
+        decode_source: llm_guess
+      - value: '12'
+        meaning: December
+        decode_source: llm_guess
+      description: Month number (1=January, 12=December); supports month-level filtering and grouping.
+      time_attribute: calendar_month
+    - name: mth_nm
+      sql_type: VARCHAR
+      semantic_type: name
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> name
+      - signal: llm
+        detail: Month names; descriptive dimension attribute for mth_nbr.
+      cardinality:
+        distinct: 12
+        lower_bound: 12
+        upper_bound: 12
+        method: exact
+        null_count: 0
+      description: "Month name (January\u2013December); human-readable alternative to mth_nbr code."
+    - name: qtr_nbr
+      sql_type: INTEGER
+      semantic_type: enum
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: 'integer with 4 distinct values: grouped, not summed'
+      - signal: llm
+        detail: Quarter number 1-4; fixed enumeration for fiscal periods.
+      - signal: statistic
+        detail: 'calendar_quarter: verified against cal_dt'
+      cardinality:
+        distinct: 4
+        lower_bound: 4
+        upper_bound: 4
+        method: exact
+        null_count: 0
+      enum_values:
+      - value: '1'
+        meaning: Q1
+        decode_source: llm_guess
+      - value: '2'
+        meaning: Q2
+        decode_source: llm_guess
+      - value: '3'
+        meaning: Q3
+        decode_source: llm_guess
+      - value: '4'
+        meaning: Q4
+        decode_source: llm_guess
+      description: Quarter code (1=Q1, 4=Q4); enables quarterly reporting and fiscal period analysis.
+      time_attribute: calendar_quarter
+    - name: yr_nbr
+      sql_type: INTEGER
+      semantic_type: quantity
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: 'integer with 3 distinct values: grouped, not summed'
+      - signal: llm
+        detail: Calendar year 2023-2025; ordinal quantity for temporal dimension.
+      - signal: statistic
+        detail: 'calendar_year: verified against cal_dt'
+      cardinality:
+        distinct: 3
+        lower_bound: 3
+        upper_bound: 3
+        method: exact
+        null_count: 0
+      description: Calendar year (2023, 2024, 2025); supports year-over-year comparisons and annual grouping.
+      time_attribute: calendar_year
+    - name: is_wknd_flg
+      sql_type: INTEGER
+      semantic_type: flag
+      entity_role: dimension
+      confidence: 0.7
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> flag
+      cardinality:
+        distinct: 2
+        lower_bound: 2
+        upper_bound: 2
+        method: exact
+        null_count: 0
+      description: Weekend flag (0=weekday, 1=weekend); enables weekend vs. weekday segmentation in queries.
+    primary_key:
+    - date_key
+    confidence: 0.95
+    provenance:
+    - signal: statistic
+      detail: 'table_type: dimension naming'
+    - signal: llm
+      detail: describe pass 1
+    - signal: llm
+      detail: describe pass 2
+    description: "Conformed date dimension spanning 3 years (2023\u20132025) with 1,096 daily records.\
+      \ Provides calendar attributes: day-of-week, month, quarter, week-of-year, and weekend flag for\
+      \ fact table joins."
+    ai_context: Join on date_key or cal_dt to fact tables (dly_sls_agg, ord_hdr, inv_snpsht). Use for
+      period filtering, fiscal grouping, and weekend/weekday segmentation. No nulls; complete coverage.
+    freshness:
+      expected_cadence: daily
+      inferred_from: 1096 distinct cal_dt over 1095 days
+    grain: one row per date_key
+  - name: dept_dim
+    source: main.dept_dim
+    table_type: dimension
+    lifecycle: inferred
+    columns:
+    - name: dept_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: primary_key
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> code
+      - signal: llm
+        detail: Unique department code identifier with 5 distinct values matching department names.
+      cardinality:
+        distinct: 5
+        lower_bound: 5
+        upper_bound: 5
+        method: exact
+        null_count: 0
+      enum_values:
+      - value: APPRL
+        meaning: Apparel
+        decode_source: llm_guess
+      - value: ELEC
+        meaning: Electronics
+        decode_source: llm_guess
+      - value: GROC
+        meaning: Grocery
+        decode_source: llm_guess
+      - value: HOME
+        meaning: Home & Garden
+        decode_source: llm_guess
+      - value: TOYS
+        meaning: Toys
+        decode_source: llm_guess
+      description: 'Department code (primary key). Values: APPRL, ELEC, GROC, HOME, TOYS.'
+    - name: dept_nm
+      sql_type: VARCHAR
+      semantic_type: name
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> name
+      - signal: llm
+        detail: Department name dimension; descriptive text corresponding to department codes.
+      cardinality:
+        distinct: 5
+        lower_bound: 5
+        upper_bound: 5
+        method: exact
+        null_count: 0
+      description: Department name. Full text corresponding to department code.
+    confidence: 0.95
+    provenance:
+    - signal: statistic
+      detail: 'table_type: dimension naming'
+    - signal: llm
+      detail: describe pass 1
+    - signal: llm
+      detail: describe pass 2
+    description: Dimension table containing five retail departments with standardized codes and full names
+      for product classification and analytics.
+    ai_context: Join on dept_cd to category_dim, prod_ref, or prod_ref_legacy. All five departments are
+      active; no historical tracking.
+  - name: dly_sls_agg
+    source: main.dly_sls_agg
+    table_type: aggregate
+    lifecycle: inferred
+    columns:
+    - name: agg_dt_key
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: foreign_key
+      confidence: 0.88
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=False
+      - signal: inclusion_dependency
+        detail: 'ratio 1.0, name score 0.9, llm: Daily sales agg date key references date dimension key.'
+      cardinality:
+        distinct: 1095
+        lower_bound: 1095
+        upper_bound: 1095
+        method: exact
+        null_count: 0
+      foreign_key:
+        references: date_dim.date_key
+        relationship: many_to_one
+      description: Foreign key to date_dim.date_key. Identifies the calendar date for the aggregated sales.
+    - name: store_id
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: foreign_key
+      confidence: 0.9
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: id-named but low cardinality
+      - signal: llm
+        detail: Store identifier with consistent ST#### format; 40 distinct values suggest dimension reference.
+      - signal: inclusion_dependency
+        detail: 'ratio 1.0, name score 1.2, llm: Daily sales agg store ID references store dimension.'
+      cardinality:
+        distinct: 40
+        lower_bound: 40
+        upper_bound: 40
+        method: exact
+        null_count: 0
+      foreign_key:
+        references: store_dim.store_id
+        relationship: many_to_one
+      description: 'Foreign key to store_dim.store_id. Identifies the retail store location (format: ST####).'
+    - name: tot_sls_amt
+      sql_type: DECIMAL(14,2)
+      semantic_type: monetary_value
+      entity_role: measure
+      confidence: 0.8
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> monetary_value
+      cardinality:
+        distinct: 6298
+        lower_bound: 6298
+        upper_bound: 6298
+        method: exact
+        null_count: 0
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        - count
+        default: sum
+      description: Total sales amount in currency for the store on the given date. Decimal with 2 fractional
+        digits.
+    - name: ord_cnt
+      sql_type: INTEGER
+      semantic_type: quantity
+      entity_role: measure
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> quantity
+      cardinality:
+        distinct: 3
+        lower_bound: 3
+        upper_bound: 3
+        method: exact
+        null_count: 0
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        - count
+        default: sum
+      description: 'Count of orders placed at the store on the given date. Values observed: 1, 2, or 3.'
+    primary_key:
+    - agg_dt_key
+    - store_id
+    provenance:
+    - signal: statistic
+      detail: 'compound key: (agg_dt_key, store_id) is unique over all 6642 rows; no member is unique
+        alone'
+    - signal: statistic
+      detail: 'table_type: aggregate naming + measures'
+    - signal: llm
+      detail: describe pass 1
+    - signal: llm
+      detail: describe pass 2
+    confidence: 0.75
+    description: Daily sales aggregate by store and date. Contains total sales amount and order count
+      rolled up from transaction-level data.
+    ai_context: Join to date_dim via agg_dt_key and store_dim via store_id. Grain is one row per store
+      per day. Filter by date range using agg_dt_key.
+    grain: one row per agg_dt_key, store_id (pre-aggregated)
+  - name: dq_chk_log
+    source: main.dq_chk_log
+    table_type: operational
+    lifecycle: inferred
+    columns:
+    - name: chk_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=True
+      cardinality:
+        distinct: 150
+        lower_bound: 150
+        upper_bound: 150
+        method: exact
+        null_count: 0
+      description: Unique identifier for each data quality check execution record.
+    - name: tbl_nm
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> name
+      - signal: llm
+        detail: Table name reference; low cardinality coded values identifying source tables
+      cardinality:
+        distinct: 4
+        lower_bound: 4
+        upper_bound: 4
+        method: exact
+        null_count: 0
+      conflicts:
+      - between:
+        - naming
+        - llm
+        detail: naming said name, llm said code
+      enum_values:
+      - value: ord_hdr
+        meaning: order header table
+        decode_source: llm_guess
+      - value: web_evt
+        meaning: web event table
+        decode_source: llm_guess
+      - value: ord_ln
+        meaning: order line table
+        decode_source: llm_guess
+      - value: cust_mstr
+        meaning: customer master table
+        decode_source: llm_guess
+      description: 'Target table name: ord_hdr (order header), web_evt (web event), ord_ln (order line),
+        cust_mstr (customer master).'
+    - name: chk_nm
+      sql_type: VARCHAR
+      semantic_type: enum
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> name
+      - signal: llm
+        detail: Data quality check type; fixed set of check categories
+      cardinality:
+        distinct: 3
+        lower_bound: 3
+        upper_bound: 3
+        method: exact
+        null_count: 0
+      conflicts:
+      - between:
+        - naming
+        - llm
+        detail: naming said name, llm said enum
+      enum_values:
+      - value: not_null_check
+        meaning: validates non-null constraint
+        decode_source: llm_guess
+      - value: row_count_check
+        meaning: validates row count threshold
+        decode_source: llm_guess
+      - value: range_check
+        meaning: validates value range constraint
+        decode_source: llm_guess
+      description: 'Check type: not_null_check (non-null constraint), row_count_check (row count threshold),
+        range_check (value range constraint).'
+    - name: chk_dt
+      sql_type: DATE
+      semantic_type: date
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: date type
+      cardinality:
+        distinct: 59
+        lower_bound: 59
+        upper_bound: 59
+        method: exact
+        null_count: 0
+      description: Date when the data quality check was executed.
+    - name: pass_flg
+      sql_type: INTEGER
+      semantic_type: flag
+      entity_role: dimension
+      confidence: 0.7
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> flag
+      cardinality:
+        distinct: 2
+        lower_bound: 2
+        upper_bound: 2
+        method: exact
+        null_count: 0
+      description: 'Check result flag: 1=passed, 0=failed.'
+    - name: fail_cnt
+      sql_type: INTEGER
+      semantic_type: quantity
+      entity_role: measure
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> quantity
+      cardinality:
+        distinct: 21
+        lower_bound: 21
+        upper_bound: 21
+        method: exact
+        null_count: 0
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        - count
+        default: sum
+      description: Count of rows or violations that failed the check; 0 when check passes.
+    primary_key:
+    - chk_id
+    confidence: 0.7
+    provenance:
+    - signal: statistic
+      detail: 'table_type: ops naming, nothing references it'
+    - signal: llm
+      detail: describe pass 1
+    description: Operational log of data quality checks executed against core tables, recording check
+      type, execution date, pass/fail status, and failure counts.
+    ai_context: Join on tbl_nm to target tables. Filter by chk_dt for date ranges and pass_flg for pass/fail
+      analysis. fail_cnt is 0 when pass_flg=1.
+    freshness:
+      expected_cadence: daily
+      inferred_from: 59 distinct chk_dt over 59 days
+    grain: one row per chk_id
+  - name: etl_log
+    source: main.etl_log
+    table_type: operational
+    lifecycle: inferred
+    columns:
+    - name: run_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=True
+      cardinality:
+        distinct: 200
+        lower_bound: 200
+        upper_bound: 200
+        method: exact
+        null_count: 0
+      description: Unique identifier for each ETL job execution run.
+    - name: job_nm
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: foreign_key
+      confidence: 0.9
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> name
+      - signal: llm
+        detail: Job name identifier with 4 distinct values; represents ETL job types
+      - signal: inclusion_dependency
+        detail: 'ratio 1.0, name score 1.2, llm: ETL log job name references job control table.'
+      cardinality:
+        distinct: 4
+        lower_bound: 4
+        upper_bound: 4
+        method: exact
+        null_count: 0
+      conflicts:
+      - between:
+        - naming
+        - llm
+        detail: naming said name, llm said code
+      enum_values:
+      - value: load_web_evt
+        meaning: Load web events
+        decode_source: llm_guess
+      - value: agg_dly_sls
+        meaning: Aggregate daily sales
+        decode_source: llm_guess
+      - value: load_cust_mstr
+        meaning: Load customer master
+        decode_source: llm_guess
+      - value: load_ord_hdr
+        meaning: Load order header
+        decode_source: llm_guess
+      foreign_key:
+        references: job_ctrl.job_nm
+        relationship: many_to_one
+      description: Job name code (load_web_evt, agg_dly_sls, load_cust_mstr, load_ord_hdr) referencing
+        job_ctrl table.
+    - name: start_ts
+      sql_type: TIMESTAMP
+      semantic_type: timestamp_event
+      entity_role: metadata
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: audit/etl timestamp name
+      cardinality:
+        distinct: 200
+        lower_bound: 200
+        upper_bound: 200
+        method: exact
+        null_count: 0
+      description: Timestamp when the ETL job execution began.
+    - name: end_ts
+      sql_type: TIMESTAMP
+      semantic_type: timestamp_event
+      entity_role: metadata
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: audit/etl timestamp name
+      cardinality:
+        distinct: 200
+        lower_bound: 200
+        upper_bound: 200
+        method: exact
+        null_count: 0
+      description: Timestamp when the ETL job execution completed.
+    - name: sts_cd
+      sql_type: VARCHAR
+      semantic_type: status_code
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> status_code
+      cardinality:
+        distinct: 3
+        lower_bound: 3
+        upper_bound: 3
+        method: exact
+        null_count: 0
+      description: 'Job execution status: SUCCESS, FAILED, or RUNNING.'
+    - name: rows_in
+      sql_type: INTEGER
+      semantic_type: quantity
+      entity_role: measure
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: integer fallback
+      - signal: llm
+        detail: Count of input rows processed; numeric measure of data volume
+      cardinality:
+        distinct: 200
+        lower_bound: 200
+        upper_bound: 200
+        method: exact
+        null_count: 0
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        - count
+        default: sum
+      description: Count of rows read or input to the job.
+    - name: rows_out
+      sql_type: INTEGER
+      semantic_type: quantity
+      entity_role: measure
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: integer fallback
+      - signal: llm
+        detail: Count of output rows produced; numeric measure of data volume
+      cardinality:
+        distinct: 200
+        lower_bound: 200
+        upper_bound: 200
+        method: exact
+        null_count: 0
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        - count
+        default: sum
+      description: Count of rows written or output from the job.
+    primary_key:
+    - run_id
+    confidence: 0.7
+    provenance:
+    - signal: statistic
+      detail: 'table_type: ops naming, nothing references it'
+    - signal: llm
+      detail: describe pass 1
+    - signal: llm
+      detail: describe pass 2
+    description: Operational log of ETL job executions tracking run identifiers, job names, start/end
+      timestamps, completion status, and row counts processed.
+    ai_context: Join to job_ctrl via job_nm. Filter by sts_cd for success/failure analysis. end_ts may
+      equal start_ts for very fast jobs; rows_out can exceed rows_in due to transformations.
+    grain: one row per run_id
+  - name: evt_typ_dim
+    source: main.evt_typ_dim
+    table_type: dimension
+    lifecycle: inferred
+    columns:
+    - name: evt_typ_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: dimension
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> code
+      cardinality:
+        distinct: 5
+        lower_bound: 5
+        upper_bound: 5
+        method: exact
+        null_count: 0
+      description: 'Event type code: CANCEL, DOWNGRADE, RENEW, START, UPGRADE. Primary key.'
+    - name: evt_typ_desc
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: dimension
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> code
+      cardinality:
+        distinct: 5
+        lower_bound: 5
+        upper_bound: 5
+        method: exact
+        null_count: 0
+      description: Human-readable event type description corresponding to evt_typ_cd.
+    confidence: 0.95
+    provenance:
+    - signal: statistic
+      detail: 'table_type: dimension naming'
+    - signal: llm
+      detail: describe pass 1
+    - signal: llm
+      detail: describe pass 2
+    description: Dimension table defining subscription event types with codes and descriptions for lifecycle
+      events (start, cancel, renew, upgrade, downgrade).
+    ai_context: Join to sub_evt on evt_typ_cd to classify subscription lifecycle events. All 5 event types
+      are present; no nulls. Use for filtering or grouping by event category.
+  - name: file_load_hist
+    source: main.file_load_hist
+    table_type: snapshot_scd2
+    lifecycle: inferred
+    columns:
+    - name: load_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=True
+      cardinality:
+        distinct: 120
+        lower_bound: 120
+        upper_bound: 120
+        method: exact
+        null_count: 0
+      description: Unique identifier for each file load event.
+    - name: file_nm
+      sql_type: VARCHAR
+      semantic_type: name
+      entity_role: unique_key
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> name
+      - signal: llm
+        detail: Unique file identifier with consistent naming pattern; tracks source files in load history
+      cardinality:
+        distinct: 120
+        lower_bound: 120
+        upper_bound: 120
+        method: exact
+        null_count: 0
+      description: Name of the loaded file (e.g., file_0001.csv).
+    - name: src_sys_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: natural_key
+      confidence: 0.7
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=False
+      - signal: statistic
+        detail: 'business key on a dimension: identifier-named, not the primary key, and Link found no
+          relationship for it'
+      cardinality:
+        distinct: 3
+        lower_bound: 3
+        upper_bound: 3
+        method: exact
+        null_count: 0
+      description: Source system identifier (CRM1, CRM2, LEGACY). Foreign key to source system dimension.
+    - name: load_dt
+      sql_type: DATE
+      semantic_type: timestamp_event
+      entity_role: metadata
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: audit/etl timestamp name
+      cardinality:
+        distinct: 68
+        lower_bound: 68
+        upper_bound: 68
+        method: exact
+        null_count: 0
+      description: Date when the file was loaded into the warehouse.
+    - name: row_cnt
+      sql_type: INTEGER
+      semantic_type: quantity
+      entity_role: measure
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> quantity
+      cardinality:
+        distinct: 120
+        lower_bound: 120
+        upper_bound: 120
+        method: exact
+        null_count: 0
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        - count
+        default: sum
+      description: Number of rows processed in the file load.
+    - name: sts_cd
+      sql_type: VARCHAR
+      semantic_type: status_code
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> status_code
+      cardinality:
+        distinct: 2
+        lower_bound: 2
+        upper_bound: 2
+        method: exact
+        null_count: 0
+      description: 'Load status: SUCCESS or FAILED.'
+    primary_key:
+    - load_id
+    confidence: 0.35
+    provenance:
+    - signal: statistic
+      detail: 'table_type: snapshot naming/flag (no validity columns)'
+    - signal: llm
+      detail: describe pass 1
+    description: Operational log of file load events with status, row counts, and source system tracking.
+      One row per load attempt.
+    ai_context: Join on src_sys_id to source system dimension. Filter by load_dt for date ranges and sts_cd
+      for success/failure analysis. load_id is unique per load event.
+    conflicts:
+    - between:
+      - statistic
+      - llm
+      detail: 'table_type: heuristic said snapshot_scd2, llm said operational'
+    grain: one row per load_id (one row per version of each entity)
+  - name: inv_snpsht
+    source: main.inv_snpsht
+    table_type: snapshot_scd2
+    lifecycle: inferred
+    columns:
+    - name: snpsht_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=True
+      cardinality:
+        distinct: 2500
+        lower_bound: 2500
+        upper_bound: 2500
+        method: exact
+        null_count: 0
+      description: Unique snapshot record identifier; primary key.
+    - name: date_key
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: foreign_key
+      confidence: 0.9
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=False
+      - signal: inclusion_dependency
+        detail: 'ratio 1.0, name score 1.2, llm: Inventory snapshot date key references date dimension.'
+      cardinality:
+        distinct: 984
+        lower_bound: 984
+        upper_bound: 984
+        method: exact
+        null_count: 0
+      foreign_key:
+        references: date_dim.date_key
+        relationship: many_to_one
+      description: Foreign key to date_dim; snapshot capture date in YYYYMMDD format.
+    - name: store_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      confidence: 0.9
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=False
+      - signal: inclusion_dependency
+        detail: 'ratio 1.0, name score 1.2, llm: Inventory snapshot store ID references store dimension.'
+      cardinality:
+        distinct: 40
+        lower_bound: 40
+        upper_bound: 40
+        method: exact
+        null_count: 0
+      foreign_key:
+        references: store_dim.store_id
+        relationship: many_to_one
+      description: Foreign key to store_dim; retail store location identifier (ST-prefixed).
+    - name: prod_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      confidence: 0.9
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=False
+      - signal: inclusion_dependency
+        detail: 'ratio 1.0, name score 1.2, llm: Inventory snapshot product ID references product reference.'
+      cardinality:
+        distinct: 399
+        lower_bound: 399
+        upper_bound: 399
+        method: exact
+        null_count: 0
+      foreign_key:
+        references: prod_ref.prod_id
+        relationship: many_to_one
+      description: Foreign key to prod_ref; product identifier (P-prefixed).
+    - name: on_hand_qty
+      sql_type: INTEGER
+      semantic_type: quantity
+      entity_role: measure
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> quantity
+      cardinality:
+        distinct: 495
+        lower_bound: 495
+        upper_bound: 495
+        method: exact
+        null_count: 0
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        - count
+        default: sum
+      description: Quantity of product physically in stock at store on snapshot date.
+    - name: on_order_qty
+      sql_type: INTEGER
+      semantic_type: quantity
+      entity_role: measure
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> quantity
+      cardinality:
+        distinct: 201
+        lower_bound: 201
+        upper_bound: 201
+        method: exact
+        null_count: 0
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        - count
+        default: sum
+      description: Quantity of product on pending purchase order for store on snapshot date.
+    primary_key:
+    - snpsht_id
+    confidence: 0.35
+    provenance:
+    - signal: statistic
+      detail: 'table_type: snapshot naming/flag (no validity columns)'
+    - signal: llm
+      detail: describe pass 1
+    - signal: llm
+      detail: describe pass 2
+    description: Inventory snapshot capturing on-hand and on-order quantities by store, product, and date
+      across 2,500 records spanning 984 distinct dates.
+    ai_context: 'Join to date_dim, prod_ref, store_dim via date_key, prod_id, store_id. Filter by date_key
+      range for temporal analysis. Grain: one row per store-product-date combination.'
+    grain: one row per snpsht_id (one row per version of each entity)
+  - name: job_ctrl
+    source: main.job_ctrl
+    table_type: dimension
+    lifecycle: inferred
+    columns:
+    - name: job_nm
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: primary_key
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> name
+      - signal: llm
+        detail: Unique job identifier with cryptic abbreviations; controls job scheduling.
+      cardinality:
+        distinct: 5
+        lower_bound: 5
+        upper_bound: 5
+        method: exact
+        null_count: 0
+      conflicts:
+      - between:
+        - naming
+        - llm
+        detail: naming said name, llm said code
+      enum_values:
+      - value: agg_dly_sls
+        meaning: Aggregate daily sales
+        decode_source: llm_guess
+      - value: agg_mth_cust
+        meaning: Aggregate monthly customer
+        decode_source: llm_guess
+      - value: load_cust_mstr
+        meaning: Load customer master
+        decode_source: llm_guess
+      - value: load_ord_hdr
+        meaning: Load order header
+        decode_source: llm_guess
+      - value: load_web_evt
+        meaning: Load web events
+        decode_source: llm_guess
+      description: 'Job name code (primary key). Values: agg_dly_sls, agg_mth_cust, load_cust_mstr, load_ord_hdr,
+        load_web_evt.'
+    - name: last_run_dt
+      sql_type: DATE
+      semantic_type: date
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: date type
+      cardinality:
+        distinct: 1
+        lower_bound: 1
+        upper_bound: 1
+        method: exact
+        null_count: 0
+      description: Date of most recent job execution. Currently all rows show 2025-12-31.
+    - name: next_run_dt
+      sql_type: DATE
+      semantic_type: date
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: date type
+      cardinality:
+        distinct: 1
+        lower_bound: 1
+        upper_bound: 1
+        method: exact
+        null_count: 0
+      description: Scheduled date for next job execution. Currently all rows show 2026-01-01.
+    - name: actv_flg
+      sql_type: INTEGER
+      semantic_type: flag
+      entity_role: dimension
+      confidence: 0.7
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> flag
+      cardinality:
+        distinct: 1
+        lower_bound: 1
+        upper_bound: 1
+        method: exact
+        null_count: 0
+      description: Active flag (1=active, 0=inactive). All rows currently active.
+    confidence: 0.95
+    provenance:
+    - signal: statistic
+      detail: 'table_type: referenced by 1 tables, no measures, no FKs out'
+    - signal: llm
+      detail: describe pass 1
+    - signal: llm
+      detail: describe pass 2
+    description: Control metadata for ETL jobs, tracking job definitions, last execution date, next scheduled
+      run, and active status.
+    ai_context: Join to etl_log on job_nm. Filter by actv_flg=1 for active jobs. All 5 rows represent
+      distinct job definitions.
+    conflicts:
+    - between:
+      - statistic
+      - llm
+      detail: 'table_type: heuristic said dimension, llm said operational'
+  - name: mktg_cmpgn_dim
+    source: main.mktg_cmpgn_dim
+    table_type: dimension
+    lifecycle: inferred
+    columns:
+    - name: cmpgn_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: primary_key
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=True
+      cardinality:
+        distinct: 20
+        lower_bound: 20
+        upper_bound: 20
+        method: exact
+        null_count: 0
+      description: 'Unique campaign identifier, primary key. Format: CMPGN####.'
+    - name: cmpgn_nm
+      sql_type: VARCHAR
+      semantic_type: name
+      entity_role: unique_key
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> name
+      - signal: llm
+        detail: Campaign name; unique, non-null, human-readable identifier for marketing campaigns
+      cardinality:
+        distinct: 20
+        lower_bound: 20
+        upper_bound: 20
+        method: exact
+        null_count: 0
+      description: Campaign name, unique. Descriptive label for campaign reference.
+    - name: chnl_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: foreign_key
+      confidence: 0.9
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> code
+      - signal: inclusion_dependency
+        detail: 'ratio 1.0, name score 1.2, llm: Marketing campaign channel code references channel dimension.'
+      - signal: statistic
+        detail: enum decoded via join to chnl_dim.chnl_nm
+      cardinality:
+        distinct: 4
+        lower_bound: 4
+        upper_bound: 4
+        method: exact
+        null_count: 0
+      foreign_key:
+        references: chnl_dim.chnl_cd
+        relationship: many_to_one
+      description: Sales channel code (CALL, STORE, WEB, MOBILE). Foreign key to chnl_dim.
+      enum_values:
+      - value: WEB
+        meaning: Web Storefront
+        decode_source: dictionary_join
+      - value: STORE
+        meaning: Physical Store
+        decode_source: dictionary_join
+      - value: MOBILE
+        meaning: Mobile App
+        decode_source: dictionary_join
+      - value: CALL
+        meaning: Call Center
+        decode_source: dictionary_join
+    - name: start_dt
+      sql_type: DATE
+      semantic_type: date
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: date type
+      cardinality:
+        distinct: 19
+        lower_bound: 19
+        upper_bound: 19
+        method: exact
+        null_count: 0
+      description: Campaign start date. Marks campaign launch.
+    - name: end_dt
+      sql_type: DATE
+      semantic_type: date
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: date type
+      cardinality:
+        distinct: 20
+        lower_bound: 20
+        upper_bound: 20
+        method: exact
+        null_count: 0
+      description: Campaign end date. Marks campaign conclusion.
+    - name: budget_amt
+      sql_type: DECIMAL(12,2)
+      semantic_type: monetary_value
+      entity_role: measure
+      confidence: 0.8
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> monetary_value
+      cardinality:
+        distinct: 20
+        lower_bound: 20
+        upper_bound: 20
+        method: exact
+        null_count: 0
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        - count
+        default: sum
+      description: Campaign budget amount in currency. Allocated spend for campaign execution.
+    primary_key:
+    - cmpgn_id
+    confidence: 0.95
+    provenance:
+    - signal: statistic
+      detail: 'table_type: dimension naming'
+    - signal: llm
+      detail: describe pass 1
+    - signal: llm
+      detail: describe pass 2
+    description: Marketing campaign dimension containing 20 distinct campaigns with channel, duration,
+      and budget allocation for analytics and reporting.
+    ai_context: Join to chnl_dim on chnl_cd for channel details. Filter by start_dt/end_dt for active
+      campaigns. Budget_amt is allocation, not spend.
+    freshness:
+      expected_cadence: sporadic
+      inferred_from: 19 distinct start_dt over 596 days
+    grain: one row per cmpgn_id
+  - name: mth_cust_agg
+    source: main.mth_cust_agg
+    table_type: aggregate
+    lifecycle: inferred
+    columns:
+    - name: yr_mth
+      sql_type: VARCHAR
+      semantic_type: date
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: no rule matched
+      - signal: llm
+        detail: Year-month format (YYYY-MM) spanning 36 months; aggregation period dimension
+      cardinality:
+        distinct: 36
+        lower_bound: 36
+        upper_bound: 36
+        method: exact
+        null_count: 0
+      description: "Year-month in YYYY-MM format; 36 distinct months from 2024\u20132025."
+    - name: cust_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      confidence: 0.9
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=False
+      - signal: inclusion_dependency
+        detail: 'ratio 1.0, name score 1.2, llm: Monthly customer agg customer ID references customer
+          master.'
+      cardinality:
+        distinct: 1484
+        lower_bound: 1484
+        upper_bound: 1484
+        method: exact
+        null_count: 0
+      foreign_key:
+        references: cust_mstr.cust_id
+        relationship: many_to_one
+      description: Customer identifier; foreign key to cust_mstr.cust_id (1,484 unique customers).
+    - name: tot_spend_amt
+      sql_type: DECIMAL(14,2)
+      semantic_type: monetary_value
+      entity_role: measure
+      confidence: 0.8
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> monetary_value
+      cardinality:
+        distinct: 6355
+        lower_bound: 6355
+        upper_bound: 6355
+        method: exact
+        null_count: 0
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        - count
+        default: sum
+      description: Total spending amount per customer per month in decimal currency; 6,355 distinct values.
+    - name: ord_cnt
+      sql_type: INTEGER
+      semantic_type: quantity
+      entity_role: measure
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> quantity
+      cardinality:
+        distinct: 4
+        lower_bound: 4
+        upper_bound: 4
+        method: exact
+        null_count: 0
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        - count
+        default: sum
+      description: "Order count per customer per month; values range 1\u20134 (4 distinct values)."
+    primary_key:
+    - cust_id
+    - yr_mth
+    provenance:
+    - signal: statistic
+      detail: 'compound key: (cust_id, yr_mth) is unique over all 6705 rows; no member is unique alone'
+    - signal: statistic
+      detail: 'table_type: aggregate naming + measures'
+    - signal: llm
+      detail: describe pass 1
+    - signal: llm
+      detail: describe pass 2
+    confidence: 0.75
+    description: Monthly customer spending aggregates tracking total spend amount and order count per
+      customer per month across 36 months and 1,484 customers.
+    ai_context: "Join to cust_mstr on cust_id for customer attributes. Filter by yr_mth for date ranges.\
+      \ ord_cnt values are 1\u20134; tot_spend_amt is non-null and varies widely."
+    grain: one row per cust_id, yr_mth (pre-aggregated)
+  - name: ord_hdr
+    source: main.ord_hdr
+    table_type: fact
+    lifecycle: inferred
+    columns:
+    - name: ord_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=True
+      cardinality:
+        distinct: 8000
+        lower_bound: 8000
+        upper_bound: 8000
+        method: exact
+        null_count: 0
+      description: Unique order identifier; primary key for order header.
+      aggregations:
+        allowed:
+        - count
+        - count_distinct
+        default: count
+    - name: cust_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      confidence: 0.9
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=False
+      - signal: inclusion_dependency
+        detail: 'ratio 1.0, name score 1.2, llm: Order header customer ID references customer master.'
+      cardinality:
+        distinct: 1487
+        lower_bound: 1487
+        upper_bound: 1487
+        method: exact
+        null_count: 0
+      foreign_key:
+        references: cust_mstr.cust_id
+        relationship: many_to_one
+      description: Foreign key to customer master; identifies order customer.
+    - name: store_id
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: foreign_key
+      confidence: 0.9
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: id-named but low cardinality
+      - signal: llm
+        detail: Store identifier with consistent ST prefix pattern, 40 distinct values, non-unique in
+          orders table.
+      - signal: inclusion_dependency
+        detail: 'ratio 1.0, name score 1.2, llm: Order header store ID references store dimension.'
+      cardinality:
+        distinct: 40
+        lower_bound: 40
+        upper_bound: 40
+        method: exact
+        null_count: 0
+      foreign_key:
+        references: store_dim.store_id
+        relationship: many_to_one
+      description: Foreign key to store dimension; identifies fulfilling store location.
+    - name: date_key
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: foreign_key
+      confidence: 0.9
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=False
+      - signal: inclusion_dependency
+        detail: 'ratio 1.0, name score 1.2, llm: Order header date key references date dimension.'
+      cardinality:
+        distinct: 1095
+        lower_bound: 1095
+        upper_bound: 1095
+        method: exact
+        null_count: 0
+      foreign_key:
+        references: date_dim.date_key
+        relationship: many_to_one
+      description: Foreign key to date dimension; conformed date key for order date.
+    - name: ord_dt
+      sql_type: DATE
+      semantic_type: date
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: date type
+      cardinality:
+        distinct: 1095
+        lower_bound: 1095
+        upper_bound: 1095
+        method: exact
+        null_count: 0
+      description: Order transaction date; denormalized from date dimension for convenience.
+    - name: sts_cd
+      sql_type: VARCHAR
+      semantic_type: status_code
+      entity_role: foreign_key
+      confidence: 0.9
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> status_code
+      - signal: inclusion_dependency
+        detail: 'ratio 1.0, name score 1.2, llm: Order header status code references status code dimension.'
+      - signal: statistic
+        detail: enum decoded via join to sts_cd_dim.sts_desc
+      cardinality:
+        distinct: 3
+        lower_bound: 3
+        upper_bound: 3
+        method: exact
+        null_count: 0
+      foreign_key:
+        references: sts_cd_dim.sts_cd
+        relationship: many_to_one
+      description: Order status code (C=Completed, X=Cancelled, P=Pending); foreign key to status dimension.
+      enum_values:
+      - value: P
+        meaning: Pending
+        decode_source: dictionary_join
+      - value: C
+        meaning: Complete
+        decode_source: dictionary_join
+      - value: X
+        meaning: Cancelled
+        decode_source: dictionary_join
+    - name: chnl_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: foreign_key
+      confidence: 0.9
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> code
+      - signal: inclusion_dependency
+        detail: 'ratio 1.0, name score 1.2, llm: Order header channel code references channel dimension.'
+      - signal: statistic
+        detail: enum decoded via join to chnl_dim.chnl_nm
+      cardinality:
+        distinct: 4
+        lower_bound: 4
+        upper_bound: 4
+        method: exact
+        null_count: 0
+      foreign_key:
+        references: chnl_dim.chnl_cd
+        relationship: many_to_one
+      description: Sales channel code (STORE, CALL, MOBILE, WEB); foreign key to channel dimension.
+      enum_values:
+      - value: WEB
+        meaning: Web Storefront
+        decode_source: dictionary_join
+      - value: STORE
+        meaning: Physical Store
+        decode_source: dictionary_join
+      - value: MOBILE
+        meaning: Mobile App
+        decode_source: dictionary_join
+      - value: CALL
+        meaning: Call Center
+        decode_source: dictionary_join
+    - name: pmt_mthd_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: foreign_key
+      confidence: 0.9
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> code
+      - signal: inclusion_dependency
+        detail: 'ratio 1.0, name score 1.2, llm: Order header payment method code references payment method
+          dimension.'
+      - signal: statistic
+        detail: enum decoded via join to pmt_mthd_dim.pmt_mthd_desc
+      cardinality:
+        distinct: 4
+        lower_bound: 4
+        upper_bound: 4
+        method: exact
+        null_count: 0
+      foreign_key:
+        references: pmt_mthd_dim.pmt_mthd_cd
+        relationship: many_to_one
+      description: Payment method code (CC, ACH, GC, COD); foreign key to payment method dimension.
+      enum_values:
+      - value: CC
+        meaning: Credit Card
+        decode_source: dictionary_join
+      - value: ACH
+        meaning: ACH Bank Transfer
+        decode_source: dictionary_join
+      - value: GC
+        meaning: Gift Card
+        decode_source: dictionary_join
+      - value: COD
+        meaning: Cash on Delivery
+        decode_source: dictionary_join
+    - name: promo_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      confidence: 0.9
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=False
+      - signal: inclusion_dependency
+        detail: 'ratio 1.0, name score 1.2, llm: Order header promo ID references promotion dimension.'
+      cardinality:
+        distinct: 60
+        lower_bound: 60
+        upper_bound: 60
+        method: exact
+        null_count: 5571
+      foreign_key:
+        references: promo_dim.promo_id
+        relationship: many_to_one
+      description: Promotion identifier; foreign key to promotion dimension. 70% null (no promotion applied).
+    - name: rep_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      confidence: 0.9
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=False
+      - signal: inclusion_dependency
+        detail: 'ratio 1.0, name score 1.2, llm: Order header sales rep ID references sales rep dimension.'
+      cardinality:
+        distinct: 80
+        lower_bound: 80
+        upper_bound: 80
+        method: exact
+        null_count: 1561
+      foreign_key:
+        references: sls_rep_dim.rep_id
+        relationship: many_to_one
+      description: Sales representative identifier; foreign key to sales rep dimension. 20% null (no rep
+        assigned).
+    - name: curr_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: foreign_key
+      confidence: 0.9
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> code
+      - signal: llm
+        detail: ISO 4217 currency codes, 4 distinct values, standard monetary dimension.
+      - signal: inclusion_dependency
+        detail: 'ratio 1.0, name score 1.2, llm: Order header currency code references currency dimension.'
+      - signal: statistic
+        detail: enum decoded via join to curr_dim.curr_nm
+      cardinality:
+        distinct: 4
+        lower_bound: 4
+        upper_bound: 4
+        method: exact
+        null_count: 0
+      enum_values:
+      - value: USD
+        meaning: US Dollar
+        decode_source: dictionary_join
+      - value: EUR
+        meaning: Euro
+        decode_source: dictionary_join
+      - value: GBP
+        meaning: British Pound
+        decode_source: dictionary_join
+      - value: CAD
+        meaning: Canadian Dollar
+        decode_source: dictionary_join
+      foreign_key:
+        references: curr_dim.curr_cd
+        relationship: many_to_one
+      description: Currency code (USD, EUR, GBP, CAD); foreign key to currency dimension for order amount.
+    - name: tot_amt
+      sql_type: DECIMAL(12,2)
+      semantic_type: monetary_value
+      entity_role: measure
+      confidence: 0.8
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> monetary_value
+      cardinality:
+        distinct: 7443
+        lower_bound: 7443
+        upper_bound: 7443
+        method: exact
+        null_count: 0
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        - count
+        default: sum
+      description: Order total amount in specified currency; primary monetary measure.
+    - name: crt_dt
+      sql_type: DATE
+      semantic_type: timestamp_event
+      entity_role: metadata
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: audit/etl timestamp name
+      cardinality:
+        distinct: 1097
+        lower_bound: 1097
+        upper_bound: 1097
+        method: exact
+        null_count: 0
+      description: Record creation date; metadata timestamp for data warehouse load tracking.
+    - name: src_sys_id
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: metadata
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: id-named but low cardinality
+      - signal: llm
+        detail: Source system identifier, 3 distinct values, metadata tracking data lineage.
+      cardinality:
+        distinct: 3
+        lower_bound: 3
+        upper_bound: 3
+        method: exact
+        null_count: 0
+      enum_values:
+      - value: CRM1
+        meaning: CRM System 1
+        decode_source: llm_guess
+      - value: CRM2
+        meaning: CRM System 2
+        decode_source: llm_guess
+      - value: LEGACY
+        meaning: Legacy System
+        decode_source: llm_guess
+      description: Source system identifier (CRM1, CRM2, LEGACY); metadata for data lineage and reconciliation.
+    primary_key:
+    - ord_id
+    confidence: 0.7
+    provenance:
+    - signal: statistic
+      detail: 'table_type: 9 FKs out + 1 measures'
+    - signal: llm
+      detail: describe pass 1
+    - signal: llm
+      detail: describe pass 2
+    description: Order header fact table containing 8,000 orders with customer, store, date, status, channel,
+      payment method, promotion, and sales representative dimensions. Includes order total amount and
+      currency.
+    ai_context: Join to cust_mstr, store_dim, date_dim, sts_cd_dim, chnl_dim, pmt_mthd_dim, promo_dim
+      (70% populated), sls_rep_dim (80% populated), curr_dim. Filter by ord_dt or date_key for time-based
+      analysis. promo_id and rep_id are sparse.
+    freshness:
+      expected_cadence: daily
+      inferred_from: 1095 distinct ord_dt over 1095 days
+    grain: one row per ord_id
+    knowledge:
+      required_filters:
+      - expr: sts_cd <> 'X'
+        enforcement: required
+        scope: measures
+        reason: 'amount aggregations over ord_hdr must exclude these rows: dly_sls_agg reconciles with
+          ord_hdr only under this filter (discovered by per-group reconciliation); counts include all
+          rows'
+  - name: ord_hdr_legacy
+    source: main.ord_hdr_legacy
+    table_type: fact
+    lifecycle: deprecated
+    columns:
+    - name: order_number
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: integer fallback
+      - signal: llm
+        detail: Unique integer, no nulls, sequential range. Natural order identifier.
+      cardinality:
+        distinct: 1500
+        lower_bound: 1500
+        upper_bound: 1500
+        method: exact
+        null_count: 0
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        - count
+        default: sum
+      description: Unique order identifier; primary key. Integer, no nulls, 1,500 distinct values.
+    - name: customer_number
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: foreign_key
+      confidence: 0.88
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: no rule matched
+      - signal: llm
+        detail: Formatted code (C######), non-unique, references customer dimension.
+      - signal: inclusion_dependency
+        detail: "ratio 1.0, name score 0.9, llm: Customer number \u2192 customer ID is natural FK."
+      cardinality:
+        distinct: 947
+        lower_bound: 947
+        upper_bound: 947
+        method: exact
+        null_count: 0
+      foreign_key:
+        references: cust_mstr.cust_id
+        relationship: many_to_one
+      description: Customer code (C-prefixed); foreign key to cust_mstr.cust_id. 947 distinct customers.
+    - name: order_dt
+      sql_type: DATE
+      semantic_type: date
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: date type
+      cardinality:
+        distinct: 812
+        lower_bound: 812
+        upper_bound: 812
+        method: exact
+        null_count: 0
+      description: "Order date. 812 distinct dates from 2020\u20132022; no nulls."
+    - name: status
+      sql_type: VARCHAR
+      semantic_type: status_code
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> status_code
+      cardinality:
+        distinct: 3
+        lower_bound: 3
+        upper_bound: 3
+        method: exact
+        null_count: 0
+      description: 'Order status: OPEN, CLOSED, or CANCELLED. 3 distinct values; no nulls.'
+    - name: amount
+      sql_type: DECIMAL(12,2)
+      semantic_type: monetary_value
+      entity_role: measure
+      confidence: 0.8
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> monetary_value
+      cardinality:
+        distinct: 1489
+        lower_bound: 1489
+        upper_bound: 1489
+        method: exact
+        null_count: 0
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        - count
+        default: sum
+      description: Order total amount in currency units. Decimal(12,2); 1,489 distinct values; no nulls.
+    primary_key:
+    - customer_number
+    - order_dt
+    provenance:
+    - signal: statistic
+      detail: 'compound key: (customer_number, order_dt) is unique over all 1500 rows; no member is unique
+        alone'
+    - signal: statistic
+      detail: 'table_type: 1 FK out + 1 measures, nothing references it'
+    - signal: llm
+      detail: describe pass 1
+    - signal: llm
+      detail: describe pass 2
+    confidence: 0.65
+    description: "Legacy order header records with customer, date, status, and amount. 1,500 orders from\
+      \ 947 unique customers spanning 2020\u20132022."
+    ai_context: Join to cust_mstr on customer_number=cust_id for customer attributes. Filter by status
+      (OPEN/CLOSED/CANCELLED) and order_dt range as needed. Legacy data; validate against current systems.
+    deprecation:
+      replacement: ord_hdr
+      reason: legacy-named table; superseded by ord_hdr
+    freshness:
+      expected_cadence: daily
+      inferred_from: 812 distinct order_dt over 1095 days
+    grain: one row per customer_number, order_dt
+  - name: ord_ln
+    source: main.ord_ln
+    table_type: fact
+    lifecycle: inferred
+    columns:
+    - name: ord_ln_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=True
+      cardinality:
+        distinct: 24027
+        lower_bound: 24027
+        upper_bound: 24027
+        method: exact
+        null_count: 0
+      description: Unique order line identifier; primary key for this table.
+      aggregations:
+        allowed:
+        - count
+        - count_distinct
+        default: count
+    - name: ord_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: foreign_key
+      confidence: 0.9
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=False
+      - signal: inclusion_dependency
+        detail: "ratio 1.0, name score 1.2, llm: Order line order ID \u2192 order header ID is standard."
+      cardinality:
+        distinct: 8000
+        lower_bound: 8000
+        upper_bound: 8000
+        method: exact
+        null_count: 0
+      foreign_key:
+        references: ord_hdr.ord_id
+        relationship: many_to_one
+      description: Foreign key to ord_hdr; identifies parent order. Multiple lines per order.
+    - name: ln_num
+      sql_type: INTEGER
+      semantic_type: quantity
+      entity_role: measure
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> quantity
+      cardinality:
+        distinct: 5
+        lower_bound: 5
+        upper_bound: 5
+        method: exact
+        null_count: 0
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        - count
+        default: sum
+      description: "Line number within order (1\u20135); sequential position of item in order."
+    - name: prod_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      confidence: 0.9
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=False
+      - signal: inclusion_dependency
+        detail: "ratio 1.0, name score 1.2, llm: Product ID \u2192 product reference is natural FK."
+      cardinality:
+        distinct: 400
+        lower_bound: 400
+        upper_bound: 400
+        method: exact
+        null_count: 0
+      foreign_key:
+        references: prod_ref.prod_id
+        relationship: many_to_one
+      description: Foreign key to prod_ref; identifies product sold on this line.
+    - name: qty
+      sql_type: INTEGER
+      semantic_type: quantity
+      entity_role: measure
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> quantity
+      cardinality:
+        distinct: 5
+        lower_bound: 5
+        upper_bound: 5
+        method: exact
+        null_count: 0
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        - count
+        default: sum
+      description: "Quantity of product ordered on this line (1\u20135 units)."
+    - name: unit_price
+      sql_type: DECIMAL(10,2)
+      semantic_type: monetary_value
+      entity_role: measure
+      confidence: 0.8
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> monetary_value
+      cardinality:
+        distinct: 397
+        lower_bound: 397
+        upper_bound: 397
+        method: exact
+        null_count: 0
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        - count
+        default: sum
+      description: Price per unit of product at time of order; decimal to cents.
+    - name: line_amt
+      sql_type: DECIMAL(12,2)
+      semantic_type: monetary_value
+      entity_role: measure
+      confidence: 0.8
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> monetary_value
+      cardinality:
+        distinct: 1973
+        lower_bound: 1973
+        upper_bound: 1973
+        method: exact
+        null_count: 0
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        - count
+        default: sum
+      description: "Total line amount (qty \xD7 unit_price); extended price for this line item."
+    - name: line_sts_cd
+      sql_type: VARCHAR
+      semantic_type: status_code
+      entity_role: foreign_key
+      confidence: 0.88
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> status_code
+      - signal: inclusion_dependency
+        detail: "ratio 1.0, name score 0.9, llm: Line status code \u2192 status dimension is standard."
+      - signal: statistic
+        detail: enum decoded via join to sts_cd_dim.sts_desc
+      cardinality:
+        distinct: 3
+        lower_bound: 3
+        upper_bound: 3
+        method: exact
+        null_count: 0
+      foreign_key:
+        references: sts_cd_dim.sts_cd
+        relationship: many_to_one
+      description: Status code for line item (C=Completed, X=Cancelled, P=Pending); foreign key to sts_cd_dim.
+      enum_values:
+      - value: P
+        meaning: Pending
+        decode_source: dictionary_join
+      - value: C
+        meaning: Complete
+        decode_source: dictionary_join
+      - value: X
+        meaning: Cancelled
+        decode_source: dictionary_join
+    primary_key:
+    - ord_ln_id
+    confidence: 0.7
+    provenance:
+    - signal: statistic
+      detail: 'table_type: 3 FKs out + 4 measures'
+    - signal: llm
+      detail: describe pass 1
+    - signal: llm
+      detail: describe pass 2
+    - signal: statistic
+      detail: required filter inherited from ord_hdr via ord_id -> ord_id
+    description: Order line items fact table capturing individual products sold per order, including quantity,
+      unit price, line amount, and line status.
+    ai_context: Join to ord_hdr via ord_id for order context. Join to prod_ref via prod_id for product
+      details. Filter by line_sts_cd for specific statuses (C/X/P). Multiple lines per order.
+    grain: one row per ord_ln_id
+    knowledge:
+      required_filters:
+      - expr: ord_ln.ord_id IN (SELECT ord_id FROM ord_hdr WHERE sts_cd <> 'X')
+        scope: measures
+        enforcement: required
+        reason: 'inherited from ord_hdr (sts_cd <> ''X''): SUM(line_amt) per ord_id reconciles with ord_hdr.tot_amt
+          (8000/8000 ord_id keys within 0.2%)'
+  - name: ord_rtn
+    source: main.ord_rtn
+    table_type: fact
+    lifecycle: inferred
+    columns:
+    - name: rtn_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=True
+      cardinality:
+        distinct: 1201
+        lower_bound: 1201
+        upper_bound: 1201
+        method: exact
+        null_count: 0
+      description: Unique return transaction identifier; primary key.
+      aggregations:
+        allowed:
+        - count
+        - count_distinct
+        default: count
+    - name: ord_ln_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: foreign_key
+      confidence: 0.9
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=True
+      - signal: inclusion_dependency
+        detail: "ratio 1.0, name score 1.2, llm: Return order line ID \u2192 order line ID is standard."
+      cardinality:
+        distinct: 1201
+        lower_bound: 1201
+        upper_bound: 1201
+        method: exact
+        null_count: 0
+      foreign_key:
+        references: ord_ln.ord_ln_id
+        relationship: many_to_one
+      description: Foreign key to ord_ln table; identifies the order line item being returned.
+    - name: rtn_dt
+      sql_type: DATE
+      semantic_type: date
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: date type
+      cardinality:
+        distinct: 180
+        lower_bound: 180
+        upper_bound: 180
+        method: exact
+        null_count: 0
+      description: "Date the return was processed; ranges Aug 2025\u2013Dec 2025."
+    - name: rtn_rsn_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: foreign_key
+      confidence: 0.9
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> code
+      - signal: inclusion_dependency
+        detail: "ratio 1.0, name score 1.2, llm: Return reason code \u2192 reason dimension is standard."
+      - signal: statistic
+        detail: enum decoded via join to rtn_rsn_dim.rtn_rsn_desc
+      cardinality:
+        distinct: 4
+        lower_bound: 4
+        upper_bound: 4
+        method: exact
+        null_count: 0
+      foreign_key:
+        references: rtn_rsn_dim.rtn_rsn_cd
+        relationship: many_to_one
+      description: Return reason code (DEFECT, WRONG_ITEM, NLN, SIZE); foreign key to rtn_rsn_dim.
+      enum_values:
+      - value: DEFECT
+        meaning: Product defective
+        decode_source: dictionary_join
+      - value: WRONG_ITEM
+        meaning: Wrong item shipped
+        decode_source: dictionary_join
+      - value: NLN
+        meaning: No longer needed
+        decode_source: dictionary_join
+      - value: SIZE
+        meaning: Size/fit issue
+        decode_source: dictionary_join
+    - name: rtn_qty
+      sql_type: INTEGER
+      semantic_type: quantity
+      entity_role: measure
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> quantity
+      cardinality:
+        distinct: 5
+        lower_bound: 5
+        upper_bound: 5
+        method: exact
+        null_count: 0
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        - count
+        default: sum
+      description: "Quantity of units returned; values 1\u20135."
+    - name: rtn_amt
+      sql_type: DECIMAL(12,2)
+      semantic_type: monetary_value
+      entity_role: measure
+      confidence: 0.8
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> monetary_value
+      cardinality:
+        distinct: 795
+        lower_bound: 795
+        upper_bound: 795
+        method: exact
+        null_count: 0
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        - count
+        default: sum
+      description: Refund amount in currency; decimal with 2 fractional digits.
+    primary_key:
+    - rtn_id
+    confidence: 0.95
+    provenance:
+    - signal: statistic
+      detail: 'table_type: 2 FKs out + 2 measures, nothing references it'
+    - signal: llm
+      detail: describe pass 1
+    - signal: llm
+      detail: describe pass 2
+    description: Fact table recording individual product returns linked to order line items, with return
+      date, reason code, quantity, and refund amount.
+    ai_context: Join to ord_ln via ord_ln_id and rtn_rsn_dim via rtn_rsn_cd. Filter by rtn_dt for date
+      ranges. Each row is one return transaction.
+    freshness:
+      expected_cadence: daily
+      inferred_from: 180 distinct rtn_dt over 179 days
+    grain: one row per rtn_id
+  - name: pmt_mthd_dim
+    source: main.pmt_mthd_dim
+    table_type: dimension
+    lifecycle: inferred
+    columns:
+    - name: pmt_mthd_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: dimension
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> code
+      cardinality:
+        distinct: 4
+        lower_bound: 4
+        upper_bound: 4
+        method: exact
+        null_count: 0
+      description: 'Payment method code: ACH, CC, COD, GC. Primary key for joins.'
+    - name: pmt_mthd_desc
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: dimension
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> code
+      cardinality:
+        distinct: 4
+        lower_bound: 4
+        upper_bound: 4
+        method: exact
+        null_count: 0
+      description: 'Payment method description: ACH Bank Transfer, Credit Card, Cash on Delivery, Gift
+        Card.'
+    confidence: 0.95
+    provenance:
+    - signal: statistic
+      detail: 'table_type: dimension naming'
+    - signal: llm
+      detail: describe pass 1
+    - signal: llm
+      detail: describe pass 2
+    description: Dimension table containing four payment methods with codes and descriptions. Links to
+      order header fact table via payment method code.
+    ai_context: Join on pmt_mthd_cd to ord_hdr. Only 4 rows; use for payment method decoding. No nulls
+      or updates expected.
+  - name: prod_attr_ext
+    source: main.prod_attr_ext
+    table_type: fact
+    lifecycle: inferred
+    columns:
+    - name: prod_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      confidence: 0.9
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=False
+      - signal: inclusion_dependency
+        detail: "ratio 1.0, name score 1.2, llm: Product attributes product ID \u2192 product reference."
+      cardinality:
+        distinct: 200
+        lower_bound: 200
+        upper_bound: 200
+        method: exact
+        null_count: 0
+      foreign_key:
+        references: prod_ref.prod_id
+        relationship: many_to_one
+      description: Foreign key to prod_ref; identifies the product. 200 distinct products.
+    - name: attr_nm
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> name
+      - signal: llm
+        detail: Attribute name field with 3 distinct coded values representing product attribute types.
+      cardinality:
+        distinct: 3
+        lower_bound: 3
+        upper_bound: 3
+        method: exact
+        null_count: 0
+      conflicts:
+      - between:
+        - naming
+        - llm
+        detail: naming said name, llm said code
+      enum_values:
+      - value: warranty_months
+        meaning: Product warranty duration in months
+        decode_source: llm_guess
+      - value: weight_kg
+        meaning: Product weight in kilograms
+        decode_source: llm_guess
+      - value: color
+        meaning: Product color
+        decode_source: llm_guess
+      description: 'Attribute name: warranty_months, weight_kg, or color. Defines the semantic meaning
+        of attr_val.'
+    - name: attr_val
+      sql_type: VARCHAR
+      semantic_type: free_text
+      entity_role: measure
+      confidence: 0.7
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: 6 distinct values
+      - signal: llm
+        detail: Attribute value field holding mixed types (colors, numeric quantities). Context-dependent
+          semantic meaning.
+      cardinality:
+        distinct: 6
+        lower_bound: 6
+        upper_bound: 6
+        method: exact
+        null_count: 0
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        - count
+        default: sum
+      description: Attribute value as string. Parse as numeric for warranty_months/weight_kg, categorical
+        for color.
+    primary_key:
+    - prod_id
+    - attr_nm
+    provenance:
+    - signal: statistic
+      detail: 'compound key: (prod_id, attr_nm) is unique over all 392 rows; no member is unique alone'
+    - signal: statistic
+      detail: 'table_type: 1 FK out + 1 measures, nothing references it'
+    - signal: llm
+      detail: describe pass 1
+    - signal: llm
+      detail: describe pass 2
+    confidence: 0.65
+    description: Product attributes extension table storing variable product properties (warranty, weight,
+      color) as name-value pairs linked to products.
+    ai_context: Join to prod_ref on prod_id. Each product may have multiple rows (one per attribute).
+      attr_val is untyped string; parse by attr_nm context.
+    conflicts:
+    - between:
+      - statistic
+      - llm
+      detail: 'table_type: heuristic said fact, llm said denormalized'
+    - between:
+      - statistic
+      - llm
+      detail: 'table_type: heuristic said fact, llm said denormalized'
+    grain: one row per prod_id, attr_nm
+  - name: prod_ref
+    source: main.prod_ref
+    table_type: dimension
+    lifecycle: inferred
+    columns:
+    - name: prod_sk
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=True
+      cardinality:
+        distinct: 400
+        lower_bound: 400
+        upper_bound: 400
+        method: exact
+        null_count: 0
+      description: Surrogate key uniquely identifying each product record.
+    - name: prod_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: natural_key
+      confidence: 0.7
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=True
+      - signal: statistic
+        detail: 'business key on a dimension: identifier-named, not the primary key, and Link found no
+          relationship for it'
+      cardinality:
+        distinct: 400
+        lower_bound: 400
+        upper_bound: 400
+        method: exact
+        null_count: 0
+      description: Natural product identifier in format P######, unique across all products.
+    - name: prod_nm
+      sql_type: VARCHAR
+      semantic_type: name
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> name
+      - signal: llm
+        detail: Product name; unique identifier for products in reference table
+      cardinality:
+        distinct: 400
+        lower_bound: 400
+        upper_bound: 400
+        method: exact
+        null_count: 0
+      description: Product name or description for display and reporting purposes.
+    - name: category_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: foreign_key
+      confidence: 0.9
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> code
+      - signal: inclusion_dependency
+        detail: "ratio 1.0, name score 1.2, llm: Category code \u2192 category dimension is standard."
+      - signal: statistic
+        detail: enum decoded via join to category_dim.category_nm
+      cardinality:
+        distinct: 12
+        lower_bound: 12
+        upper_bound: 12
+        method: exact
+        null_count: 0
+      foreign_key:
+        references: category_dim.category_cd
+        relationship: many_to_one
+      description: Product category code (e.g., APR-MEN, HOM-FURN); foreign key to category_dim.
+      enum_values:
+      - value: ELEC-PHN
+        meaning: Phones
+        decode_source: dictionary_join
+      - value: ELEC-TV
+        meaning: Televisions
+        decode_source: dictionary_join
+      - value: ELEC-AUD
+        meaning: Audio
+        decode_source: dictionary_join
+      - value: APR-MEN
+        meaning: Men's Apparel
+        decode_source: dictionary_join
+      - value: APR-WMN
+        meaning: Women's Apparel
+        decode_source: dictionary_join
+      - value: HOM-FURN
+        meaning: Furniture
+        decode_source: dictionary_join
+      - value: HOM-KIT
+        meaning: Kitchen
+        decode_source: dictionary_join
+      - value: HOM-GDN
+        meaning: Garden
+        decode_source: dictionary_join
+      - value: GRC-BEV
+        meaning: Beverages
+        decode_source: dictionary_join
+      - value: GRC-SNK
+        meaning: Snacks
+        decode_source: dictionary_join
+      - value: TOY-EDU
+        meaning: Educational Toys
+        decode_source: dictionary_join
+      - value: TOY-OUT
+        meaning: Outdoor Toys
+        decode_source: dictionary_join
+    - name: dept_cd
+      sql_type: VARCHAR
+      semantic_type: enum
+      entity_role: foreign_key
+      confidence: 0.9
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> code
+      - signal: llm
+        detail: Department code; 5 distinct values representing product categories
+      - signal: inclusion_dependency
+        detail: "ratio 1.0, name score 1.2, llm: Department code \u2192 department dimension is standard."
+      - signal: statistic
+        detail: enum decoded via join to dept_dim.dept_nm
+      cardinality:
+        distinct: 5
+        lower_bound: 5
+        upper_bound: 5
+        method: exact
+        null_count: 0
+      conflicts:
+      - between:
+        - naming
+        - llm
+        detail: naming said code, llm said enum
+      enum_values:
+      - value: ELEC
+        meaning: Electronics
+        decode_source: dictionary_join
+      - value: APPRL
+        meaning: Apparel
+        decode_source: dictionary_join
+      - value: HOME
+        meaning: Home & Garden
+        decode_source: dictionary_join
+      - value: GROC
+        meaning: Grocery
+        decode_source: dictionary_join
+      - value: TOYS
+        meaning: Toys
+        decode_source: dictionary_join
+      foreign_key:
+        references: dept_dim.dept_cd
+        relationship: many_to_one
+      description: 'Department code: HOME, ELEC, APPRL, GROC, or TOYS; foreign key to dept_dim.'
+    - name: unit_cost
+      sql_type: DECIMAL(10,2)
+      semantic_type: monetary_value
+      entity_role: measure
+      confidence: 0.8
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> monetary_value
+      cardinality:
+        distinct: 399
+        lower_bound: 399
+        upper_bound: 399
+        method: exact
+        null_count: 0
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        - count
+        default: sum
+      description: Product cost per unit in decimal currency; used for margin calculations.
+    - name: list_price
+      sql_type: DECIMAL(10,2)
+      semantic_type: monetary_value
+      entity_role: measure
+      confidence: 0.8
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> monetary_value
+      cardinality:
+        distinct: 397
+        lower_bound: 397
+        upper_bound: 397
+        method: exact
+        null_count: 0
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        - count
+        default: sum
+      description: Retail list price per unit in decimal currency; baseline for discounting.
+    - name: actv_flg
+      sql_type: INTEGER
+      semantic_type: flag
+      entity_role: dimension
+      confidence: 0.7
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> flag
+      cardinality:
+        distinct: 2
+        lower_bound: 2
+        upper_bound: 2
+        method: exact
+        null_count: 0
+      description: 'Active flag: 1=active product, 0=inactive or discontinued product.'
+    - name: crt_dt
+      sql_type: DATE
+      semantic_type: timestamp_event
+      entity_role: metadata
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: audit/etl timestamp name
+      cardinality:
+        distinct: 246
+        lower_bound: 246
+        upper_bound: 246
+        method: exact
+        null_count: 0
+      description: Product creation or first load date into the warehouse.
+    primary_key:
+    - prod_sk
+    confidence: 0.95
+    provenance:
+    - signal: statistic
+      detail: 'table_type: dimension naming'
+    - signal: llm
+      detail: describe pass 1
+    - signal: llm
+      detail: describe pass 2
+    description: Product reference dimension containing 400 active and inactive products with identifiers,
+      names, department/category classifications, and pricing.
+    ai_context: Join on prod_sk to fact tables (ord_ln, inv_snpsht). Filter by actv_flg=1 for active products.
+      dept_cd and category_cd link to dimension tables.
+    grain: one row per prod_sk
+  - name: prod_ref_legacy
+    source: main.prod_ref_legacy
+    table_type: dimension
+    lifecycle: deprecated
+    columns:
+    - name: prod_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: primary_key
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=True
+      cardinality:
+        distinct: 100
+        lower_bound: 100
+        upper_bound: 100
+        method: exact
+        null_count: 0
+      description: 'Unique product identifier (primary key). Format: P followed by six digits.'
+    - name: prod_desc
+      sql_type: VARCHAR
+      semantic_type: free_text
+      entity_role: metadata
+      confidence: 0.7
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> free_text
+      cardinality:
+        distinct: 100
+        lower_bound: 100
+        upper_bound: 100
+        method: exact
+        null_count: 0
+      description: Product description text. One description per product; no standardization evident.
+    - name: dept_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: foreign_key
+      confidence: 0.9
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> code
+      - signal: llm
+        detail: Department code with 5 distinct values; standard retail department abbreviations.
+      - signal: inclusion_dependency
+        detail: "ratio 1.0, name score 1.2, llm: Legacy department code \u2192 department dimension."
+      - signal: statistic
+        detail: enum decoded via join to dept_dim.dept_nm
+      cardinality:
+        distinct: 5
+        lower_bound: 5
+        upper_bound: 5
+        method: exact
+        null_count: 0
+      enum_values:
+      - value: ELEC
+        meaning: Electronics
+        decode_source: dictionary_join
+      - value: APPRL
+        meaning: Apparel
+        decode_source: dictionary_join
+      - value: HOME
+        meaning: Home & Garden
+        decode_source: dictionary_join
+      - value: GROC
+        meaning: Grocery
+        decode_source: dictionary_join
+      - value: TOYS
+        meaning: Toys
+        decode_source: dictionary_join
+      foreign_key:
+        references: dept_dim.dept_cd
+        relationship: many_to_one
+      description: 'Department code (foreign key to dept_dim). Values: ELEC (Electronics), HOME (Home),
+        GROC (Grocery), TOYS (Toys), APPRL (Apparel).'
+    - name: load_dt
+      sql_type: DATE
+      semantic_type: timestamp_event
+      entity_role: metadata
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: audit/etl timestamp name
+      cardinality:
+        distinct: 77
+        lower_bound: 77
+        upper_bound: 77
+        method: exact
+        null_count: 0
+      description: Date product record was loaded into warehouse. Ranges across 2023; 77 distinct dates.
+    primary_key:
+    - prod_id
+    confidence: 0.95
+    provenance:
+    - signal: statistic
+      detail: 'table_type: dimension naming'
+    - signal: llm
+      detail: describe pass 1
+    - signal: llm
+      detail: describe pass 2
+    description: Legacy product reference dimension containing 100 products with identifiers, descriptions,
+      department classifications, and load dates for historical product data.
+    ai_context: Join to dept_dim on dept_cd for department names. Filter by load_dt for temporal analysis.
+      All columns non-null; 100 unique products.
+    deprecation:
+      replacement: prod_ref
+      reason: legacy-named table; superseded by prod_ref
+    grain: one row per prod_id
+  - name: promo_dim
+    source: main.promo_dim
+    table_type: dimension
+    lifecycle: inferred
+    columns:
+    - name: promo_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: primary_key
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=True
+      cardinality:
+        distinct: 60
+        lower_bound: 60
+        upper_bound: 60
+        method: exact
+        null_count: 0
+      description: Unique promotion identifier; primary key for joining to orders.
+    - name: promo_nm
+      sql_type: VARCHAR
+      semantic_type: name
+      entity_role: unique_key
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> name
+      - signal: llm
+        detail: Unique promotion name identifier with consistent naming pattern promo PROMO####
+      cardinality:
+        distinct: 60
+        lower_bound: 60
+        upper_bound: 60
+        method: exact
+        null_count: 0
+      description: Promotion name; unique human-readable label for the promotion.
+    - name: promo_typ_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: dimension
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> code
+      cardinality:
+        distinct: 3
+        lower_bound: 3
+        upper_bound: 3
+        method: exact
+        null_count: 0
+      description: 'Promotion type code: BOGO (buy-one-get-one), PCT_OFF (percent discount), FLAT_OFF
+        (flat amount discount).'
+    - name: disc_pct
+      sql_type: DECIMAL(5,2)
+      semantic_type: percentage
+      entity_role: measure
+      confidence: 0.8
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> percentage
+      cardinality:
+        distinct: 59
+        lower_bound: 59
+        upper_bound: 59
+        method: exact
+        null_count: 0
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        - count
+        default: sum
+      description: "Discount percentage applied by this promotion; ranges 5\u201323%."
+    - name: start_dt
+      sql_type: DATE
+      semantic_type: date
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: date type
+      cardinality:
+        distinct: 57
+        lower_bound: 57
+        upper_bound: 57
+        method: exact
+        null_count: 0
+      description: Promotion start date; marks when promotion becomes active.
+    - name: end_dt
+      sql_type: DATE
+      semantic_type: date
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: date type
+      cardinality:
+        distinct: 57
+        lower_bound: 57
+        upper_bound: 57
+        method: exact
+        null_count: 0
+      description: Promotion end date; marks when promotion expires.
+    primary_key:
+    - promo_id
+    confidence: 0.95
+    provenance:
+    - signal: statistic
+      detail: 'table_type: dimension naming'
+    - signal: llm
+      detail: describe pass 1
+    - signal: llm
+      detail: describe pass 2
+    description: Promotion dimension containing 60 distinct promotions with type, discount percentage,
+      and active date range for order analytics.
+    ai_context: 'Join to ord_hdr via promo_id. Filter by start_dt/end_dt for active promotions. promo_typ_cd
+      values: BOGO, PCT_OFF, FLAT_OFF.'
+    freshness:
+      expected_cadence: sporadic
+      inferred_from: 57 distinct start_dt over 658 days
+    grain: one row per promo_id
+  - name: rtn_rsn_dim
+    source: main.rtn_rsn_dim
+    table_type: dimension
+    lifecycle: inferred
+    columns:
+    - name: rtn_rsn_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: dimension
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> code
+      cardinality:
+        distinct: 4
+        lower_bound: 4
+        upper_bound: 4
+        method: exact
+        null_count: 0
+      description: Return reason code (DEFECT, NLN, SIZE, WRONG_ITEM). Primary key.
+    - name: rtn_rsn_desc
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: dimension
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> code
+      cardinality:
+        distinct: 4
+        lower_bound: 4
+        upper_bound: 4
+        method: exact
+        null_count: 0
+      description: 'Return reason description. Maps codes to: Product defective, No longer needed, Size/fit
+        issue, Wrong item shipped.'
+    confidence: 0.95
+    provenance:
+    - signal: statistic
+      detail: 'table_type: dimension naming'
+    - signal: llm
+      detail: describe pass 1
+    - signal: llm
+      detail: describe pass 2
+    description: Dimension table mapping return reason codes to human-readable descriptions for product
+      returns.
+    ai_context: 'Join to ord_rtn on rtn_rsn_cd. Contains 4 return reason types: DEFECT, NLN, SIZE, WRONG_ITEM.
+      No nulls.'
+  - name: sku_xref
+    source: main.sku_xref
+    table_type: dimension
+    lifecycle: inferred
+    columns:
+    - name: prod_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      confidence: 0.9
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=True
+      - signal: inclusion_dependency
+        detail: "ratio 1.0, name score 1.2, llm: SKU product ID \u2192 product reference is natural."
+      cardinality:
+        distinct: 400
+        lower_bound: 400
+        upper_bound: 400
+        method: exact
+        null_count: 0
+      foreign_key:
+        references: prod_ref.prod_id
+        relationship: many_to_one
+      description: Internal product identifier; foreign key to prod_ref table.
+    - name: ext_sys_id
+      sql_type: VARCHAR
+      semantic_type: enum
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: id-named but low cardinality
+      - signal: llm
+        detail: 3 distinct system identifiers; external system classifier
+      cardinality:
+        distinct: 3
+        lower_bound: 3
+        upper_bound: 3
+        method: exact
+        null_count: 0
+      enum_values:
+      - value: SAP
+        meaning: SAP ERP system
+        decode_source: llm_guess
+      - value: SHOPIFY
+        meaning: Shopify e-commerce platform
+        decode_source: llm_guess
+      - value: NETSUITE
+        meaning: NetSuite ERP system
+        decode_source: llm_guess
+      description: 'External system code: SAP (ERP), SHOPIFY (e-commerce), NETSUITE (ERP).'
+    - name: ext_sku
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: foreign_key
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: no rule matched
+      - signal: llm
+        detail: External SKU reference; patterned identifier linking to external systems
+      cardinality:
+        distinct: 399
+        lower_bound: 399
+        upper_bound: 399
+        method: exact
+        null_count: 0
+      description: External system SKU code for product cross-reference and integration.
+    - name: sync_dt
+      sql_type: DATE
+      semantic_type: date
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: date type
+      cardinality:
+        distinct: 89
+        lower_bound: 89
+        upper_bound: 89
+        method: exact
+        null_count: 0
+      description: Date of last synchronization with external system.
+    primary_key:
+    - prod_id
+    confidence: 0.95
+    provenance:
+    - signal: statistic
+      detail: 'table_type: dimension naming'
+    - signal: llm
+      detail: describe pass 1
+    - signal: llm
+      detail: describe pass 2
+    description: Maps internal product identifiers to external system SKUs across SAP, Shopify, and NetSuite
+      platforms with synchronization dates.
+    ai_context: Join to prod_ref on prod_id. Filter by ext_sys_id for system-specific queries. One prod_id
+      may map to multiple external systems; sync_dt tracks last update.
+    freshness:
+      expected_cadence: daily
+      inferred_from: 89 distinct sync_dt over 89 days
+    grain: one row per prod_id
+  - name: sls_rep_dim
+    source: main.sls_rep_dim
+    table_type: dimension
+    lifecycle: inferred
+    columns:
+    - name: rep_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: primary_key
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=True
+      cardinality:
+        distinct: 80
+        lower_bound: 80
+        upper_bound: 80
+        method: exact
+        null_count: 0
+      description: 'Unique sales representative identifier (primary key). Format: REP##### (80 distinct
+        values).'
+    - name: rep_nm
+      sql_type: VARCHAR
+      semantic_type: name
+      entity_role: dimension
+      confidence: 0.65
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> name
+      - signal: llm
+        detail: Labeled 'nm' (name); unique values suggest identifier-like naming pattern, possibly concatenated
+          with prefix.
+      cardinality:
+        distinct: 80
+        lower_bound: 80
+        upper_bound: 80
+        method: exact
+        null_count: 0
+      description: 'Sales representative name. Format: ''rep REP#####'' (80 distinct values, no nulls).'
+    - name: store_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      confidence: 0.9
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=False
+      - signal: inclusion_dependency
+        detail: "ratio 1.0, name score 1.2, llm: Sales rep store ID \u2192 store dimension is natural."
+      cardinality:
+        distinct: 33
+        lower_bound: 33
+        upper_bound: 33
+        method: exact
+        null_count: 0
+      foreign_key:
+        references: store_dim.store_id
+        relationship: many_to_one
+      description: Foreign key to store_dim. Assigns each rep to one of 33 stores (no nulls).
+    - name: hire_dt
+      sql_type: DATE
+      semantic_type: date
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: date type
+      cardinality:
+        distinct: 73
+        lower_bound: 73
+        upper_bound: 73
+        method: exact
+        null_count: 0
+      description: "Representative hire date (DATE). Range 2023\u20132024; 73 distinct dates, no nulls."
+    primary_key:
+    - rep_id
+    confidence: 0.95
+    provenance:
+    - signal: statistic
+      detail: 'table_type: dimension naming'
+    - signal: llm
+      detail: describe pass 1
+    - signal: llm
+      detail: describe pass 2
+    description: Dimension table of 80 sales representatives with identifiers, names, store assignments,
+      and hire dates. Supports order and sales analytics.
+    ai_context: Join to ord_hdr via rep_id for sales rep performance. Join to store_dim via store_id for
+      location context. No nulls; all 80 reps are active.
+    freshness:
+      expected_cadence: weekly
+      inferred_from: 73 distinct hire_dt over 466 days
+    grain: one row per rep_id
+  - name: stg_customers_raw
+    source: main.stg_customers_raw
+    table_type: staging
+    lifecycle: inferred
+    columns:
+    - name: raw_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=True
+      cardinality:
+        distinct: 300
+        lower_bound: 300
+        upper_bound: 300
+        method: exact
+        null_count: 0
+      description: Unique staging record identifier. Sequential integer, no nulls.
+    - name: raw_cust_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      confidence: 0.88
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=False
+      - signal: inclusion_dependency
+        detail: "ratio 1.0, name score 0.9, llm: Staging raw customer ID \u2192 customer master."
+      cardinality:
+        distinct: 270
+        lower_bound: 270
+        upper_bound: 270
+        method: exact
+        null_count: 0
+      foreign_key:
+        references: cust_mstr.cust_id
+        relationship: many_to_one
+      description: Customer identifier linking to cust_mstr.cust_id. 270 distinct values across 300 rows
+        indicate duplicates.
+    - name: raw_payload
+      sql_type: VARCHAR
+      semantic_type: json_object
+      entity_role: metadata
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: no rule matched
+      - signal: llm
+        detail: JSON-formatted string containing structured customer data with cust_id and raw flag.
+      cardinality:
+        distinct: 270
+        lower_bound: 270
+        upper_bound: 270
+        method: exact
+        null_count: 0
+      description: JSON object containing raw customer data from source file. Includes cust_id and raw
+        flag.
+    - name: load_ts
+      sql_type: TIMESTAMP
+      semantic_type: timestamp_event
+      entity_role: metadata
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: audit/etl timestamp name
+      cardinality:
+        distinct: 30
+        lower_bound: 30
+        upper_bound: 30
+        method: exact
+        null_count: 0
+      description: Timestamp when record was loaded into staging. 30 distinct values; used to identify
+        batch loads.
+    - name: file_nm
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: metadata
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> name
+      - signal: llm
+        detail: Source file identifier; sequential numbered JSON files tracking data load origin.
+      cardinality:
+        distinct: 30
+        lower_bound: 30
+        upper_bound: 30
+        method: exact
+        null_count: 0
+      conflicts:
+      - between:
+        - naming
+        - llm
+        detail: naming said name, llm said code
+      description: Source JSON filename. 30 distinct files loaded; correlates with load_ts batches.
+    primary_key:
+    - raw_id
+    confidence: 0.85
+    provenance:
+    - signal: statistic
+      detail: 'table_type: staging naming'
+    - signal: llm
+      detail: describe pass 1
+    - signal: llm
+      detail: describe pass 2
+    description: Staging table for raw customer data ingested from JSON files. Contains 300 records with
+      customer identifiers and payload metadata for ETL processing.
+    ai_context: 'Join to cust_mstr on raw_cust_id=cust_id. Note: 30 duplicate customer IDs across 300
+      rows suggest multi-file loads. Filter by load_ts for specific batch windows.'
+    grain: one row per raw_id
+  - name: stg_orders_raw
+    source: main.stg_orders_raw
+    table_type: staging
+    lifecycle: inferred
+    columns:
+    - name: raw_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=True
+      cardinality:
+        distinct: 500
+        lower_bound: 500
+        upper_bound: 500
+        method: exact
+        null_count: 0
+      description: Unique identifier for each raw ingestion record; primary key.
+    - name: raw_ord_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      confidence: 0.7
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=False
+      cardinality:
+        distinct: 481
+        lower_bound: 481
+        upper_bound: 481
+        method: exact
+        null_count: 0
+      description: Source order identifier; foreign key linking to orders dimension.
+    - name: raw_payload
+      sql_type: VARCHAR
+      semantic_type: json_object
+      entity_role: metadata
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: no rule matched
+      - signal: llm
+        detail: JSON-formatted string containing order data; raw staging payload
+      cardinality:
+        distinct: 481
+        lower_bound: 481
+        upper_bound: 481
+        method: exact
+        null_count: 0
+      description: JSON object containing raw order data including order_id and processing flags.
+    - name: load_ts
+      sql_type: TIMESTAMP
+      semantic_type: timestamp_event
+      entity_role: metadata
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: audit/etl timestamp name
+      cardinality:
+        distinct: 30
+        lower_bound: 30
+        upper_bound: 30
+        method: exact
+        null_count: 0
+      description: Timestamp when record was loaded into staging table.
+    - name: file_nm
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: metadata
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> name
+      - signal: llm
+        detail: Source file identifier; sequential numbered JSON files from batch load
+      cardinality:
+        distinct: 30
+        lower_bound: 30
+        upper_bound: 30
+        method: exact
+        null_count: 0
+      conflicts:
+      - between:
+        - naming
+        - llm
+        detail: naming said name, llm said code
+      description: Source JSON filename from which record was extracted.
+    - name: processed_flg
+      sql_type: INTEGER
+      semantic_type: flag
+      entity_role: dimension
+      confidence: 0.7
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> flag
+      cardinality:
+        distinct: 2
+        lower_bound: 2
+        upper_bound: 2
+        method: exact
+        null_count: 0
+      description: 'Flag indicating processing status: 0=unprocessed, 1=processed.'
+    primary_key:
+    - raw_id
+    confidence: 0.85
+    provenance:
+    - signal: statistic
+      detail: 'table_type: staging naming'
+    - signal: llm
+      detail: describe pass 1
+    description: Staging table capturing raw order records ingested from JSON files, with processing status
+      tracking and payload metadata for downstream transformation.
+    ai_context: Join on raw_ord_id to orders dimension. Filter processed_flg=0 for unprocessed records.
+      Parse raw_payload JSON for order details. Multiple raw records may map to single order_id.
+    grain: one row per raw_id
+  - name: store_dim
+    source: main.store_dim
+    table_type: dimension
+    lifecycle: inferred
+    columns:
+    - name: store_sk
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=True
+      cardinality:
+        distinct: 40
+        lower_bound: 40
+        upper_bound: 40
+        method: exact
+        null_count: 0
+      description: "Surrogate key for store. Primary key, sequential 1\u201340."
+    - name: store_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: natural_key
+      confidence: 0.7
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=True
+      - signal: statistic
+        detail: 'business key on a dimension: identifier-named, not the primary key, and Link found no
+          relationship for it'
+      cardinality:
+        distinct: 40
+        lower_bound: 40
+        upper_bound: 40
+        method: exact
+        null_count: 0
+      description: Business key for store. Unique identifier in format ST####.
+    - name: store_nm
+      sql_type: VARCHAR
+      semantic_type: name
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> name
+      - signal: llm
+        detail: Store name identifier; VARCHAR with 40 distinct values, unique, human-readable labels
+      cardinality:
+        distinct: 40
+        lower_bound: 40
+        upper_bound: 40
+        method: exact
+        null_count: 0
+      description: 'Store display name. Format: ''store ST####''.'
+    - name: city_nm
+      sql_type: VARCHAR
+      semantic_type: geo_city
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> geo_city
+      cardinality:
+        distinct: 12
+        lower_bound: 12
+        upper_bound: 12
+        method: exact
+        null_count: 0
+      description: City where store is located. 12 distinct cities across 5 countries.
+    - name: state_cd
+      sql_type: VARCHAR
+      semantic_type: geo_region
+      entity_role: dimension
+      confidence: 0.8
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> geo_region
+      cardinality:
+        distinct: 12
+        lower_bound: 12
+        upper_bound: 12
+        method: exact
+        null_count: 0
+      description: 'State or region code. Abbreviations: AZ, BAV, BC, BER, IL, LDN, etc.'
+    - name: cntry_cd
+      sql_type: VARCHAR
+      semantic_type: geo_country
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> geo_country
+      cardinality:
+        distinct: 5
+        lower_bound: 5
+        upper_bound: 5
+        method: exact
+        null_count: 0
+      description: 'Country code. Values: US, DE, CA, GB, FR.'
+    - name: whs_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      confidence: 0.9
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=False
+      - signal: inclusion_dependency
+        detail: "ratio 1.0, name score 1.2, llm: Store warehouse ID \u2192 warehouse dimension is standard."
+      cardinality:
+        distinct: 8
+        lower_bound: 8
+        upper_bound: 8
+        method: exact
+        null_count: 0
+      foreign_key:
+        references: whs_dim.whs_id
+        relationship: many_to_one
+      description: Foreign key to whs_dim. Warehouse supplying this store. 8 warehouses serve 40 stores.
+    - name: open_dt
+      sql_type: DATE
+      semantic_type: date
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: date type
+      cardinality:
+        distinct: 36
+        lower_bound: 36
+        upper_bound: 36
+        method: exact
+        null_count: 0
+      description: "Store opening date. Range 2023\u20132024, 36 distinct dates."
+    primary_key:
+    - store_sk
+    confidence: 0.95
+    provenance:
+    - signal: statistic
+      detail: 'table_type: dimension naming'
+    - signal: llm
+      detail: describe pass 1
+    - signal: llm
+      detail: describe pass 2
+    description: Dimension table of 40 retail store locations with geographic attributes, warehouse assignments,
+      and opening dates across 5 countries.
+    ai_context: Join to fact tables (dly_sls_agg, ord_hdr, inv_snpsht) on store_sk or store_id. Filter
+      by cntry_cd, state_cd, or city_nm for regional analysis. All columns non-null.
+    freshness:
+      expected_cadence: sporadic
+      inferred_from: 36 distinct open_dt over 366 days
+    grain: one row per store_sk
+  - name: sts_cd_dim
+    source: main.sts_cd_dim
+    table_type: dimension
+    lifecycle: inferred
+    columns:
+    - name: sts_cd
+      sql_type: VARCHAR
+      semantic_type: status_code
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> status_code
+      cardinality:
+        distinct: 3
+        lower_bound: 3
+        upper_bound: 3
+        method: exact
+        null_count: 0
+      description: 'Status code: C=Cancelled, P=Pending, X=Complete. Primary key for joins.'
+    - name: sts_desc
+      sql_type: VARCHAR
+      semantic_type: status_code
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> status_code
+      cardinality:
+        distinct: 3
+        lower_bound: 3
+        upper_bound: 3
+        method: exact
+        null_count: 0
+      description: Human-readable status description corresponding to status code.
+    confidence: 0.95
+    provenance:
+    - signal: statistic
+      detail: 'table_type: dimension naming'
+    - signal: llm
+      detail: describe pass 1
+    - signal: llm
+      detail: describe pass 2
+    description: 'Dimension table mapping status codes to descriptions for orders. Contains three status
+      values: Cancelled, Complete, and Pending.'
+    ai_context: Join on sts_cd to ord_hdr or ord_ln for order status decoding. All three statuses are
+      always present; no filtering needed for completeness.
+  - name: sub_evt
+    source: main.sub_evt
+    table_type: fact
+    lifecycle: inferred
+    columns:
+    - name: evt_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: primary_key
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=True
+      cardinality:
+        distinct: 2719
+        lower_bound: 2719
+        upper_bound: 2719
+        method: exact
+        null_count: 0
+      description: Unique event identifier; primary key for this fact table.
+      aggregations:
+        allowed:
+        - count
+        - count_distinct
+        default: count
+    - name: cust_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      confidence: 0.9
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=False
+      - signal: inclusion_dependency
+        detail: "ratio 1.0, name score 1.2, llm: Subscription event customer ID \u2192 customer master."
+      cardinality:
+        distinct: 887
+        lower_bound: 887
+        upper_bound: 887
+        method: exact
+        null_count: 0
+      foreign_key:
+        references: cust_mstr.cust_id
+        relationship: many_to_one
+      description: Customer identifier; foreign key to cust_mstr for customer attributes.
+    - name: sub_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: natural_key
+      confidence: 0.7
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=False
+      - signal: statistic
+        detail: 'business key on a dimension: identifier-named, not the primary key, and Link found no
+          relationship for it'
+      cardinality:
+        distinct: 1333
+        lower_bound: 1333
+        upper_bound: 1333
+        method: exact
+        null_count: 0
+      description: Subscription identifier; links event to specific subscription instance.
+    - name: evt_typ_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: foreign_key
+      confidence: 0.9
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> code
+      - signal: inclusion_dependency
+        detail: "ratio 1.0, name score 1.2, llm: Event type code \u2192 event type dimension is standard."
+      - signal: statistic
+        detail: enum decoded via join to evt_typ_dim.evt_typ_desc
+      cardinality:
+        distinct: 5
+        lower_bound: 5
+        upper_bound: 5
+        method: exact
+        null_count: 0
+      foreign_key:
+        references: evt_typ_dim.evt_typ_cd
+        relationship: many_to_one
+      description: Event type code (START, CANCEL, RENEW, UPGRADE, DOWNGRADE); foreign key to evt_typ_dim.
+      enum_values:
+      - value: START
+        meaning: Subscription started
+        decode_source: dictionary_join
+      - value: RENEW
+        meaning: Subscription renewed
+        decode_source: dictionary_join
+      - value: UPGRADE
+        meaning: Plan upgraded
+        decode_source: dictionary_join
+      - value: DOWNGRADE
+        meaning: Plan downgraded
+        decode_source: dictionary_join
+      - value: CANCEL
+        meaning: Subscription cancelled
+        decode_source: dictionary_join
+    - name: evt_dt
+      sql_type: DATE
+      semantic_type: date
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: statistic
+        detail: date type
+      cardinality:
+        distinct: 695
+        lower_bound: 695
+        upper_bound: 695
+        method: exact
+        null_count: 0
+      description: Date the subscription event occurred; primary time dimension for analysis.
+    - name: mrr_amt
+      sql_type: DECIMAL(10,2)
+      semantic_type: monetary_value
+      entity_role: measure
+      confidence: 0.8
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> monetary_value
+      cardinality:
+        distinct: 1878
+        lower_bound: 1878
+        upper_bound: 1878
+        method: exact
+        null_count: 0
+      aggregations:
+        allowed:
+        - sum
+        - avg
+        - min
+        - max
+        - count
+        default: sum
+      description: Monthly recurring revenue amount in dollars associated with the event.
+    - name: crt_dt
+      sql_type: DATE
+      semantic_type: timestamp_event
+      entity_role: metadata
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: audit/etl timestamp name
+      cardinality:
+        distinct: 692
+        lower_bound: 692
+        upper_bound: 692
+        method: exact
+        null_count: 0
+      description: Record creation date; metadata timestamp when event was recorded in system.
+    primary_key:
+    - evt_id
+    confidence: 0.95
+    provenance:
+    - signal: statistic
+      detail: 'table_type: 2 FKs out + 1 measures, nothing references it'
+    - signal: llm
+      detail: describe pass 1
+    - signal: llm
+      detail: describe pass 2
+    description: Fact table recording subscription lifecycle events (start, cancel, renew, upgrade, downgrade)
+      with monthly recurring revenue amounts and event dates.
+    ai_context: Join to cust_mstr on cust_id and evt_typ_dim on evt_typ_cd. Filter by evt_dt for time-based
+      analysis. mrr_amt may vary by event type.
+    freshness:
+      expected_cadence: daily
+      inferred_from: 695 distinct evt_dt over 820 days
+    grain: one row per evt_id
+  - name: web_evt
+    source: main.web_evt
+    table_type: operational
+    lifecycle: inferred
+    columns:
+    - name: evt_id
+      sql_type: BIGINT
+      semantic_type: identifier
+      entity_role: primary_key
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=True
+      cardinality:
+        distinct: 10000
+        lower_bound: 10000
+        upper_bound: 10000
+        method: exact
+        null_count: 0
+      description: Unique event identifier; primary key for this event record.
+    - name: cust_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      confidence: 0.9
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=False
+      - signal: inclusion_dependency
+        detail: "ratio 1.0, name score 1.2, llm: Web event customer ID \u2192 customer master is natural."
+      cardinality:
+        distinct: 1488
+        lower_bound: 1488
+        upper_bound: 1488
+        method: exact
+        null_count: 2975
+      foreign_key:
+        references: cust_mstr.cust_id
+        relationship: many_to_one
+      description: Customer identifier; foreign key to cust_mstr. Null for anonymous/guest sessions.
+    - name: sess_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: foreign_key
+      confidence: 0.7
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=False
+      cardinality:
+        distinct: 7916
+        lower_bound: 7916
+        upper_bound: 7916
+        method: exact
+        null_count: 0
+      description: Session identifier grouping events within a single user visit.
+    - name: evt_typ_cd
+      sql_type: VARCHAR
+      semantic_type: code
+      entity_role: dimension
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> code
+      cardinality:
+        distinct: 4
+        lower_bound: 4
+        upper_bound: 4
+        method: exact
+        null_count: 0
+      description: 'Event type code: VIEW, CLICK, ADD_CART, or PURCHASE.'
+    - name: pg_url
+      sql_type: VARCHAR
+      semantic_type: url
+      entity_role: metadata
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> url
+      cardinality:
+        distinct: 999
+        lower_bound: 999
+        upper_bound: 999
+        method: exact
+        null_count: 0
+      description: Page URL where event occurred; format /p/{product_id}.
+    - name: evt_ts
+      sql_type: TIMESTAMP
+      semantic_type: timestamp_event
+      entity_role: metadata
+      confidence: 0.75
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: audit/etl timestamp name
+      cardinality:
+        distinct: 9998
+        lower_bound: 9998
+        upper_bound: 9998
+        method: exact
+        null_count: 0
+      description: Event timestamp; precise to microsecond granularity.
+    - name: ord_id
+      sql_type: INTEGER
+      semantic_type: identifier
+      entity_role: foreign_key
+      confidence: 0.9
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=False
+      - signal: inclusion_dependency
+        detail: "ratio 1.0, name score 1.2, llm: Web event order ID \u2192 order header is natural."
+      cardinality:
+        distinct: 544
+        lower_bound: 544
+        upper_bound: 544
+        method: exact
+        null_count: 9435
+      foreign_key:
+        references: ord_hdr.ord_id
+        relationship: many_to_one
+      description: Order identifier; foreign key to ord_hdr. Populated only for purchase events (6% non-null).
+    primary_key:
+    - evt_id
+    confidence: 0.65
+    provenance:
+    - signal: statistic
+      detail: 'table_type: no decisive signal'
+    - signal: llm
+      detail: 'table_type: llm filled unknown -> operational'
+    - signal: llm
+      detail: describe pass 1
+    - signal: llm
+      detail: describe pass 2
+    description: Operational web event log capturing 10,000 user interactions (views, clicks, cart adds,
+      purchases) across sessions with timestamps, page URLs, and optional order linkage.
+    ai_context: "Join to cust_mstr on cust_id (30% nulls\u2014guest events). Filter by evt_typ_cd for\
+      \ event type. ord_id sparse (94% null)\u2014only populated for purchase events. Use sess_id for\
+      \ session grouping."
+    grain: one row per evt_id
+  - name: whs_dim
+    source: main.whs_dim
+    table_type: dimension
+    lifecycle: inferred
+    columns:
+    - name: whs_id
+      sql_type: VARCHAR
+      semantic_type: identifier
+      entity_role: primary_key
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: id-like name, unique=True
+      cardinality:
+        distinct: 8
+        lower_bound: 8
+        upper_bound: 8
+        method: exact
+        null_count: 0
+      description: 'Warehouse identifier (primary key). Format: WH### (e.g., WH001).'
+    - name: whs_nm
+      sql_type: VARCHAR
+      semantic_type: name
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> name
+      - signal: llm
+        detail: Warehouse name identifier; unique, human-readable label for dimension entity
+      cardinality:
+        distinct: 8
+        lower_bound: 8
+        upper_bound: 8
+        method: exact
+        null_count: 0
+      description: Warehouse name. Descriptive label combining 'warehouse' prefix with warehouse ID.
+    - name: city_nm
+      sql_type: VARCHAR
+      semantic_type: geo_city
+      entity_role: dimension
+      confidence: 0.85
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> geo_city
+      cardinality:
+        distinct: 6
+        lower_bound: 6
+        upper_bound: 6
+        method: exact
+        null_count: 0
+      description: City name where warehouse is located (e.g., Los Angeles, Toronto, Paris).
+    - name: state_cd
+      sql_type: VARCHAR
+      semantic_type: geo_region
+      entity_role: dimension
+      confidence: 0.8
+      lifecycle: inferred
+      provenance:
+      - signal: naming
+        detail: name rule -> geo_region
+      cardinality:
+        distinct: 6
+        lower_bound: 6
+        upper_bound: 6
+        method: exact
+        null_count: 0
+      description: "State or region code (e.g., CA, ON, IDF for \xCEle-de-France, TX, IL, AZ)."
+    primary_key:
+    - whs_id
+    confidence: 0.95
+    provenance:
+    - signal: statistic
+      detail: 'table_type: dimension naming'
+    - signal: llm
+      detail: describe pass 1
+    - signal: llm
+      detail: describe pass 2
+    description: Dimension table of 8 warehouse locations with identifiers, names, and geographic attributes
+      (city, state/region).
+    ai_context: Join to fact tables on whs_id. Filter by city_nm or state_cd for regional analysis. All
+      8 warehouses are active with complete location data.
+    grain: one row per whs_id
+  relationships:
+  - name: category_dim_to_dept_dim
+    from:
+      table: category_dim
+      columns:
+      - dept_cd
+    to:
+      table: dept_dim
+      columns:
+      - dept_cd
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.9
+  - name: cust_addr_to_cust_mstr
+    from:
+      table: cust_addr
+      columns:
+      - cust_id
+    to:
+      table: cust_mstr
+      columns:
+      - cust_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.9
+  - name: dly_sls_agg_to_date_dim
+    from:
+      table: dly_sls_agg
+      columns:
+      - agg_dt_key
+    to:
+      table: date_dim
+      columns:
+      - date_key
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.88
+  - name: dly_sls_agg_to_store_dim
+    from:
+      table: dly_sls_agg
+      columns:
+      - store_id
+    to:
+      table: store_dim
+      columns:
+      - store_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.9
+  - name: etl_log_to_job_ctrl
+    from:
+      table: etl_log
+      columns:
+      - job_nm
+    to:
+      table: job_ctrl
+      columns:
+      - job_nm
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.9
+  - name: inv_snpsht_to_date_dim
+    from:
+      table: inv_snpsht
+      columns:
+      - date_key
+    to:
+      table: date_dim
+      columns:
+      - date_key
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.9
+  - name: inv_snpsht_to_prod_ref
+    from:
+      table: inv_snpsht
+      columns:
+      - prod_id
+    to:
+      table: prod_ref
+      columns:
+      - prod_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.9
+  - name: inv_snpsht_to_store_dim
+    from:
+      table: inv_snpsht
+      columns:
+      - store_id
+    to:
+      table: store_dim
+      columns:
+      - store_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.9
+  - name: mktg_cmpgn_dim_to_chnl_dim
+    from:
+      table: mktg_cmpgn_dim
+      columns:
+      - chnl_cd
+    to:
+      table: chnl_dim
+      columns:
+      - chnl_cd
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.9
+  - name: mth_cust_agg_to_cust_mstr
+    from:
+      table: mth_cust_agg
+      columns:
+      - cust_id
+    to:
+      table: cust_mstr
+      columns:
+      - cust_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.9
+  - name: ord_hdr_to_chnl_dim
+    from:
+      table: ord_hdr
+      columns:
+      - chnl_cd
+    to:
+      table: chnl_dim
+      columns:
+      - chnl_cd
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.9
+  - name: ord_hdr_to_curr_dim
+    from:
+      table: ord_hdr
+      columns:
+      - curr_cd
+    to:
+      table: curr_dim
+      columns:
+      - curr_cd
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.9
+  - name: ord_hdr_to_cust_mstr
+    from:
+      table: ord_hdr
+      columns:
+      - cust_id
+    to:
+      table: cust_mstr
+      columns:
+      - cust_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.9
+  - name: ord_hdr_to_date_dim
+    from:
+      table: ord_hdr
+      columns:
+      - date_key
+    to:
+      table: date_dim
+      columns:
+      - date_key
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.9
+  - name: ord_hdr_to_pmt_mthd_dim
+    from:
+      table: ord_hdr
+      columns:
+      - pmt_mthd_cd
+    to:
+      table: pmt_mthd_dim
+      columns:
+      - pmt_mthd_cd
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.9
+  - name: ord_hdr_to_promo_dim
+    from:
+      table: ord_hdr
+      columns:
+      - promo_id
+    to:
+      table: promo_dim
+      columns:
+      - promo_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.9
+  - name: ord_hdr_to_sls_rep_dim
+    from:
+      table: ord_hdr
+      columns:
+      - rep_id
+    to:
+      table: sls_rep_dim
+      columns:
+      - rep_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.9
+  - name: ord_hdr_to_store_dim
+    from:
+      table: ord_hdr
+      columns:
+      - store_id
+    to:
+      table: store_dim
+      columns:
+      - store_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.9
+  - name: ord_hdr_to_sts_cd_dim
+    from:
+      table: ord_hdr
+      columns:
+      - sts_cd
+    to:
+      table: sts_cd_dim
+      columns:
+      - sts_cd
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.9
+  - name: ord_hdr_legacy_to_cust_mstr
+    from:
+      table: ord_hdr_legacy
+      columns:
+      - customer_number
+    to:
+      table: cust_mstr
+      columns:
+      - cust_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.88
+  - name: ord_ln_to_sts_cd_dim
+    from:
+      table: ord_ln
+      columns:
+      - line_sts_cd
+    to:
+      table: sts_cd_dim
+      columns:
+      - sts_cd
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.88
+  - name: ord_ln_to_ord_hdr
+    from:
+      table: ord_ln
+      columns:
+      - ord_id
+    to:
+      table: ord_hdr
+      columns:
+      - ord_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.9
+  - name: ord_ln_to_prod_ref
+    from:
+      table: ord_ln
+      columns:
+      - prod_id
+    to:
+      table: prod_ref
+      columns:
+      - prod_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.9
+  - name: ord_rtn_to_ord_ln
+    from:
+      table: ord_rtn
+      columns:
+      - ord_ln_id
+    to:
+      table: ord_ln
+      columns:
+      - ord_ln_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.9
+  - name: ord_rtn_to_rtn_rsn_dim
+    from:
+      table: ord_rtn
+      columns:
+      - rtn_rsn_cd
+    to:
+      table: rtn_rsn_dim
+      columns:
+      - rtn_rsn_cd
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.9
+  - name: prod_attr_ext_to_prod_ref
+    from:
+      table: prod_attr_ext
+      columns:
+      - prod_id
+    to:
+      table: prod_ref
+      columns:
+      - prod_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.9
+  - name: prod_ref_to_category_dim
+    from:
+      table: prod_ref
+      columns:
+      - category_cd
+    to:
+      table: category_dim
+      columns:
+      - category_cd
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.9
+  - name: prod_ref_to_dept_dim
+    from:
+      table: prod_ref
+      columns:
+      - dept_cd
+    to:
+      table: dept_dim
+      columns:
+      - dept_cd
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.9
+  - name: sku_xref_to_prod_ref
+    from:
+      table: sku_xref
+      columns:
+      - prod_id
+    to:
+      table: prod_ref
+      columns:
+      - prod_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.9
+  - name: prod_ref_legacy_to_dept_dim
+    from:
+      table: prod_ref_legacy
+      columns:
+      - dept_cd
+    to:
+      table: dept_dim
+      columns:
+      - dept_cd
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.9
+  - name: sls_rep_dim_to_store_dim
+    from:
+      table: sls_rep_dim
+      columns:
+      - store_id
+    to:
+      table: store_dim
+      columns:
+      - store_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.9
+  - name: stg_customers_raw_to_cust_mstr
+    from:
+      table: stg_customers_raw
+      columns:
+      - raw_cust_id
+    to:
+      table: cust_mstr
+      columns:
+      - cust_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.88
+  - name: store_dim_to_whs_dim
+    from:
+      table: store_dim
+      columns:
+      - whs_id
+    to:
+      table: whs_dim
+      columns:
+      - whs_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.9
+  - name: sub_evt_to_cust_mstr
+    from:
+      table: sub_evt
+      columns:
+      - cust_id
+    to:
+      table: cust_mstr
+      columns:
+      - cust_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.9
+  - name: sub_evt_to_evt_typ_dim
+    from:
+      table: sub_evt
+      columns:
+      - evt_typ_cd
+    to:
+      table: evt_typ_dim
+      columns:
+      - evt_typ_cd
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.9
+  - name: web_evt_to_cust_mstr
+    from:
+      table: web_evt
+      columns:
+      - cust_id
+    to:
+      table: cust_mstr
+      columns:
+      - cust_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.9
+  - name: web_evt_to_ord_hdr
+    from:
+      table: web_evt
+      columns:
+      - ord_id
+    to:
+      table: ord_hdr
+      columns:
+      - ord_id
+    cardinality: many_to_one
+    join_type: left
+    fanout_risk: true
+    lifecycle: inferred
+    confidence: 0.9
+  hierarchies:
+  - name: date_dim_calendar
+    kind: time
+    dimension_table: date_dim
+    levels:
+    - name: year
+      column: yr_nbr
+    - name: quarter
+      column: qtr_nbr
+    - name: month
+      column: mth_nbr
+    - name: day
+      column: cal_dt
+    lifecycle: inferred
+    confidence: 0.9
+    provenance:
+    - signal: statistic
+      detail: calendar levels verified against cal_dt on every row
+  - name: cust_addr_cntry_cd_levels
+    kind: level
+    dimension_table: cust_addr
+    levels:
+    - name: cntry_cd
+      column: cntry_cd
+    - name: state_cd
+      column: state_cd
+    - name: city_nm
+      column: city_nm
+    - name: postal_cd
+      column: postal_cd
+    lifecycle: inferred
+    confidence: 0.7
+    provenance:
+    - signal: functional_dependency
+      detail: 'containment verified per level: state_cd -> cntry_cd 100%; city_nm -> state_cd 100%; postal_cd
+        -> city_nm 98%'
+  - name: cust_mstr_cntry_cd_levels
+    kind: level
+    dimension_table: cust_mstr
+    levels:
+    - name: cntry_cd
+      column: cntry_cd
+    - name: state_cd
+      column: state_cd
+    - name: city_nm
+      column: city_nm
+    lifecycle: inferred
+    confidence: 0.7
+    provenance:
+    - signal: functional_dependency
+      detail: 'containment verified per level: state_cd -> cntry_cd 100%; city_nm -> state_cd 100%'
+  - name: cust_mstr_legacy_state_cd_levels
+    kind: level
+    dimension_table: cust_mstr_legacy
+    levels:
+    - name: state_cd
+      column: state_cd
+    - name: city_nm
+      column: city_nm
+    lifecycle: inferred
+    confidence: 0.7
+    provenance:
+    - signal: functional_dependency
+      detail: 'containment verified per level: city_nm -> state_cd 100%'
+  - name: prod_ref_dept_cd_levels
+    kind: level
+    dimension_table: prod_ref
+    levels:
+    - name: dept_cd
+      column: dept_cd
+    - name: category_cd
+      column: category_cd
+    lifecycle: inferred
+    confidence: 0.7
+    provenance:
+    - signal: functional_dependency
+      detail: 'containment verified per level: category_cd -> dept_cd 100%'
+  - name: sku_xref_ext_sys_id_levels
+    kind: level
+    dimension_table: sku_xref
+    levels:
+    - name: ext_sys_id
+      column: ext_sys_id
+    - name: ext_sku
+      column: ext_sku
+    lifecycle: inferred
+    confidence: 0.7
+    provenance:
+    - signal: functional_dependency
+      detail: 'containment verified per level: ext_sku -> ext_sys_id 100%'
+  - name: store_dim_cntry_cd_levels
+    kind: level
+    dimension_table: store_dim
+    levels:
+    - name: cntry_cd
+      column: cntry_cd
+    - name: state_cd
+      column: state_cd
+    - name: city_nm
+      column: city_nm
+    lifecycle: inferred
+    confidence: 0.7
+    provenance:
+    - signal: functional_dependency
+      detail: 'containment verified per level: state_cd -> cntry_cd 100%; city_nm -> state_cd 100%'
+  - name: whs_dim_state_cd_levels
+    kind: level
+    dimension_table: whs_dim
+    levels:
+    - name: state_cd
+      column: state_cd
+    - name: city_nm
+      column: city_nm
+    lifecycle: inferred
+    confidence: 0.7
+    provenance:
+    - signal: functional_dependency
+      detail: 'containment verified per level: city_nm -> state_cd 100%'
+  metrics:
+  - name: total_tot_sls_amt
+    type: simple
+    measure: dly_sls_agg.tot_sls_amt
+    agg: sum
+    grain: one row per agg_dt_key, store_id (pre-aggregated)
+    lifecycle: inferred
+    confidence: 0.7
+    provenance:
+    - signal: statistic
+      detail: monetary measure on fact
+    agg_time_dimension: date_dim.cal_dt
+  - name: total_tot_spend_amt
+    type: simple
+    measure: mth_cust_agg.tot_spend_amt
+    agg: sum
+    grain: one row per cust_id, yr_mth (pre-aggregated)
+    lifecycle: inferred
+    confidence: 0.7
+    provenance:
+    - signal: statistic
+      detail: monetary measure on fact
+    agg_time_dimension: mth_cust_agg.yr_mth
+  - name: total_tot_amt
+    type: simple
+    measure: ord_hdr.tot_amt
+    agg: sum
+    grain: one row per ord_id
+    lifecycle: inferred
+    confidence: 0.7
+    provenance:
+    - signal: statistic
+      detail: monetary measure on fact
+    - signal: statistic
+      detail: 'business rule from aggregate reconciliation: sts_cd <> ''X'''
+    agg_time_dimension: ord_hdr.ord_dt
+    filter: sts_cd <> 'X'
+  - name: total_tot_amt_completed
+    type: simple
+    measure: ord_hdr.tot_amt
+    agg: sum
+    filter: sts_cd = 'C'
+    grain: one row per ord_id
+    lifecycle: inferred
+    confidence: 0.6
+    provenance:
+    - signal: statistic
+      detail: status filter via dictionary decode (C=Complete)
+    agg_time_dimension: ord_hdr.ord_dt
+  - name: ord_hdr_count
+    type: simple
+    measure: ord_hdr.ord_id
+    agg: count
+    grain: one row per ord_id
+    lifecycle: inferred
+    confidence: 0.75
+    provenance:
+    - signal: statistic
+      detail: row count on fact PK
+    agg_time_dimension: ord_hdr.ord_dt
+  - name: avg_tot_amt_per_order
+    type: ratio
+    numerator: ord_hdr.tot_amt
+    denominator: ord_hdr.ord_id
+    display_name: Average tot_amt per order
+    synonyms:
+    - average tot_amt per order
+    - tot_amt per order
+    - average order value
+    grain: one row per ord_id
+    lifecycle: inferred
+    confidence: 0.6
+    provenance:
+    - signal: statistic
+      detail: SUM(tot_amt) / COUNT(ord_id) on ord_hdr
+    - signal: statistic
+      detail: 'business rule from aggregate reconciliation: sts_cd <> ''X'''
+    agg_time_dimension: ord_hdr.ord_dt
+    filter: sts_cd <> 'X'
+  - name: total_unit_price
+    type: simple
+    measure: ord_ln.unit_price
+    agg: sum
+    grain: one row per ord_ln_id
+    lifecycle: inferred
+    confidence: 0.7
+    provenance:
+    - signal: statistic
+      detail: monetary measure on fact
+    - signal: statistic
+      detail: inherits ord_hdr's rule via ord_id
+    agg_time_dimension: ord_hdr.ord_dt
+    filter: ord_ln.ord_id IN (SELECT ord_id FROM ord_hdr WHERE sts_cd <> 'X')
+  - name: total_unit_price_completed
+    type: simple
+    measure: ord_ln.unit_price
+    agg: sum
+    filter: line_sts_cd = 'C'
+    grain: one row per ord_ln_id
+    lifecycle: inferred
+    confidence: 0.6
+    provenance:
+    - signal: statistic
+      detail: status filter via dictionary decode (C=Complete)
+    agg_time_dimension: ord_hdr.ord_dt
+  - name: total_line_amt
+    type: simple
+    measure: ord_ln.line_amt
+    agg: sum
+    grain: one row per ord_ln_id
+    lifecycle: inferred
+    confidence: 0.7
+    provenance:
+    - signal: statistic
+      detail: monetary measure on fact
+    - signal: statistic
+      detail: inherits ord_hdr's rule via ord_id
+    agg_time_dimension: ord_hdr.ord_dt
+    filter: ord_ln.ord_id IN (SELECT ord_id FROM ord_hdr WHERE sts_cd <> 'X')
+  - name: total_line_amt_completed
+    type: simple
+    measure: ord_ln.line_amt
+    agg: sum
+    filter: line_sts_cd = 'C'
+    grain: one row per ord_ln_id
+    lifecycle: inferred
+    confidence: 0.6
+    provenance:
+    - signal: statistic
+      detail: status filter via dictionary decode (C=Complete)
+    agg_time_dimension: ord_hdr.ord_dt
+  - name: ord_ln_count
+    type: simple
+    measure: ord_ln.ord_ln_id
+    agg: count
+    grain: one row per ord_ln_id
+    lifecycle: inferred
+    confidence: 0.75
+    provenance:
+    - signal: statistic
+      detail: row count on fact PK
+    agg_time_dimension: ord_hdr.ord_dt
+  - name: avg_unit_price_per_order_line
+    type: ratio
+    numerator: ord_ln.unit_price
+    denominator: ord_ln.ord_ln_id
+    display_name: Average unit_price per order_line
+    synonyms:
+    - average unit_price per order_line
+    - unit_price per order_line
+    - average order_line value
+    grain: one row per ord_ln_id
+    lifecycle: inferred
+    confidence: 0.6
+    provenance:
+    - signal: statistic
+      detail: SUM(unit_price) / COUNT(ord_ln_id) on ord_ln
+    - signal: statistic
+      detail: inherits ord_hdr's rule via ord_id
+    agg_time_dimension: ord_hdr.ord_dt
+    filter: ord_ln.ord_id IN (SELECT ord_id FROM ord_hdr WHERE sts_cd <> 'X')
+  - name: avg_line_amt_per_order_line
+    type: ratio
+    numerator: ord_ln.line_amt
+    denominator: ord_ln.ord_ln_id
+    display_name: Average line_amt per order_line
+    synonyms:
+    - average line_amt per order_line
+    - line_amt per order_line
+    - average order_line value
+    grain: one row per ord_ln_id
+    lifecycle: inferred
+    confidence: 0.6
+    provenance:
+    - signal: statistic
+      detail: SUM(line_amt) / COUNT(ord_ln_id) on ord_ln
+    - signal: statistic
+      detail: inherits ord_hdr's rule via ord_id
+    agg_time_dimension: ord_hdr.ord_dt
+    filter: ord_ln.ord_id IN (SELECT ord_id FROM ord_hdr WHERE sts_cd <> 'X')
+  - name: total_rtn_amt
+    type: simple
+    measure: ord_rtn.rtn_amt
+    agg: sum
+    grain: one row per rtn_id
+    lifecycle: inferred
+    confidence: 0.7
+    provenance:
+    - signal: statistic
+      detail: monetary measure on fact
+    agg_time_dimension: ord_rtn.rtn_dt
+  - name: ord_rtn_count
+    type: simple
+    measure: ord_rtn.rtn_id
+    agg: count
+    grain: one row per rtn_id
+    lifecycle: inferred
+    confidence: 0.75
+    provenance:
+    - signal: statistic
+      detail: row count on fact PK
+    agg_time_dimension: ord_rtn.rtn_dt
+  - name: avg_rtn_amt_per_order_return
+    type: ratio
+    numerator: ord_rtn.rtn_amt
+    denominator: ord_rtn.rtn_id
+    display_name: Average rtn_amt per order_return
+    synonyms:
+    - average rtn_amt per order_return
+    - rtn_amt per order_return
+    - average order_return value
+    grain: one row per rtn_id
+    lifecycle: inferred
+    confidence: 0.6
+    provenance:
+    - signal: statistic
+      detail: SUM(rtn_amt) / COUNT(rtn_id) on ord_rtn
+    agg_time_dimension: ord_rtn.rtn_dt
+  - name: total_mrr_amt
+    type: simple
+    measure: sub_evt.mrr_amt
+    agg: sum
+    grain: one row per evt_id
+    lifecycle: inferred
+    confidence: 0.7
+    provenance:
+    - signal: statistic
+      detail: monetary measure on fact
+    agg_time_dimension: sub_evt.evt_dt
+  - name: sub_evt_count
+    type: simple
+    measure: sub_evt.evt_id
+    agg: count
+    grain: one row per evt_id
+    lifecycle: inferred
+    confidence: 0.75
+    provenance:
+    - signal: statistic
+      detail: row count on fact PK
+    agg_time_dimension: sub_evt.evt_dt
+  - name: avg_mrr_amt_per_subscription_event
+    type: ratio
+    numerator: sub_evt.mrr_amt
+    denominator: sub_evt.evt_id
+    display_name: Average mrr_amt per subscription_event
+    synonyms:
+    - average mrr_amt per subscription_event
+    - mrr_amt per subscription_event
+    - average subscription_event value
+    grain: one row per evt_id
+    lifecycle: inferred
+    confidence: 0.6
+    provenance:
+    - signal: statistic
+      detail: SUM(mrr_amt) / COUNT(evt_id) on sub_evt
+    agg_time_dimension: sub_evt.evt_dt
+  aggregate_tables:
+  - table: dly_sls_agg
+    aggregates: ord_hdr
+    grain:
+    - agg_dt_key
+    - store_id
+    measure_mappings:
+    - source: SUM(tot_amt) WHERE sts_cd <> 'X'
+      target: tot_sls_amt
+    mapping_source: heuristic
+    routing:
+      rule: pre-aggregated tot_amt by agg_dt_key, store_id
+      status: advisory
+    consistency:
+      method: per_group_reconciliation
+      status: consistent
+    lifecycle: inferred
+    confidence: 0.75
+    provenance:
+    - signal: statistic
+      detail: reconciles per-group with ord_hdr.tot_amt excluding sts_cd <> 'X' (40/40 store_id groups;
+        1095/1095 agg_dt_key groups within 0.2%)
+  - table: mth_cust_agg
+    aggregates: ord_hdr
+    grain:
+    - yr_mth
+    - cust_id
+    measure_mappings:
+    - source: SUM(tot_amt) WHERE sts_cd <> 'X'
+      target: tot_spend_amt
+    mapping_source: heuristic
+    routing:
+      rule: pre-aggregated tot_amt by yr_mth, cust_id
+      status: advisory
+    consistency:
+      method: per_group_reconciliation
+      status: consistent
+    lifecycle: inferred
+    confidence: 0.75
+    provenance:
+    - signal: statistic
+      detail: reconciles per-group with ord_hdr.tot_amt excluding sts_cd <> 'X' (1484/1484 cust_id groups
+        within 0.2%)
+  repo_knowledge:
+    routing:
+    - intent: analysis of ord hdr
+      use:
+      - ord_hdr
+      - dly_sls_agg
+      - mth_cust_agg
+      lifecycle: inferred
+      confidence: 0.6
+      avoid:
+      - table: ord_hdr_legacy
+        reason: legacy-named table; superseded by ord_hdr
+    - intent: analysis of ord ln
+      use:
+      - ord_ln
+      lifecycle: inferred
+      confidence: 0.6
+    - intent: analysis of ord rtn
+      use:
+      - ord_rtn
+      lifecycle: inferred
+      confidence: 0.6
+    - intent: analysis of prod attr ext
+      use:
+      - prod_attr_ext
+      lifecycle: inferred
+      confidence: 0.6
+    - intent: analysis of sub evt
+      use:
+      - sub_evt
+      lifecycle: inferred
+      confidence: 0.6
+    domains:
+    - name: ord_hdr_domain
+      tables:
+      - category_dim
+      - chnl_dim
+      - curr_dim
+      - cust_addr
+      - cust_mstr
+      - date_dim
+      - dept_dim
+      - dly_sls_agg
+      - evt_typ_dim
+      - inv_snpsht
+      - mktg_cmpgn_dim
+      - mth_cust_agg
+      - ord_hdr
+      - ord_hdr_legacy
+      - ord_ln
+      - ord_rtn
+      - pmt_mthd_dim
+      - prod_attr_ext
+      - prod_ref
+      - prod_ref_legacy
+      - promo_dim
+      - rtn_rsn_dim
+      - sku_xref
+      - sls_rep_dim
+      - stg_customers_raw
+      - store_dim
+      - sts_cd_dim
+      - sub_evt
+      - web_evt
+      - whs_dim
+    - name: etl_log_domain
+      tables:
+      - etl_log
+      - job_ctrl

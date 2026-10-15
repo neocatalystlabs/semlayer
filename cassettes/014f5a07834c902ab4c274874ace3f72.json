@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "4df9b8e6e218",
+ "response": "{\"action\": \"sql\", \"sql\": \"SELECT SUM(tot_amt) AS total_order_revenue FROM ord_hdr WHERE sts_cd <> 'X'\", \"reason\": \"Applied required filter excluding cancelled orders (sts_cd <> 'X') for revenue sum.\"}",
+ "usage": {
+  "in": 7854,
+  "out": 103
+ }
+}

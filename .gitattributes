@@ -1,0 +1,13 @@
+# Recorded model responses: generated data, not source.
+#
+# `linguist-generated` collapses them in GitHub's diff view and excludes them
+# from the repository's language statistics. Without this, a sync of engine work
+# showed 721 changed files in one pull request and the 40 files of actual code
+# were unreviewable in practice. Review the code; the recordings are evidence,
+# not authorship. See cassettes/README.md for what they are.
+cassettes/*.json linguist-generated=true
+examples/agent_pipeline/cassettes/*.json linguist-generated=true
+
+# Gold semantic layers are hand-authored and ARE source — deliberately not
+# marked, because a change to a gold file changes what we score against and
+# must be read line by line.

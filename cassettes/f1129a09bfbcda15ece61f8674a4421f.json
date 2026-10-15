@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "4df9b8e6e218",
+ "response": "{\"action\":\"sql\",\"sql\":\"SELECT (SELECT SUM(tot_sls_amt) FROM dly_sls_agg) - (SELECT SUM(tot_amt) FROM ord_hdr WHERE sts_cd <> 'X') AS diff\",\"reason\":\"Compare dly_sls_agg total to ord_hdr total excluding cancelled (sts_cd<>'X') orders.\"}",
+ "usage": {
+  "in": 6989,
+  "out": 139
+ }
+}
