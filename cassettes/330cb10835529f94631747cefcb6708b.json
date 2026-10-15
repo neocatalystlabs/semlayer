@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "4df9b8e6e218",
+ "response": "{\"action\": \"sql\", \"sql\": \"SELECT SUM(tot_amt) / COUNT(ord_id) AS avg_order_value_completed FROM ord_hdr WHERE sts_cd = 'C' AND sts_cd <> 'X'\", \"reason\": \"Filtered sts_cd='C' for completed orders; also applied required sts_cd<>'X' filter per business rule.\"}",
+ "usage": {
+  "in": 8264,
+  "out": 206
+ }
+}

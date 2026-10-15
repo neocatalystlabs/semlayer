@@ -1,0 +1,92 @@
+# The synthetic evaluation warehouses, one entry each.
+#
+# Acquired real-world datasets are NOT listed here: they live in
+# fixtures/external/registry.yaml, which is authoritative for them because it
+# carries the licence verification that governs whether we may ship anything
+# derived from them. Keeping each warehouse in exactly one file is deliberate —
+# two registries would drift, and the licensing fields are the ones that must
+# never be stale.
+#
+# `docs/warehouses.md` is RENDERED from this file plus that one plus the
+# CI-enforced accuracy floors, by `python fixtures/render_warehouses.py`. Do not
+# hand-edit the generated doc; a test fails if it is out of date.
+#
+# Shape figures (tables/columns/rows) are measured from the built database, not
+# typed in here, for the same reason.
+
+synthetic:
+  - name: collision_heavy
+    purpose: >
+      Many small dimension tables whose key columns collide by name and by
+      value range, so inclusion testing alone cannot separate them. The
+      foreign-key precision case.
+    generator: fixtures/generators/collision_heavy.py
+    seeded: true
+
+  - name: eav
+    purpose: >
+      Entity-attribute-value: the shape where column semantics live in ROWS,
+      so per-column inference is structurally insufficient. Present to prove we
+      detect and report the shape rather than silently mis-model it.
+    generator: fixtures/generators/eav.py
+    seeded: true
+
+  - name: fan_trap
+    purpose: >
+      The classic fan trap — one fact joined to another through a shared
+      dimension, where a naive join multiplies a measure. The silent-wrong-
+      number case that execution cannot catch.
+    generator: fixtures/generators/fan_trap.py
+    seeded: true
+
+  - name: messy_mart
+    purpose: >
+      The flagship: cryptic column names, no declared constraints, deprecated
+      tables still populated, business rules that only reconcile when certain
+      rows are excluded, and an aggregate table that encodes an unwritten
+      filter. Stands in for an enterprise mart nobody documented.
+    generator: fixtures/generators/messy_mart.py
+    seeded: true
+
+  - name: multi_tenant
+    purpose: >
+      Schema-per-tenant multi-tenancy: the same logical model repeated across
+      many schemas. Tests that we model the shape once rather than emitting one
+      table per tenant, and that object COUNT rather than data volume is what
+      scales.
+    generator: fixtures/generators/multi_tenant.py
+    seeded: true
+
+  - name: obt
+    purpose: >
+      One big table: a fully denormalised 124-column mart with no joins at all.
+      Hierarchies and grain must be inferred within a single table.
+    generator: fixtures/generators/obt.py
+    seeded: true
+
+  - name: self_ref
+    purpose: >
+      Recursive structures — an org chart and a bill of materials — where a
+      column references its own table's key. Scored against recursive
+      hierarchies rather than flat relationships.
+    generator: fixtures/generators/self_ref.py
+    seeded: true
+
+  - name: snapshot_noval
+    purpose: >
+      Snapshot tables WITHOUT validity columns: point-in-time data whose
+      as-of semantics are implied by a snapshot date and nothing else. The
+      case where SCD2 machinery does not apply and must not be asserted.
+    generator: fixtures/generators/snapshot_noval.py
+    seeded: true
+
+  - name: tpcds_clean
+    purpose: >
+      TPC-DS via DuckDB's extension: a clean, well-named, properly normalised
+      star schema. The control case — and the HONEST NEGATIVE, because raw DDL
+      outperforms the inferred layer here (docs/benchmark.md).
+    generator: fixtures/generators/tpcds_clean.py
+    seeded: true
+    notes: >
+      Scale factor is configurable via TPCDS_SF; CI builds at 0.01 so the
+      fixture stays within CI time.

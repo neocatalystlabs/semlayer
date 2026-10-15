@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "4df9b8e6e218",
+ "response": "{\"action\": \"clarify\", \"reason\": \"No join path exists between mktg_cmpgn_dim and ord_hdr/revenue facts to attribute revenue to campaigns.\"}",
+ "usage": {
+  "in": 7937,
+  "out": 241
+ }
+}

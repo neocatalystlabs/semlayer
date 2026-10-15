@@ -58,6 +58,13 @@ semlayer = ["spec/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    # Shells out to the full benchmark twice (~3.5 min). It guards the
+    # reproducibility claim in docs/benchmark.md, which only a KEYLESS run
+    # can check -- a maintainer with a key records the gaps and passes --
+    # so it is slow by nature and still has to run in CI.
+    "slow: minutes-long; runs in CI, deselect locally with -m 'not slow'",
+]
 
 [tool.ruff]
 line-length = 100

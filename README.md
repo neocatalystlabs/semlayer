@@ -49,6 +49,13 @@ Everything lands with `confidence` ([calibrated, with the misses published](docs
 
 - **Best on messy warehouses.** On clean, well-named schemas our benchmark shows raw DDL is already sufficient — we publish that negative result rather than hide it. If your warehouse is tidy TPC-DS, you may not need us.
 - ETL input: **dbt** (`--manifest target/manifest.json`) -- reads the model DAG to settle join targets statistics cannot. Catalog comments and `--context` docs are read as priors on every run.
+- Verify it yourself, free: `ANTHROPIC_API_KEY= pytest -q` replays recorded
+  model responses, so every accuracy floor and benchmark number above is
+  checkable with no API key and no spend — including from a fork, where CI has
+  no secrets ([what those recordings are, and what is still untidy about
+  them](cassettes/README.md)). The warehouses behind the numbers, with sources,
+  pinned versions and licences, are listed in
+  [docs/warehouses.md](docs/warehouses.md).
 - Scale: tested to **2,000 tables / 30,000 columns**; the run says so when a warehouse is past that. Data VOLUME is not the limit -- 4TB and 45TB are the same architecture. [How to make it fast](docs/scale.md).
 - Warehouses: **Snowflake, BigQuery, PostgreSQL, DuckDB** (+ Iceberg on S3 via the [DuckDB bridge](docs/iceberg-bridge.md)). PostgreSQL also reaches Redshift and other Postgres-protocol engines, whose catalogs differ in places and are untested. Exporter: **dbt** (losses reported, never silent). LLM: Anthropic API (Bedrock/Vertex routing is next).
 - Not included: hosted service, ontology enrichment (it failed our own ablation gate — [receipts](docs/ablation-m5.md)), LookML/RDF exporters.

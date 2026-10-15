@@ -1365,3 +1365,53 @@ The design when it is picked up:
 
 Until then the honest position is that we do not report statistic staleness,
 rather than reporting it wrongly.
+
+## Reproducibility audit of the benchmark rows (2026-10-14)
+
+Checked whether every row in `docs/benchmark.md` can be re-derived from the
+committed recordings. Two could not, because the responses behind them had not
+been committed, so `python -m semlayer.benchmark` with no API key stopped on a
+cassette miss rather than printing a table.
+
+| row | was | reproduces as |
+|---|---|---|
+| `tpcds_clean` semantic / +lint / +ontology | 0.58 / 0.58 / 0.67 | **0.42 / 0.42 / 0.58** |
+| `claude-sonnet-5` semantic / +lint | 0.84 / 0.84 | **0.87 / 0.87** |
+
+53 recordings were missing for the first and 40 for the second; both were made
+on the same pinned model, and both rows now replay with no key. Whether the
+earlier `tpcds_clean` figures were ever right cannot be established, because the
+responses behind them no longer exist — two of twelve questions is 17 points on
+that fixture, so variance may account for part of the gap. The published page
+carries the figures that reproduce. `fan_trap` and `messy_mart` reproduced
+exactly.
+
+The `tpcds_clean` result is the more interesting one: the honest negative is
+larger than previously reported. On a clean, well-named schema the layer scores
+0.42 against raw DDL's 0.67.
+
+**Why it was not caught earlier.** A run with an API key records whatever is
+missing and passes, so the gap does not appear to anyone holding a key — only to
+a keyless run. The LLM-tier section above shows the same pattern once before:
+`tpcds_clean` "was re-recorded against the live model for this report", and an
+earlier draft's 0.128 ECE was flattered by the fixtures that did replay. Local
+re-recordings for a report were not committed either time.
+
+`tests/test_benchmark_replays.py` now runs every published row with an empty key
+and asserts the printed table matches the committed page. It is marked `slow`
+(~3.5 minutes; it shells out to the benchmark) and runs in CI, which is the only
+keyless environment available.
+
+### A defect found in the same audit
+
+A response truncated at the token ceiling was returned as if complete, and
+`link/validate_llm.py` discarded every verdict in a chunk whose JSON would not
+parse. It was active on the shipped model, costing 30 candidates their
+corroboration during a benchmark run, and two committed cassettes held truncated
+arrays — replay reproduced the fragment, so no code fix alone could repair them.
+Re-recorded.
+
+Fixing it moved `messy_mart` FK precision **1.000 -> 0.973**: restoring the
+discarded verdicts admits one false positive the model does assert. The 1.000
+had been flattered by the defect. Floor is 0.95, so it still holds, and 0.973 is
+the figure that reproduces.

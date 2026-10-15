@@ -31,6 +31,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 CHEAP_MODEL = "claude-haiku-4-5-20251001"
+# Escalation ceiling for a truncated or empty response: 1500 -> 6000 ->
+# 24000, then fail loudly. Bounded so a pathological prompt cannot bill
+# unboundedly while retrying.
+_MAX_TOKENS_CEILING = 24_000
 def _cassette_dir() -> Path:
     """Cassettes live in the repo, not the wheel — same rule as fixtures.
 
@@ -145,13 +149,35 @@ class AnthropicProvider:
             # newer models dropped the temperature param; cassettes still pin outputs
             msg = client.messages.create(**kwargs)
         text = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
-        if not text and max_tokens < 8000:
-            # models with default thinking can spend the whole budget on
-            # thinking blocks; one retry with headroom recovers the text
+        # TRUNCATION IS A SILENT WRONG ANSWER, so it is detected here rather
+        # than left to each caller. `stop_reason == "max_tokens"` is the only
+        # reliable signal: a cut-off response is well-formed text that happens
+        # to stop mid-structure, so nothing downstream can tell it apart from a
+        # complete one. Measured cost of not checking: on a chattier model 13.2%
+        # of responses hit the 1500-token default, and link/validate_llm.py
+        # dropped EVERY foreign-key verdict in those chunks on an unparseable
+        # array -- FK precision fell to 0.000 on three fixtures with no error
+        # raised anywhere. 4-5 merely fit inside the budget; the defect was
+        # always there.
+        truncated = getattr(msg, "stop_reason", None) == "max_tokens"
+        if (not text or truncated) and max_tokens < _MAX_TOKENS_CEILING:
+            # models with default thinking can also spend the whole budget on
+            # thinking blocks; the same escalation recovers both cases
+            logger.warning("llm %s at max_tokens=%d (%s); retrying with %d",
+                           self.model, max_tokens,
+                           "truncated" if truncated else "no text", max_tokens * 4)
             return self._call_live(system, user, max_tokens * 4)
         if not text:
             raise LLMError(f"model {self.model} returned no text content",
                            hint="response contained only non-text blocks")
+        if truncated:
+            # Loud, not silent: returning this would record a cassette that
+            # pins a half-written answer forever.
+            raise LLMError(
+                f"model {self.model} truncated its response at the "
+                f"{max_tokens}-token ceiling",
+                hint="the prompt asks for more output than the ceiling allows; "
+                     "reduce the batch size at the call site")
         return text, msg.usage.input_tokens, msg.usage.output_tokens
 
     def _record(self, path: Path, system: str, text: str, usage_in: int, usage_out: int) -> None:
