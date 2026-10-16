@@ -29,12 +29,40 @@ class BigQuerySource:
         bindings on that account are what the minimal-grant claim rests on.
         """
         from google.cloud import bigquery
-        from google.oauth2 import service_account
 
         key = ("GOOGLE_APPLICATION_CREDENTIALS_READER" if persona == "reader"
                else "GOOGLE_APPLICATION_CREDENTIALS_ADMIN")
-        creds = service_account.Credentials.from_service_account_file(os.environ[key])
-        project = os.environ["GCP_PROJECT"]
+        path = os.environ.get(key)
+        if path:
+            from google.oauth2 import service_account
+            creds = service_account.Credentials.from_service_account_file(path)
+        else:
+            # Application Default Credentials: `gcloud auth application-default
+            # login`, a workload identity, or GOOGLE_APPLICATION_CREDENTIALS.
+            #
+            # Without this a service-account KEY FILE was mandatory, so someone
+            # who already had gcloud set up could not run the CLI at all -- and
+            # issuing a key file is exactly what a security team will push back
+            # on. ADC also means the inference runs as the PERSON, inheriting
+            # their own grants, which is what most first runs want.
+            import google.auth
+
+            from semlayer.errors import SemlayerError
+            try:
+                creds, adc_project = google.auth.default(
+                    scopes=["https://www.googleapis.com/auth/cloud-platform"])
+            except Exception:
+                raise SemlayerError(
+                    f"no BigQuery credentials: set {key} to a service-account "
+                    "key file, or run `gcloud auth application-default login`",
+                    hint="`semlayer init bigquery` prints the minimal grant") from None
+            os.environ.setdefault("GCP_PROJECT", adc_project or "")
+        project = os.environ.get("GCP_PROJECT") or ""
+        if not project:
+            from semlayer.errors import SemlayerError
+            raise SemlayerError(
+                "no BigQuery project: export GCP_PROJECT",
+                hint="ADC did not carry a quota project; set GCP_PROJECT explicitly")
         return cls(bigquery.Client(project=project, credentials=creds), project)
 
     def list_tables(self) -> list[TableMeta]:

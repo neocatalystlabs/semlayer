@@ -56,13 +56,48 @@ class SnowflakeSource:
 
         import snowflake.connector
 
+        # Password was the ONLY accepted credential, which locked out every
+        # account on SSO -- the common case at any company large enough to have
+        # a messy warehouse, and the exact person who wants to try the CLI on
+        # their own grants. `authenticator` covers SSO (externalbrowser), Okta
+        # (a URL), and OAuth; a private key covers key-pair auth, which is what
+        # most service accounts are moving to.
+        auth: dict = {}
+        authenticator = os.environ.get(f"{prefix}_AUTHENTICATOR") or os.environ.get(
+            "SNOWFLAKE_AUTHENTICATOR")
+        key_path = os.environ.get(f"{prefix}_PRIVATE_KEY_PATH") or os.environ.get(
+            "SNOWFLAKE_PRIVATE_KEY_PATH")
+        password = os.environ.get(f"{prefix}_PASSWORD")
+        if key_path:
+            auth["private_key_file"] = key_path
+            passphrase = os.environ.get(f"{prefix}_PRIVATE_KEY_PASSPHRASE") or \
+                os.environ.get("SNOWFLAKE_PRIVATE_KEY_PASSPHRASE")
+            if passphrase:
+                auth["private_key_file_pwd"] = passphrase
+        elif authenticator:
+            auth["authenticator"] = authenticator
+            # externalbrowser prompts the user and takes no password; Okta and
+            # oauth variants still need one, so pass it when it is set.
+            if password and authenticator.lower() != "externalbrowser":
+                auth["password"] = password
+        elif password:
+            auth["password"] = password
+        else:
+            raise SemlayerError(
+                f"no Snowflake credential: set {prefix}_PASSWORD, "
+                f"{prefix}_PRIVATE_KEY_PATH, or {prefix}_AUTHENTICATOR="
+                "externalbrowser for SSO",
+                hint="`semlayer init snowflake` prints the minimal grant; SSO and "
+                     "key-pair let you run as yourself without a new password",
+            )
+
         con = snowflake.connector.connect(
             account=os.environ["SNOWFLAKE_ACCOUNT"],
             user=os.environ[f"{prefix}_USER"],
-            password=os.environ[f"{prefix}_PASSWORD"],
             role=session_role,
             warehouse=os.environ.get("SNOWFLAKE_WAREHOUSE", "SEMLAYER_WH"),
             database=os.environ.get("SNOWFLAKE_DATABASE", "SEMLAYER_TEST"),
+            **auth,
         )
         src = cls(con, os.environ.get("SNOWFLAKE_DATABASE", "SEMLAYER_TEST"))
         src.session_role = session_role

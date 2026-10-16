@@ -17,6 +17,11 @@ dependencies = [
     "anthropic>=0.40",
     "mcp>=1.0,<2",  # 2.x renamed FastMCP -> MCPServer and changed the tool API
     "sqlglot>=25",  # semantic SQL linter (MIT)
+    # DuckDB returns a pytz tzinfo when it fetches a TIMESTAMPTZ value and does
+    # not depend on pytz itself, so profiling any table with a timestamptz
+    # column raises ModuleNotFoundError unless something else happened to pull
+    # it in. Found when the dbt_synthea FK-floor test failed on a clean venv.
+    "pytz>=2024.1",
 ]
 
 [project.optional-dependencies]
