@@ -58,8 +58,14 @@ def _build_parser() -> argparse.ArgumentParser:
                         "or bare). The targeted half of incremental re-inference: "
                         "`semlayer drift` reports which tables changed and what depends "
                         "on them, and this profiles just those instead of the whole "
-                        "warehouse. The output is a layer covering only these tables — "
-                        "merging it into an existing layer is not yet supported.")
+                        "warehouse. Pass --into to fold the result back into the layer "
+                        "you already have.")
+    p.add_argument("--into", metavar="PATH",
+                   help="Merge the result into this existing layer and write it back, "
+                        "instead of emitting a standalone document. Reviewed and "
+                        "certified content is kept and disagreement is recorded as a "
+                        "conflict; a column the warehouse no longer has becomes "
+                        "`orphaned`, never deleted. Tables outside --only are untouched.")
 
     p = sub.add_parser("review", help="Review inferred claims (terminal queue)")
     p.add_argument("doc", help="semantic layer YAML path")
@@ -81,6 +87,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--apply", action="store_true",
                    help="Apply orphaning/conflicts to the doc (writes in place)")
     p.add_argument("--cqs", help="CQ suite YAML to regression-check")
+    p.add_argument("--json", action="store_true",
+                   help="machine-readable changeset (for agents and CI)")
     return parser
 
 
@@ -175,15 +183,29 @@ def _cmd_infer(args: argparse.Namespace) -> int:
     if context:
         report["context"] = {"chunks": len(context.chunks),
                              "dictionary_rows": len(context.dictionary)}
-    Path(args.out + ".report.json").write_text(json.dumps(report, indent=1))
-    result = validate_document(doc)
-    _save_doc(args.out, doc)
-    n = len(doc["semantic_layer"]["tables"])
-    mode = f"({llm.spend_summary})" if llm else "(deterministic mode)"
-    print(f"wrote {args.out}: {n} tables, valid={result.ok} {mode}")
+    out_path = args.into or args.out
+    Path(out_path + ".report.json").write_text(json.dumps(report, indent=1))
+    if args.into:
+        from semlayer.merge import merge_layer, render_report
+
+        base = _load_doc(args.into)
+        merged = merge_layer(base, doc, scope=only)
+        result = validate_document(base)
+        _save_doc(args.into, base)
+        print(render_report(merged))
+        n = len(base["semantic_layer"]["tables"])
+        mode = f"({llm.spend_summary})" if llm else "(deterministic mode)"
+        print(f"\nwrote {args.into}: {n} tables, valid={result.ok} {mode}")
+        doc = base
+    else:
+        result = validate_document(doc)
+        _save_doc(args.out, doc)
+        n = len(doc["semantic_layer"]["tables"])
+        mode = f"({llm.spend_summary})" if llm else "(deterministic mode)"
+        print(f"wrote {args.out}: {n} tables, valid={result.ok} {mode}")
     items = collect(doc)
     if items:
-        print(f"{len(items)} items await review: semlayer review {args.out}")
+        print(f"{len(items)} items await review: semlayer review {out_path}")
     return 0 if result.ok else 1
 
 
@@ -238,10 +260,25 @@ def _cmd_drift(args: argparse.Namespace) -> int:
             cs.broken_cqs = drift_mod.cq_regression(con, suite, events, doc)
         finally:
             con.close()
-    print(drift_mod.render_changeset(cs))
+    if args.json:
+        import json
+
+        print(json.dumps({
+            "events": [{"kind": e.kind, "table": e.table, "column": e.column,
+                        "detail": e.detail} for e in cs.events],
+            "orphaned": cs.orphaned,
+            "needs_inference": cs.needs_inference,
+            "affected": cs.affected,
+            "broken_cqs": cs.broken_cqs,
+            "demoted": cs.demoted,
+            "retable": sorted({e.table for e in cs.events}),
+        }, indent=1))
+    else:
+        print(drift_mod.render_changeset(cs))
     if args.apply:
         _save_doc(args.doc, doc)
-        print(f"applied to {args.doc}")
+        if not args.json:
+            print(f"applied to {args.doc}")
     return 1  # nonzero: drift found (CI-hook friendly)
 
 
