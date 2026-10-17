@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Review queue: collect inferred claims needing human judgment, apply verdicts.
 
 Item kinds:

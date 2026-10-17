@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Knowledge-doc priors (v0.2): free-form partner context as inference input.
 
 `--context` accepts files, directories, and globs of prose docs (.md, .txt,

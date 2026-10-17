@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Snowflake connector: MetadataProvider + QueryExecutor over one database.
 
 Runs under the customer's minimal-grant read-only service account (USAGE on

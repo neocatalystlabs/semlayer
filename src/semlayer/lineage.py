@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """ETL lineage as inference input: read how the tables were authored.
 
 The warehouse says what the data IS. The ETL that built it says what it MEANS,

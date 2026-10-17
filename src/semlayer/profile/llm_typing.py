@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """LLM escalation tier for semantic typing (prompt version 1).
 
 Only columns below the escalation threshold reach here, batched ONE CALL PER

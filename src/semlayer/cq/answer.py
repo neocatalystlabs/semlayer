@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """CQ answerer: simulates an agent answering a business question under three context conditions.
 
 This is the ablation instrument (M5) and benchmark core (M6).

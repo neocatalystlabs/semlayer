@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Source abstraction: MetadataProvider + QueryExecutor.
 
 The split is deliberate: a catalog-native metadata provider (Iceberg

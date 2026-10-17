@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """FK candidate generation: pruned inclusion-dependency testing (Stage 2).
 
 The IND explosion is tamed by pruning BEFORE any inclusion query runs

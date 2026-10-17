@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Anonymous usage telemetry — local spool only, opt-out, no network in v1.
 
 Honesty contract: counts commands and durations, NEVER schema

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Statistical column profiling (Stage 1, deterministic half).
 
 All statistics are computed in the warehouse via pushed-down SQL — no data

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Profile stage runner: source -> draft semantic layer document.
 
 Output is a spec-conformant document with lifecycle: inferred and

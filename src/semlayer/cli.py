@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """semlayer command-line interface.
 
 Structure: one handler per subcommand, dispatched from `main`. The CLI is the

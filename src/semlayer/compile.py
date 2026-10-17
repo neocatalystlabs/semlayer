@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Metric compilation with constructive refusals (Phase A, council-reviewed).
 
 `compile_metric` turns a declared metric into executable SQL — the one

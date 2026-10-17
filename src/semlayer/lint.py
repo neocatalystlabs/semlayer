@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Semantic SQL linter: check SQL an agent (or a human) wrote against the layer.
 
 Every vendor performs these checks inside a closed compiler; here they run

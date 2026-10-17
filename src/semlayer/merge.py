@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Fold a partial re-inference back into an existing layer.
 
 `infer --only ord_hdr` profiles two tables and produces a layer covering two

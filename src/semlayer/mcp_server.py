@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Local MCP server: the agent-facing consumption surface.
 
 Progressive disclosure (a 1,000-table model never dumps whole): domains ->

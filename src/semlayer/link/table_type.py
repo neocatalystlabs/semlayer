@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Table-type classification (fact/dimension/aggregate/... ) — heuristic tier.
 
 Signals: naming conventions, FK fan-out/fan-in from the validated join graph,

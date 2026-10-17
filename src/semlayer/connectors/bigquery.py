@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """BigQuery connector: MetadataProvider + QueryExecutor over one project.
 
 Reader persona = roles/bigquery.dataViewer + jobUser (the minimal grant

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Partition-wise profiling: merge per-partition statistics, re-profile only what changed.
 
 The measured case for this. One pass over a 45TB Oracle warehouse costs days

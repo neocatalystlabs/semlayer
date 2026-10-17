@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Reproducible benchmark runner (M6): the ablation, hardened for publication.
 
 Reproducibility contract (adversarial B5): results are exact under pinned
