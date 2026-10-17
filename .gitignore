@@ -10,3 +10,10 @@ fixtures/build/
 *.duckdb
 *.duckdb.wal
 *.report.json
+
+# The agent example infers its layer on first run and caches it next to the
+# script. Committing that cache pins every clone to whichever engine built it,
+# because _ensure_layer() returns early when the file exists -- so the example
+# stops demonstrating inference and starts replaying a snapshot of it.
+examples/agent_pipeline/layer.yaml
+examples/agent_pipeline/layer.yaml.report.json
