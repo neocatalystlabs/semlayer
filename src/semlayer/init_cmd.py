@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """`semlayer init` — generate the minimal-grant setup for a warehouse.
 
 The grant scripts are the PRODUCT's security story: the reader

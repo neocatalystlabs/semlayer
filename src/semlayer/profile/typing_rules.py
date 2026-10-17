@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Heuristic semantic typing + entity-role classification (Stage 1, rule tier).
 
 Deterministic name/pattern/statistics rules — the pre-LLM baseline and the

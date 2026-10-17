@@ -1,8 +1,9 @@
 # semlayer
 
-**The open-source semantic layer that infers itself — skip the quarter of hand-writing dbt YAML.**
+**The semantic layer that infers itself — skip the quarter of hand-writing dbt YAML.**
+**Fair Source** ([FSL-1.1-ALv2](LICENSE.md)); the format and its schemas are Apache-2.0.
 
-Point it at your warehouse. It profiles every column, discovers the foreign keys nobody declared, decodes the status columns, finds the business rules hiding in your aggregate tables, and writes the whole thing down as an open, portable semantic layer — with **confidence, provenance, and lifecycle on every single claim** — ready for any AI agent to consume over MCP.
+Point it at your warehouse. It profiles every column, discovers the foreign keys nobody declared, decodes the status columns, finds the business rules hiding in your aggregate tables, and writes the whole thing down as a portable semantic layer in an openly licensed format — with **confidence, provenance, and lifecycle on every single claim** — ready for any AI agent to consume over MCP.
 
 ```bash
 pip install -e ".[warehouses]"
@@ -69,4 +70,17 @@ Running the beta? File the [**Beta feedback** form](https://github.com/neocataly
 
 [`spec/`](spec/) format schema + consumer contract · [`src/semlayer/`](src/semlayer/) the engine · [`fixtures/`](fixtures/) 9 eval warehouses + golds + CQ suites · [`docs/`](docs/) benchmark, cost model, spike reports · [`ARCHITECTURE.md`](ARCHITECTURE.md) how it works
 
-License: Apache-2.0.
+## Licence
+
+**Fair Source, not open source.** The engine and CLI are
+[FSL-1.1-ALv2](LICENSE.md): free for any internal use, including in
+production and CI, with no fee or key; the one prohibition is offering
+semlayer to third parties as a competing product or service. Every release
+converts to Apache-2.0 two years after it is published.
+
+The format specification, its JSON Schemas and the exporters are
+**Apache-2.0** — a semantic layer nobody else can read is worth nothing.
+
+Releases 0.1.0b1 through 0.4.0b5 were published under Apache-2.0 and remain
+so permanently. [**LICENSING.md**](LICENSING.md) has the paths table, the
+conversion dates, and policy text for security teams.

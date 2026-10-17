@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Link stage runner: profile document -> +FKs, +relationships, +table types.
 
 Decision policy per candidate (the confidently-wrong defense, adversarial B2):

@@ -2,6 +2,57 @@
 
 ## Unreleased
 
+## v0.5.0-beta.1 (2026-10-17)
+
+### Licence change: the engine and CLI are now Fair Source
+
+**This release and every release after it are licensed under
+[FSL-1.1-ALv2](LICENSE.md)** — the Functional Source License 1.1 with an
+Apache-2.0 future grant. Previously everything was Apache-2.0.
+
+**Releases 0.1.0b1 through 0.4.0b5 remain Apache-2.0, permanently.** Those
+artifacts are published on PyPI with `Apache-2.0` in their metadata and cannot
+be changed by us or anyone else.
+
+What FSL permits, free, for anyone: internal use for any business purpose,
+including in production and CI, with no fee, key or permission; modification,
+kept private if you wish; redistribution with the licence attached;
+non-commercial education and research; and professional services delivered to a
+licensee. The single prohibition is **Competing Use** — offering semlayer to
+third parties in a commercial product or service that competes with semlayer or
+with anything we offer using it.
+
+`semlayer mcp` is the question people ask first: running it inside your own
+organisation, for your own agents and analysts, is internal use and permitted.
+Running it as a service other companies connect to is Competing Use.
+
+**Each version converts to Apache-2.0 on the second anniversary of its
+publication**, automatically, by the terms of the licence. This release
+converts on 2026-10-17 + 2 years.
+
+**The format stays open.** The specification, its JSON Schemas and the dbt
+exporter are Apache-2.0 and will stay that way — a semantic layer nobody else
+can read is worth nothing. Each of those directories carries its own `LICENSE`,
+and every source file carries an `SPDX-License-Identifier`.
+
+We call this **Fair Source**, not open source. FSL is not OSI-approved, so
+"open source" would be inaccurate and we do not use it. The README tagline and
+the package description changed accordingly.
+
+See [**LICENSING.md**](LICENSING.md) for the paths table, the conversion dates,
+and policy text your security team can paste into an allow-list. Note that
+GitHub's licence detector does not recognise FSL, so the repository sidebar now
+reads "Other"; PyPI shows `FSL-1.1-ALv2` correctly, because the SPDX identifier
+is registered.
+
+### Also
+
+- Package metadata moves to a PEP 639 licence expression
+  (`License-Expression: FSL-1.1-ALv2`), which is machine-checkable; the old
+  free-text `License` field was not. Requires `setuptools>=77` to build.
+- `LICENSE` is now `LICENSE.md`, which is the canonical form for this licence.
+
+
 - **SPEC (additive, MINOR at release): every column carries a `cardinality`
   block.** What is known about its distinct count, and how that was obtained:
 

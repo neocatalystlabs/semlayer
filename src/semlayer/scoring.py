@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Score a draft (inferred) semantic layer against a gold layer.
 
 Joins objects on table.column names. Reports semantic-type accuracy and

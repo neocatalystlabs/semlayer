@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Drift loop (M7a): detect warehouse change, respond without silent mutation.
 
 Layers: a CI/CD hook and cloud schedulers WRAP these primitives —

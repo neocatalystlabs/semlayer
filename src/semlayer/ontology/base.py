@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Deterministic ontology base graph (M5).
 
 The W3C Direct-Mapping-style compilation of the validated semantic layer.

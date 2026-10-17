@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """dbt semantic layer exporter (v1 target: dbt semantic_models + metrics YAML).
 
 Lossy fields are REPORTED, never silently dropped (SPEC.md §5.6): confidence/

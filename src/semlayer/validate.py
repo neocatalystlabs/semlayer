@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Two-stage validation for semantic layer documents.
 
 Stage 1: JSON Schema validation against the spec version declared in the document.

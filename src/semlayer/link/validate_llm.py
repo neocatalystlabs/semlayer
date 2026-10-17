@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """LLM semantic validation of FK candidates (prompt version 1).
 
 The DBAutoDoc pattern: statistics generate, the LLM judges semantic

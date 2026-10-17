@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Exception taxonomy (Q1): failures carry context and a next step.
 
 Boundary rule: connector/LLM/spec internals raise these; the CLI catches

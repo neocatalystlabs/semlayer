@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Describe stage: iterative context propagation (prompt version 1).
 
 Pass 1: each table described from its own evidence (one Haiku call/table).

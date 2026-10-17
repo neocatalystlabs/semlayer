@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """CQ generation + adversarial verification (M5, prompt v1).
 
 Generator (Haiku) proposes CQs from the semantic layer (metrics, dimensions,

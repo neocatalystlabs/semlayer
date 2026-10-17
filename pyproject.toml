@@ -1,13 +1,24 @@
 [build-system]
-requires = ["setuptools>=68"]
+# >=77 for PEP 639: a bare `license` string is validated as an SPDX
+# expression and emitted as License-Expression metadata. The old
+# `{text = ...}` table produces a free-text License field instead, which
+# no tool can check.
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "semlayer"
-version = "0.4.0b5"
-description = "Open semantic layer format and inference engine for data warehouses"
+version = "0.5.0b1"
+description = "Semantic layer inference engine for data warehouses, with an openly licensed format"
 readme = "README.md"
-license = {text = "Apache-2.0"}
+# SPDX: the registered identifier is FSL-1.1-ALv2, NOT the
+# "FSL-1.1-Apache-2.0" spelling used as the licence's own abbreviation
+# heading -- that is not on the SPDX list and PEP 639 validation rejects
+# it. Deliberately no License:: classifier: FSL is not OSI-approved and
+# claiming otherwise in machine-readable metadata would be false.
+license = "FSL-1.1-ALv2"
+license-files = ["LICENSE.md", "LICENSING.md", "spec/LICENSE",
+                 "src/semlayer/spec/LICENSE", "src/semlayer/export/LICENSE"]
 authors = [{name = "Neocatalyst Labs", email = "hello@semlayer.dev"}]
 requires-python = ">=3.10"
 dependencies = [

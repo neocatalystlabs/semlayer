@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """Enrich stage (M4, deterministic tier): metrics, knowledge, routing.
 
 Everything here is statistics + graph + SQL verification — no LLM calls.

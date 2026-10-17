@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
 """What evidence does this warehouse offer, and what accuracy follows from it?
 
 Every disambiguation mechanism the engine has reads NAMES. The ETL-layer rule
