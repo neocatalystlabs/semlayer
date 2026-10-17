@@ -2,7 +2,7 @@
 
 `compile_metric` turns a declared metric into executable SQL — the one
 assembly step agents get silently wrong (joins, business-rule filters, time
-bucketing). Design rules (prd/prd-metrics.md §3, design doc amendments):
+bucketing). Design rules:
 
 - Group-by legality: a column is legal iff it is a non-measure column on the
   metric's base table or on a dimension one N:1 hop away (fan-out paths are

@@ -12,7 +12,7 @@ import json
 import pytest
 
 from semlayer.errors import SemlayerError
-from semlayer.lineage import LineageBundle, load_dbt_manifest
+from semlayer.lineage import LineageBundle, load_dbt_manifest, naming_layer, same_naming_layer
 from semlayer.link.candidates import FKCandidate
 from semlayer.link.run import _best_parent_per_child
 
@@ -135,13 +135,36 @@ PKS = {
 }
 
 
-def test_without_lineage_the_tie_is_left_exactly_as_it_was(bundle):
-    """No manifest must mean no behaviour change -- messy_mart depends on it."""
+def test_without_lineage_conventional_names_decide_the_tie(bundle):
+    """No manifest, but the names state the stage -- so the names decide.
+
+    This replaces a test that asserted first-seen-wins here, on the stated
+    grounds that "no manifest must mean no behaviour change -- messy_mart
+    depends on it". messy_mart does not depend on THAT; it depends on the
+    narrower property below, which is why it still passes. Leaving the tie to
+    dict order cost 62 wrong parents on dbt_synthea with no manifest.
+    """
     cands = [_cand("measurement", "person_id", "int__person", "person_id"),
              _cand("measurement", "person_id", "person", "person_id")]
     best, wins = _best_parent_per_child(cands, PKS, lineage=None)
-    assert best[("measurement", "person_id")].parent_table == "int__person", \
-        "first-seen wins, which is the pre-existing behaviour"
+    assert best[("measurement", "person_id")].parent_table == "person", \
+        "an unprefixed child prefers the unprefixed parent over int__"
+    assert wins == set(), "naming is not the ETL deciding; nothing is attributed"
+
+
+def test_without_lineage_unconventional_names_change_nothing(bundle):
+    """The property messy_mart actually relies on.
+
+    Where no table name carries a stage prefix every candidate sits in the
+    same "" layer, the term ties, and the ranking is exactly what it was. This
+    is the guard on the rule above: it may only act where a convention is
+    being followed, never on a warehouse that names things its own way.
+    """
+    cands = [_cand("ord_ln", "prod_id", "sku_xref", "prod_id"),
+             _cand("ord_ln", "prod_id", "prod_ref", "prod_id")]
+    best, wins = _best_parent_per_child(cands, PKS, lineage=None)
+    assert best[("ord_ln", "prod_id")].parent_table == "sku_xref", \
+        "first-seen still wins when the names say nothing"
     assert wins == set()
 
 
@@ -301,3 +324,31 @@ def test_real_manifest_documentation_is_read():
     assert len(b.table_descriptions) == 56
     assert len(b.column_descriptions) == 447
     assert b.metrics == (), "this project defines none, and that is stated"
+
+
+# --- the layer a table's NAME claims ---------------------------------------
+
+@pytest.mark.parametrize(("table", "layer"), [
+    ("stg_synthea__patients", "stg_synthea__"),
+    ("stg_vocabulary__concept", "stg_vocabulary__"),
+    ("int__person", "int__"),
+    ("stg_customers_raw", "stg_"),
+    ("raw_events", "raw_"),
+    ("STG_ORDERS", "stg_"),                    # convention is case-insensitive
+    ("analytics.main.int__person", "int__"),   # qualified names read the same
+    ("person", ""),                            # published: the load-bearing ""
+    ("observation_period", ""),
+    ("integration_log", ""),                   # not `int_`: a word, not a stage
+    ("sources", ""),                           # not `src_`
+])
+def test_naming_layer(table, layer):
+    assert naming_layer(table) == layer
+
+
+def test_same_naming_layer_groups_published_tables_together():
+    """Two unprefixed tables share "" -- which is what lets a published child
+    prefer a published parent over the intermediate copy of the same keys."""
+    assert same_naming_layer("visit_occurrence", "person")
+    assert not same_naming_layer("visit_occurrence", "int__person")
+    assert same_naming_layer("stg_synthea__allergies", "stg_synthea__encounters")
+    assert not same_naming_layer("stg_synthea__allergies", "int__encounters")

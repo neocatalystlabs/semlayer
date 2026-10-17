@@ -12,7 +12,7 @@ of an XS warehouse.
 | Describe — 2-pass context propagation (2 calls/table) | 66 | 65.2K / 22.5K | $0.178 | ~$0.50 |
 | **Total inference** | **95** | **90K / 32K** | **$0.25** | **~$0.70** |
 
-Against the PRD target of ~$1/100 tables: **met with ~30% headroom, on the
+Against the design target of ~$1/100 tables: **met with ~30% headroom, on the
 cheap tier alone** — no frontier-model escalation was needed to hit any M1–M3
 accuracy target (on messy_mart: typing 0.904, FK F1 1.0, descriptions 0.889
 judge-approved; across all 7 fixtures / 759 columns: typing 0.809).

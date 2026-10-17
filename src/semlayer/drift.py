@@ -1,6 +1,6 @@
 """Drift loop (M7a): detect warehouse change, respond without silent mutation.
 
-Layers (PRD §8): CI/CD hook and cloud schedulers WRAP these primitives —
+Layers: a CI/CD hook and cloud schedulers WRAP these primitives —
 the primitives themselves are free-tier CLI capability by design.
 
 - snapshot/diff: structural change from information_schema (universal fallback)

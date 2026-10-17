@@ -167,12 +167,45 @@ def report(per_fixture: dict) -> None:
     if levels:
         print(f"  DETECTOR   gold asserts {levels} level hierarchies; nothing emits "
               "kind=level -> scoreable the moment it is written, no new data needed")
-    if not tot["many_to_many"]:
+    # "Anywhere in the corpus" used to mean "in the synthetic golds", which is
+    # how this line read SYNTHESISE while AdventureWorksDW shipped a textbook
+    # bridge. Authored annotations on acquired warehouses count as gold too.
+    annotated = _annotated_m2m()
+    if not tot["many_to_many"] and not annotated:
         print("  SYNTHESISE no many-to-many relationship anywhere in the corpus")
+    elif not tot["many_to_many"]:
+        for ds, rel in annotated:
+            print(f"  DETECTOR   {ds} asserts many_to_many "
+                  f"({rel['from']} -> {rel['to']} via {rel['via']}); "
+                  "link/run.py hardcodes many_to_one at both emission sites, so "
+                  "nothing can emit it")
+            if any(len(leg.get("columns") or []) > 1 for leg in rel.get("via_keys") or []):
+                print("             ALSO blocked on composite foreign keys: a "
+                      "bridge leg is multi-column and the engine does not "
+                      "attempt those, so a detector would see half a bridge")
     if not tot["tables_over_threshold"]:
         print("  REGENERATE no table crosses the sampling threshold -> the sampling "
               "path has never been scored against gold")
     _external(levels)
+
+
+def _annotated_m2m() -> list[tuple[str, dict]]:
+    """Many-to-many relationships WE asserted about an acquired warehouse.
+
+    Separate from `declared_keys.json`, which is the vendor's own and lives in
+    a gitignored directory the fetch script regenerates.
+    """
+    out = []
+    d = ROOT / "fixtures" / "external" / "annotations"
+    for f in sorted(d.glob("*.yaml")) if d.is_dir() else []:
+        try:
+            doc = yaml.safe_load(f.read_text()) or {}
+        except Exception:
+            continue
+        for rel in doc.get("relationships") or []:
+            if rel.get("cardinality") == "many_to_many":
+                out.append((doc.get("dataset", f.stem), rel))
+    return out
 
 
 def _external(level_hierarchies: int) -> None:
@@ -186,11 +219,29 @@ def _external(level_hierarchies: int) -> None:
     if not reg.exists():
         return
     rows = yaml.safe_load(reg.read_text()).get("datasets") or []
+    # A private overlay, when the checkout has one. This prints to a terminal
+    # and writes no tracked file, so merging it here cannot reach the published
+    # tree -- unlike `render_warehouses.py`, whose output IS tracked and whose
+    # overlay is therefore opt-in.
+    overlay = ROOT.parent / "internal" / "fixtures" / "registry.yaml"
+    if overlay.exists():
+        rows = rows + ((yaml.safe_load(overlay.read_text()) or {})
+                       .get("datasets") or [])
     print("\nACQUIRED REAL SCHEMAS (never averaged with fixture numbers)")
     if not rows:
         print("  none yet")
     domains = set()
+    # A missing field used to raise a bare KeyError from inside the print,
+    # which killed the whole audit and named neither the entry nor the field.
+    # Five entries added on 2026-10-16 had no `domain` and the audit stopped
+    # reporting at all. Say which entry and which field, then carry on.
     for r in rows:
+        missing = [k for k in ("name", "track", "domain", "licence")
+                   if not r.get(k)]
+        if missing:
+            print(f"  [?] {r.get('name', '<unnamed>')!r} INCOMPLETE REGISTRY "
+                  f"ENTRY -- missing {', '.join(missing)}; not counted")
+            continue
         fetched = (ROOT / "fixtures" / "external" / "data" / r["name"]).exists()
         flag = "PUBLISHABLE" if r["track"] == "P" else "INTERNAL ONLY"
         print(f"  [{r['track']}] {r['name']:20} {r['domain']:28} "

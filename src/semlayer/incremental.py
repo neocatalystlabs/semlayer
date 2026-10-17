@@ -1,7 +1,7 @@
 """Partition-wise profiling: merge per-partition statistics, re-profile only what changed.
 
 The measured case for this. One pass over a 45TB Oracle warehouse costs days
-(prd/scan-cost-and-connectors.md), and approximating the distinct counts only
+and approximating the distinct counts only
 takes ~18% off, because the null pass is irreducible and already 43% of the
 expensive query. What takes ~100% off is not re-reading data that has not
 changed -- and in a warehouse the large tables are partitioned, usually by

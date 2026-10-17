@@ -1,6 +1,6 @@
 """Live Snowflake connector tests (nightly tier; auto-skip without credentials).
 
-Proves the two things that matter (PRD §11):
+Proves the two things that matter:
 1. The profiler works end-to-end under the MINIMAL-GRANT reader persona.
 2. The reader persona genuinely cannot write (the grant script is honest).
 

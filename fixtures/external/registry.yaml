@@ -1,21 +1,19 @@
 # Real-world evaluation datasets. The repo ships the RECIPE, never the data.
 #
-# track: P  publishable  -- permissive, explicit licence (or a US-government
-#                           work). Gold may ship; numbers may be published.
-#           I  internal   -- share-alike, non-commercial, unknown, or
-#                           credentialed. Runs locally only. NO number derived
-#                           from a track-I dataset may appear in docs/, the
-#                           README, benchmark default output, or any collateral,
-#                           with or without a caveat.
-#
-# A published number is valid only if EVERY dataset behind it is track P.
-# Never average a P figure with an I figure.
+# Every dataset listed here carries a permissive, explicit licence (or is a
+# US-government work), verified by reading the licence itself. That is the bar
+# for appearing in this file at all, and it is why `track: P` is on each entry:
+# a number we publish has to be reproducible by whoever reads it, which means
+# the dataset behind it has to be one they may obtain and use on the same terms
+# we did.
 #
 # licence_verified is the date a human opened the actual licence file. It is not
 # the date someone read a README, a blog post, or recalled the terms.
+#
+# A fetch script downloads into `data/`, which is gitignored. No dataset is
+# redistributed here, and `docs/warehouses.md` is rendered from this file.
 
 datasets:
-
   - name: adventureworks_dw
     version: "sql-server-samples@73c27309"   # by archive sha256, below
     track: P
@@ -32,15 +30,22 @@ datasets:
     columns: 349
     rows: 1047466
     features:
-      # PRESENT IN THE DATA, NOT YET DETECTED: Link discovers only 1 of the 3
-      # declared FactInternetSales -> DimDate FKs, so the role-playing shape is
-      # in this warehouse but the engine does not yet see it. Listed because it
-      # is what this dataset can validate once Link's recall improves.
+      # Role-playing is now FOUND, and this note used to say it was not.
+      # Measured 2026-10-16: 36 of 40 declared single-column foreign keys are
+      # emitted as relationships (recall 0.900), and ZERO of the four misses
+      # are role-playing -- all four are self-referencing. Three of those four
+      # ARE emitted, as `kind: recursive` hierarchies rather than
+      # relationships, so a representation-aware score is 39/40 = 0.975. The
+      # one genuinely dropped edge is DimDepartmentGroup: 7 rows, every child
+      # pointing at the single root, so ParentDepartmentGroupKey has
+      # n_distinct = 1 and the self-reference guard drops it.
       - role_playing_dimension     # FactInternetSales -> DimDate x3 (order/due/ship)
       - fiscal_calendar            # DimDate.FiscalYear / FiscalQuarter / FiscalSemester
       - recursive_hierarchy        # Account, DepartmentGroup, Employee, Organization
       - level_hierarchy            # ProductCategory 4 -> Subcategory 37 -> Product 606
       - pascal_case_naming         # the convention that exposed the typing blind spot
+      - many_to_many_bridge        # FactInternetSalesReason; the corpus's only one
+      - composite_foreign_key      # its FactInternetSales leg, 1 of 41 declared
     gold: vendor_declared
     gold_scope: >
       28 primary keys and 41 foreign keys, parsed from the vendor's own loader
@@ -53,43 +58,6 @@ datasets:
       No table exceeds 1M rows (largest is FactProductInventory at 776,286), so
       this does NOT exercise the sampling path. First acquisition; its PascalCase
       naming immediately exposed a typing bug worth more than the dataset.
-
-  - name: bird_dev
-    version: "dev set, sha256 cdd6d19f"
-    track: I
-    domain: mixed                  # banking, schools, football, card games, ...
-    source: https://bird-bench.github.io/
-    licence: CC BY-SA 4.0
-    licence_url: https://bird-bench.github.io/
-    licence_verified: 2026-10-09
-    licence_notes: >
-      Share-alike. A gold file we author for these databases is plausibly
-      derivative, which would put a CC BY-SA island inside an Apache-2.0 repo
-      and could pass an obligation to users of our output. INTERNAL ONLY: no
-      number derived from this dataset may be published anywhere, with or
-      without a caveat.
-    redistributable: false
-    tables: 75                     # across 11 databases, 6.8 avg, max 13
-    columns: 798
-    rows: unknown                  # financial alone is 1,079,680
-    features:
-      - human_column_descriptions  # database_description/*.csv, the describe answer key
-      - documented_value_meanings  # decoded codes: "OWNER"/"USER"/"DISPONENT"
-      - real_dirty_schemas
-      - gold_sql                   # 1,534 questions with reference SQL
-    gold: vendor_declared
-    gold_scope: >
-      76 column-description CSVs with original_column_name, column_description,
-      data_format and value_description, plus 1,534 gold SQL queries. Gold
-      RESULT SETS are not published; execute the gold SQL to obtain them.
-    fetch: fetch_bird_dev.py
-    sha256: cdd6d19faeb45a23970b98d3ef6c40a87987c95459c2cf12076897a60cf5a630
-    notes: >
-      Schemas are small -- a description-and-SQL corpus, not a warehouse corpus,
-      and not a substitute for a warehouse fixture. Databases are SQLite;
-      convert with DuckDB's sqlite extension. Acquired to exercise the internal
-      track and to find out how the describe stage fares against descriptions
-      written by someone else.
 
   - name: cms_physician
     version: "2023 annual release, downloaded 2026-10-11"
@@ -202,3 +170,81 @@ datasets:
       one online `dbt deps`. Builds offline otherwise: PASS=1717 ERROR=0 in 93s.
       `dbt seed` MUST precede `dbt build`; the fetch script does this and says
       why.
+
+  - name: gtfs_manteca
+    purpose: >
+      A real schema with no ETL stage convention and nothing to disambiguate,
+      which is the combination the rest of the corpus lacks. Its identifiers
+      are strings rather than dense integer surrogates, so a shared-key-set
+      signal means what it says; its naming is snake_case, so key detection
+      applies; it carries one copy of each entity; and `transfers` references
+      `stops` twice, from `from_stop_id` and `to_stop_id`, for role-playing.
+      Transit vocabulary, which no other dataset here supplies.
+    licence: CC BY 4.0
+    licence_url: https://www.manteca.gov/384/GTFS-Data
+    licence_notes: >
+      Stated verbatim on the publisher's page: "The City of Manteca's GTFS data
+      is licensed under the CC BY 4.0 license." Direct download, no
+      registration, no API key. MBTA was the first choice and was rejected: its
+      feed is governed by a bespoke MassDOT Developers License Agreement PDF
+      that a human must read before it could be recorded here.
+    licence_verified: 2026-10-16
+    track: P
+    domain: public_transit
+    features:
+      - no_etl_convention        # 0 of 13 tables carry a stage prefix
+      - string_identifiers       # route_id "0012" is not the integer 12
+      - role_playing_dimension   # transfers.from_stop_id / to_stop_id -> stops
+      - nothing_to_disambiguate  # one copy of each entity: the probe tier-2 case
+    fetch: fixtures/external/fetch_gtfs_manteca.py
+    sha256: cf4ba3eabc433f6bc52e1a0b18d682f894ee33823f94ab42e88f34acb9de0512
+    source_url: https://s3.amazonaws.com/etatransit.gtfs/mantecatransit.etaspot.net/gtfs.zip
+
+  - name: spider2
+    purpose: >
+      Roughly three hundred real schemas, and 376 gold SQL queries whose join
+      predicates are foreign-key evidence on real naming. Every other dataset
+      here is one warehouse; this is the only corpus large enough to say what
+      real schemas look like rather than what one looks like. Measured across
+      it: 2 of 314 databases carry any ETL stage prefix, so a stage convention
+      is not something an inference engine can rely on finding.
+    licence: MIT
+    licence_url: https://github.com/xlang-ai/Spider2/blob/main/LICENSE
+    licence_notes: >
+      MIT, in the repository's own LICENSE file. The underlying warehouses are
+      third-party (BigQuery public datasets, Snowflake Marketplace shares);
+      MIT covers the schema extracts and gold SQL that this corpus ships, which
+      is all we consume. We never fetch the warehouses themselves.
+    licence_verified: 2026-10-16
+    track: P
+    domain: mixed                  # medicine, genomics, finance, sport, government
+    fetch: fixtures/external/fetch_spider2.py
+    source_url: https://github.com/xlang-ai/Spider2
+    version: "cafb867313aab4e674652054198f383cf4018943"
+    databases: 314           # 74 bigquery, 58+152 snowflake, 30 sqlite
+    tables: 16115
+    columns: 1054656         # top-level; 1,230,135 with nested RECORDs expanded
+    gold: partial
+    gold_provenance: derived     # extracted by us from the corpus's gold SQL
+    gold_scope: >
+      148 distinct foreign-key pairs over 48 databases, extracted from the gold
+      SQL by resolving every qualifier through each query's own FROM/JOIN
+      aliases and dropping CTE and subquery sides. RECALL ONLY: the queries
+      cover the joins their questions needed, not every join each schema has,
+      so a pair absent from the corpus is NOT a negative and no precision
+      figure may be computed from it. Primary keys, semantic types,
+      descriptions and metrics are not asserted.
+    features:
+      - no_etl_convention       # 2/314 databases carry any stage prefix
+      - cross_name_foreign_keys # 74 of 148 FK pairs differ in column name
+      - role_playing_dimension  # EU_soccer match.home/away_player_1..11 -> player
+      - undocumented_schema     # 131/298 flat-schema dbs have ZERO descriptions
+      - nested_record_schema    # 16/314 are BigQuery nested/REPEATED
+    notes: >
+      Ships three sample rows per table and no data, so inclusion testing
+      cannot run and Link cannot be scored end-to-end here. What is measurable
+      is every component that reads names only -- which is also what ranks the
+      40 parents a child is tested against, so a true parent the names rank
+      41st is never queried whatever the data would have said. Checkout is
+      ~1.3 GB of schema JSON; the fetch is sparse and blobless for that reason.
+

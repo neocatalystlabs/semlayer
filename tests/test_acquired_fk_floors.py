@@ -5,7 +5,7 @@ five are ones we generated. The two datasets with vendor-declared gold and
 real-world naming -- `dbt_synthea` (snake_case OMOP, 116 tables) and
 `adventureworks_dw` (PascalCase star, 29 tables) -- had no precision floor at
 all, so 32 wrong join targets could sit in shipped output on dbt_synthea
-without any gate noticing (prd/link-blocking-design.md §3c).
+without any gate noticing.
 
 **Scoring a PARTIAL gold honestly.** Neither vendor declares every true
 foreign key, so an edge we infer that the gold does not list is not
@@ -52,16 +52,23 @@ EXT = OSS / "fixtures" / "external" / "data"
 # _best_parent_per_child lives only on the manifest path, so without both rows
 # a regression in either is invisible.
 # Measured: adventureworks P=1.000 R=0.975; dbt_synthea without a manifest
-# P=0.504 R=0.432, with one P=0.908 R=0.865. The gap between those two rows is
+# P=0.785 R=0.716, with one P=0.908 R=0.865. The gap between those two rows is
 # the ETL-reading path earning its keep, and an ablation attributes +18.3 points
 # of recall and +14.9 of precision to the same-layer rule specifically.
 #
-# The no-manifest row is floored LOW on purpose: half the parents it asserts on
-# gold-mentioned columns are wrong, and pretending otherwise by floor-setting
-# would hide the open defect that prd/link-blocking-design.md §4.3 tracks. It
-# is a regression guard, not a statement that 0.5 is acceptable.
+# The no-manifest row was 0.504/0.432 until 2026-10-16, floored low on purpose
+# to keep an open defect visible. It moved because the layer signal turned out
+# to be readable without a manifest: `stg_`, `int__` and friends are a
+# convention, and reading it off the table NAME recovers most of what the
+# manifest supplies. Hub-shape scoring, which the design note recommended for
+# this, was measured and cannot work -- a staging copy holds the same keys as
+# the published table, so its in-degree is identical by construction.
+#
+# The floors still sit below the measured figures, and the no-manifest row is
+# still the weaker product: a warehouse that follows NO naming convention gets
+# none of this, and no fixture here represents that population yet.
 FLOORS = {
-    ("dbt_synthea", False): (0.45, 0.40),
+    ("dbt_synthea", False): (0.75, 0.68),
     ("dbt_synthea", True): (0.85, 0.80),
     ("adventureworks_dw", False): (0.95, 0.95),
 }

@@ -28,10 +28,42 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 from dataclasses import dataclass, field
 
 # dbt resource types that become a queryable relation, so can be a join target.
 _RELATION_TYPES = ("model", "seed", "snapshot")
+
+
+# Conventional ETL-stage prefixes. A warehouse built by dbt, Dataform, SQLMesh
+# or by hand almost always names its stages, because humans reading the table
+# list need the same signal the engine does.
+_STAGE_PREFIX = re.compile(
+    r"^((?:stg|staging|int|intermediate|base|raw|tmp|temp|src|wrk|work)"
+    r"_{1,2}(?:[a-z0-9]+__)?)", re.IGNORECASE)
+
+
+def naming_layer(table: str) -> str:
+    """The ETL stage a table's NAME claims, or "" for an unprefixed table.
+
+    The manifest states the layout when there is a manifest. Without one the
+    layer signal is not absent -- it is in the names, because the convention
+    exists to be read: `stg_synthea__patients` is staging, `int__person` is
+    intermediate, and a bare `person` is the published table.
+
+    Returning "" for unprefixed tables is deliberate and load-bearing: two
+    published tables share the layer "", which is what lets a published child
+    prefer a published parent over the intermediate copy that holds the same
+    key values.
+    """
+    bare = table.rsplit(".", 1)[-1]
+    m = _STAGE_PREFIX.match(bare)
+    return m.group(1).lower() if m else ""
+
+
+def same_naming_layer(a: str, b: str) -> bool:
+    """Do these two table names claim the same ETL stage?"""
+    return naming_layer(a) == naming_layer(b)
 
 
 @dataclass

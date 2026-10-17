@@ -44,8 +44,8 @@ argument for replacing the scalar with per-facet bands. See *Known gaps*.
 Reproduce:
 
 ```
-uv run python ../prd/confidence-calibration-run.py        # heuristic tier
-uv run python ../prd/confidence-calibration-run.py --llm  # LLM tier (cassette replay)
+uv run python fixtures/coverage_audit.py                 # what has data behind it
+# the calibration runner itself is not shipped; the numbers below are its output
 ```
 
 ## Results: heuristic tier (no LLM)
@@ -230,9 +230,9 @@ that were already better.
   every column of every table is scanned in full, every run. On the fixture
   corpus that is invisible -- the largest table is 11.7M rows at TPC-DS SF 1,
   42 s to profile -- and on a multi-terabyte warehouse it is disqualifying.
-  **Video 5** states the threshold behaviour on camera
-  (`beta/videos/05-what-it-works-out/vo-1.txt`): "Under a million rows it reads
-  the whole column. Above that it samples." That is a public claim about a
+  A published video states the threshold behaviour on camera: "Under a
+  million rows it reads the whole column. Above that it samples." That is a
+  public claim about a
   feature that does not exist. Its next sentence — uniqueness "always does in
   full" — is true today, because everything does. Earlier revisions of this
   entry misattributed it to video 3, having taken that from a superseded
@@ -577,10 +577,9 @@ model; for the homegrown enterprise warehouse the joins have to be parsed out
 of the SQL instead. Both paths are needed and they are not the same work.
 
 **Parse feasibility, measured rather than assumed.** sqlglot parsed 87/87 of
-dbt_synthea's compiled models (127 join equalities), 624/624 of Cal-ITP's
+dbt_synthea's compiled models (127 join equalities) and 624/624 of Cal-ITP's
 production BigQuery models (778 join equalities, 211 window functions, 617
-CTEs, 78 UNIONs), and 1,534/1,534 BIRD queries. Parsing is not the bottleneck;
-attribution is.
+CTEs, 78 UNIONs). Parsing is not the bottleneck; attribution is.
 
 ## ETL lineage lifts FK recall 26.0% -> 41.7%, and two wrong turns on the way (2026-10-12)
 
@@ -870,7 +869,7 @@ if one partition contributed no sketch, no union is attempted.
 
 ## Rung 0 does NOT give trustworthy cardinality (2026-10-12)
 
-The cost ladder in `prd/scan-cost-and-connectors.md` lists rung 0 as "the
+The cost ladder lists rung 0 as "the
 engine's own optimizer statistics -- ~free -- cardinality, null counts,
 min/max". Two of those three do not survive measurement.
 
@@ -1178,7 +1177,7 @@ Four breakpoints, in the order they hit:
 | 4 | ~100,000 state entries | the single-file state store | architectural but localised |
 
 **1. Link's candidate space is already at its limit.** Measured at 116 tables /
-1,312 columns: **163 key-shaped parent columns against `MAX_PARENTS = 200`.**
+1,312 columns: **163 key-shaped parent columns against `MAX_PARENTS` (200 when this was measured; 5,000 since `4057c46`).**
 Shaped parents alone consume 82% of the budget before named parents are added.
 Candidate parents grow ~1.4 per table, so at 1,000 tables we would consider 14%
 of them and at 30,000 tables **0.5%**. The fix is not a bigger cap -- generation
@@ -1246,7 +1245,7 @@ second half was wrong about the fix.
 
 **Right, and worse than stated.** Measured parents per table across the corpus
 -- 1.46 collision_heavy, 1.53 dbt_synthea, 1.72 adventureworks_dw and
-messy_mart, 2.58 tpcds_clean -- puts `MAX_PARENTS = 200` at **77-137 tables**,
+messy_mart, 2.58 tpcds_clean -- puts `MAX_PARENTS` (200 when this was measured; 5,000 since `4057c46`) at **77-137 tables**,
 an order of magnitude below the 2,000-table line we had just published. At
 2,000 tables we would have kept 5.8% of candidate parents.
 
@@ -1306,7 +1305,7 @@ one is reachable by better ranking) but it is not the fix claimed above.
 **Link's inclusion testing is the dominant cost at scale.** 24,827 queries on
 116 tables; scaled, ~15,000 children x 40 at 2,000 tables is ~600,000 tests and
 ~17 h of round-trips. The cost models in
-`prd/scan-cost-and-connectors.md` put ALL round-trips at 0.4 h for 800 tables --
+An earlier estimate put ALL round-trips at 0.4 h for 800 tables --
 understated by roughly 10x, and corrected there.
 
 So blocking is a CORRECTNESS fix and the largest cost lever, ahead of

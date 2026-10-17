@@ -10,7 +10,9 @@ canonical-entity groupings. Every element carries provenance back to the
 semantic-layer object it was derived from (SPEC anchor rule).
 
 The LLM ENRICHMENT projection (subclasses, event->state rules) is NOT here —
-it is internal/experimental until it passes the honest ablation gate (PRD §6).
+it is experimental until it passes an honest ablation gate: the ontology has
+to beat the semantic layer alone on the same questions, or it is a validation
+instrument rather than a product feature.
 """
 
 from __future__ import annotations

@@ -92,7 +92,7 @@ def _n(v) -> str:
 
 def render() -> str:
     syn = yaml.safe_load((OSS / "fixtures" / "registry.yaml").read_text())["synthetic"]
-    ext_doc = yaml.safe_load((OSS / "fixtures" / "external" / "registry.yaml").read_text())
+    ext_doc = _acquired(include_internal=INCLUDE_INTERNAL)
     ext = ext_doc["datasets"] if isinstance(ext_doc, dict) and "datasets" in ext_doc else ext_doc
     fk_floors = _floors("tests/test_link.py", "FK_FLOORS")
     acq_floors = _floors("tests/test_acquired_fk_floors.py", "FLOORS")
@@ -187,46 +187,86 @@ def render() -> str:
         else:
             floor = "— *(no FK gate)*"
         ver = d.get("version") or d.get("sha256") or "—"
-        L.append(f"| `{n}` | [{d.get('source', '—')}]({d.get('source', '')}) | `{ver}` "
+        src = d.get("source") or d.get("source_url") or ""
+        L.append(f"| `{n}` | {('[' + src + '](' + src + ')') if src else '—'} | `{ver}` "
                  f"| {d.get('licence', '—')} | {_n(d.get('tables'))} "
                  f"| {_n(d.get('columns'))} | {_n(d.get('rows'))} | {floor} |")
     L.append("")
     for d in pub:
         L.append(f"### `{d['name']}`")
         L.append("")
-        L.append(f"- **Source**: {d.get('source', '—')}")
+        L.append(f"- **Source**: {d.get('source') or d.get('source_url') or '—'}")
         L.append(f"- **Licence**: {d.get('licence', '—')}"
                  + (f" ([terms]({d['licence_url']}))" if d.get("licence_url") else "")
                  + (f", verified {d['licence_verified']}" if d.get("licence_verified") else ""))
-        L.append(f"- **Gold**: {d.get('gold', '—')} — the vendor's own declared keys, "
-                 "not ours, so the answer key was written by someone with no stake in "
-                 "our score.")
-        L.append(f"- **Fetch**: `python fixtures/external/{d.get('fetch', '—')}`")
+        # A dataset with no gold gets no sentence about whose gold it is.
+        prov = d.get("gold_provenance", "vendor_declared") if d.get("gold") else None
+        claim = {
+            "vendor_declared": "the vendor's own declared keys, not ours, so the "
+                               "answer key was written by someone with no stake in "
+                               "our score.",
+            "derived": "derived by us from artefacts the publisher shipped, not "
+                       "declared by them — so read `gold_scope` for what it does "
+                       "and does not license a claim about.",
+        }[prov] if prov else ("acquired to exercise a stage, not to score one; see "
+                             "its fetch script for what it is for.")
+        L.append(f"- **Gold**: {d.get('gold') or 'none'} — {claim}")
+        if d.get("gold_scope"):
+            L.append(f"- **Gold scope**: {' '.join(d['gold_scope'].split())}")
+        fetch = str(d.get("fetch") or "—")
+        if fetch != "—" and not fetch.startswith("fixtures/"):
+            fetch = f"fixtures/external/{fetch}"
+        L.append(f"- **Fetch**: `python {fetch}`")
         if d.get("features"):
             L.append("- **Why it was acquired**: "
                      + ", ".join(f"`{f}`" for f in d["features"][:6]))
         L.append("")
 
     # --- internal ------------------------------------------------------------
-    L.append(f"## Acquired, internal only ({len(internal)})")
-    L.append("")
-    L.append("Listed because withholding a result silently is indistinguishable from "
-             "not having one. These datasets are used in development and **no number "
-             "from them is published**, here or anywhere.")
-    L.append("")
-    for d in internal:
-        L.append(f"### `{d['name']}` — results withheld")
+    # Omitted entirely when there is nothing to list. An empty "internal only
+    # (0)" heading in the published page announces that a withheld category
+    # exists, which is the disclosure the split is meant to avoid; the heading
+    # appears only in the `--internal` render, where the entries do too.
+    # Omitted entirely when there is nothing to list. An empty
+    # "internal only (0)" heading in the published page announces that a
+    # withheld category exists, which is the disclosure the split is meant
+    # to avoid. Only the section is skipped -- an early return here also
+    # dropped "Reproducing any of this" from the public page.
+    if internal:
+        L.append(f"## Acquired, internal only ({len(internal)})")
         L.append("")
-        L.append(f"- **Licence**: {d.get('licence', '—')}"
-                 + (f" ([terms]({d['licence_url']}))" if d.get("licence_url") else ""))
-        L.append("- **Why withheld**: the licence is share-alike, so a gold layer we "
-                 "author for it is plausibly a derivative work. We could not ship that "
-                 "gold without putting a share-alike obligation on users of our "
-                 "output — and a score nobody can reproduce is not a score we are "
-                 "willing to quote.")
-        L.append("- **What is public**: this entry and the fetch script. No gold, no "
-                 "recorded model responses, no measurements.")
+        L.append("Listed because withholding a result silently is indistinguishable from "
+                 "not having one. These datasets are used in development and **no number "
+                 "from them is published**, here or anywhere.")
         L.append("")
+        for d in internal:
+            L.append(f"### `{d['name']}` — results withheld")
+            L.append("")
+            L.append(f"- **Licence**: {d.get('licence', '—')}"
+                     + (f" ([terms]({d['licence_url']}))" if d.get("licence_url") else ""))
+            # The reason comes from the entry, not from a sentence hardcoded
+            # here: one withheld dataset's reason does not generalise to the
+            # next, so the fallback says only what is true of all of them.
+            why = d.get("withheld_reason") or (
+                "the licence does not clearly permit publishing results derived "
+                "from it. Rather than quote a number we might have to withdraw, "
+                "we withhold it until a human records a decision here.")
+            L.append(f"- **Why withheld**: {' '.join(why.split())}")
+            # "No gold" is wrong for a dataset whose gold is DERIVED locally from
+            # the publisher's own declarations: that file exists on disk, it is
+            # just never shipped and never quoted.
+            kept = {
+                None: "No gold.",
+                "derived": "The fetch script derives an answer key locally from the "
+                           "publisher's own declarations; that file is not "
+                           "redistributed.",
+                "vendor_declared": "The publisher's own answer key arrives with the "
+                                   "download; we redistribute none of it.",
+            }[None if not d.get("gold")
+              else d.get("gold_provenance", "vendor_declared")]
+            L.append(f"- **What is public**: this entry and the fetch script. {kept} "
+                     "No recorded model responses, no published measurements.")
+            L.append("")
 
     L.append("## Reproducing any of this")
     L.append("")
@@ -243,18 +283,52 @@ def render() -> str:
     return "\n".join(L)
 
 
+def _acquired(include_internal: bool = False) -> dict:
+    """The acquired datasets. The private overlay is OPT-IN, and must stay so.
+
+    `docs/warehouses.md` is a tracked file in the published tree, so whatever
+    this returns by default ends up public. Merging the overlay in by default
+    would put the withheld datasets -- and our reasoning about their licences --
+    straight into the public page, which is the thing the split exists to
+    prevent. So the default is the public registry alone, and the full view is
+    rendered deliberately, to a path outside `oss/`.
+    """
+    doc = yaml.safe_load(
+        (OSS / "fixtures" / "external" / "registry.yaml").read_text())
+    if not include_internal:
+        return doc
+    overlay = OSS.parent / "internal" / "fixtures" / "registry.yaml"
+    if overlay.exists():
+        extra = yaml.safe_load(overlay.read_text()) or {}
+        doc["datasets"] = (doc.get("datasets") or []) + (extra.get("datasets") or [])
+    return doc
+
+
+# Set only by `--internal`, which writes OUTSIDE the published tree. Never
+# flip the default: `docs/warehouses.md` is tracked and goes public.
+INCLUDE_INTERNAL = False
+INTERNAL_OUT = OSS.parent / "internal" / "warehouses.md"
+
+
 def main() -> int:
+    global INCLUDE_INTERNAL
+    if "--internal" in sys.argv:
+        INCLUDE_INTERNAL = True
+        out = INTERNAL_OUT
+        out.parent.mkdir(parents=True, exist_ok=True)
+    else:
+        out = OUT
     text = render()
     if "--check" in sys.argv:
-        current = OUT.read_text() if OUT.exists() else ""
+        current = out.read_text() if out.exists() else ""
         if current != text:
-            print(f"{OUT.relative_to(OSS)} is out of date: "
+            print(f"{out} is out of date: "
                   "re-run `python fixtures/render_warehouses.py`")
             return 1
-        print(f"{OUT.relative_to(OSS)} is current")
+        print(f"{out} is current")
         return 0
-    OUT.write_text(text)
-    print(f"wrote {OUT.relative_to(OSS)} ({len(text.splitlines())} lines)")
+    out.write_text(text)
+    print(f"wrote {out} ({len(text.splitlines())} lines)")
     return 0
 
 
