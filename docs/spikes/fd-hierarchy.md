@@ -1,6 +1,6 @@
 # Spike: FD-based hierarchy inference on dirty data (M2 gating spike)
 
-**Question** (PRD §7.7, feasibility judge BLOCKER-B): can functional-dependency
+**Question**: can functional-dependency
 mining reliably auto-infer level hierarchies (city→state→country) on realistic
 data, or must hierarchies stay review-queued?
 
@@ -26,7 +26,7 @@ but drowns them ~30:1 in spurious ones. Failure modes observed:
    but also name↔code duals of the same level) — needs semantic filtering
    (level-name affinity, geo/product vocabulary) or LLM validation.
 
-**Decision (standing, per PRD):**
+**Decision (standing):**
 - Hierarchies remain **review-queued in v1** — never auto-included from FD
   evidence alone.
 - FD mining is the *candidate generator*; the productionized path adds

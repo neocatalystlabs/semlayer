@@ -13,12 +13,12 @@ much data each holds.
 ## Where the limits actually are
 
 Measured, not estimated — the workings are in
-[calibration.md](calibration.md) and [the cost note](../../prd/scan-cost-and-connectors.md).
+[calibration.md](calibration.md).
 
 | limit | bites at | why |
 |---|---|---|
-| **foreign-key accuracy** | **already, at any size** | when several tables contain the same key values, inclusion testing cannot tell them apart and the engine can pick the wrong one. On a 116-table dbt warehouse with no ETL manifest supplied, **half** the foreign keys it asserts on columns the project itself documents point at the wrong table. Supplying `--manifest` takes that from 50% to 91% correct (§4 below) |
-| query volume | ~2,000 tables | foreign-key testing dominates: ~15,000 child columns × 40 tests ≈ 600,000 queries. Measured on BigQuery at **815 ms per query serial**, that is **~136 hours**, or ~20 hours at 8-way client concurrency |
+| **foreign-key accuracy** | **already, at any size** | when several tables contain the same key values, inclusion testing cannot tell them apart and the engine can pick the wrong one. On a 116-table dbt warehouse with no ETL manifest supplied, **79%** of the foreign keys it asserts on columns the project itself documents are right; supplying `--manifest` takes that to 91% (§4 below). It was 50% until 2026-10-16, when the ETL stage turned out to be readable from table-naming conventions (`stg_`, `int__`) and not only from a manifest. **A warehouse that follows no naming convention still gets the 50% path** -- the signal is the convention, not the names |
+| query volume | ~2,000 tables | foreign-key testing dominates, and the cost is per CHILD column, not per column. On a 116-table warehouse: **23,198 inclusion tests over 667 children** — 1,312 columns exist but only half issue any test. That is **34.8 per tested child, median 40, with 74% sitting at the `MAX_QUERIES_PER_CHILD` cap of 40**. A 29-table warehouse measured 13.9 per child with none at the cap, so the rate **rises with table count** as more parents compete for the same child. **Budget against the cap.** At ~15,000 columns that is **~600,000 queries**; at **815 ms serial**, **~136 h**, or ~20 h at 8-way client concurrency (tests/test_fk_query_cost.py) |
 | wall-clock | ~2,000 tables | ~8.8 s of other fixed cost per table — round-trips plus two LLM calls — and both are currently serial |
 | output document | ~30,000 columns | 1,209 bytes per column, so 450,000 columns is ~544 MB in one file |
 

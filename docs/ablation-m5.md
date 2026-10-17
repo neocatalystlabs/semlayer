@@ -28,7 +28,7 @@ human-verified expected answers, executed live). Cassette-pinned.
 4. **The base ontology graph adds NOTHING measurable over the flat
    semantic layer on this workload** (0.45 = 0.45).
 
-## Gate verdict (per PRD §6)
+## Gate verdict
 
 The ontology-skeptic judge's prediction is CONFIRMED BY DATA: the flat
 layer (routing + domains + FK graph + required filters) already carries

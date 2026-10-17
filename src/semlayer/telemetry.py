@@ -1,6 +1,6 @@
 """Anonymous usage telemetry — local spool only, opt-out, no network in v1.
 
-Honesty contract (PRD §14): counts commands and durations, NEVER schema
+Honesty contract: counts commands and durations, NEVER schema
 contents, names, or data. Disable with SEMLAYER_TELEMETRY=off or the
 `telemetry` key in ~/.semlayer/config. Until a documented endpoint ships
 with the cloud product, events only accumulate in the local spool — nothing

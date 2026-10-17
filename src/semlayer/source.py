@@ -1,6 +1,6 @@
 """Source abstraction: MetadataProvider + QueryExecutor.
 
-The split is deliberate (PRD M1): a catalog-native metadata provider (Iceberg
+The split is deliberate: a catalog-native metadata provider (Iceberg
 REST Catalog, Glue) can later pair with any executor (customer engine or
 embedded DuckDB) without refactoring. Warehouse connectors implement both.
 
@@ -16,7 +16,8 @@ generic connector (JDBC/ODBC via a bridge, SQLAlchemy, an engine we have not
 met) for a user who is blocked at onboarding and has no patience for an
 architecture argument. If you need a new capability, probe for it and degrade;
 do NOT make it required. `tests/test_postgres.py::MinimalSource` fails if you
-do. Reasoning and the trigger to build one: prd/scan-cost-and-connectors.md.
+do. The trigger to build one is a warehouse whose catalog already carries the
+statistics, where a full scan would re-derive what it could have read.
 """
 
 from __future__ import annotations

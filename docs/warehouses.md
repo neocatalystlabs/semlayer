@@ -10,6 +10,8 @@ Two kinds. **Synthetic** warehouses we generate: deterministic, seeded, rebuilt 
 
 | warehouse | tables | columns | rows | gold FKs | CI floor P/R |
 |---|--:|--:|--:|--:|---|
+| `wide_conventional` | — | — | — | — | — *(no FK gate)* |
+| `wide_opaque` | — | — | — | — | — *(no FK gate)* |
 | `collision_heavy` | 26 | 62 | 4,295 | 11 | 0.95 / 0.95 |
 | `eav` | 2 | 7 | 25,579 | 1 | — *(no FK gate)* |
 | `fan_trap` | 4 | 14 | 4,542 | 3 | 0.99 / 0.99 |
@@ -21,6 +23,18 @@ Two kinds. **Synthetic** warehouses we generate: deterministic, seeded, rebuilt 
 | `tpcds_clean` | 24 | 425 | 277,976 | 104 | 0.97 / 0.90 |
 
 Blank floors are real gaps, not omissions: four fixtures carry gold but no CI-enforced foreign-key floor, so a regression on them would not fail the build. They are listed here so the gap is visible.
+
+### `wide_conventional`
+
+2,000 tables at the documented support ceiling, named the way a dbt project names things: stg_sales__customer, int__customer, customer. Built to be compared against wide_opaque, which is identical in every other respect. Row counts are small on purpose -- this fixture scales the number of OBJECTS, because per-table and per-column costs are what bite at 2,000 tables, not data volume.
+
+- generator `fixtures/generators/wide.py`; seeded, so two builds are byte-identical.
+
+### `wide_opaque`
+
+The same 2,000-table warehouse with the convention removed: T_0075, IMPR_MSTR_1270, and the same entity called CUST_NO here and CUSTOMER_NUMBER there. Every disambiguation mechanism the engine has reads names, each was measured only on tidy dbt projects, and no fixture represented the population where they all go inert. The pair makes "what does the naming convention buy us" a controlled experiment: identical structure, identical key domains, names the only difference.
+
+- generator `fixtures/generators/wide.py`; seeded, so two builds are byte-identical.
 
 ### `collision_heavy`
 
@@ -77,7 +91,7 @@ TPC-DS via DuckDB's extension: a clean, well-named, properly normalised star sch
 - generator `fixtures/generators/tpcds_clean.py`; seeded, so two builds are byte-identical; gold asserts 104 foreign keys, 104 relationships, 4 hierarchies, 7 metrics.
 - Scale factor is configurable via TPCDS_SF; CI builds at 0.01 so the fixture stays within CI time.
 
-## Acquired, published (3)
+## Acquired, published (5)
 
 Real datasets under a licence that lets us publish results and ship everything needed to reproduce them. We still distribute only the fetch script — the data stays with its owner.
 
@@ -87,21 +101,25 @@ Shape below is **as recorded at acquisition**, not measured on this machine: the
 |---|---|---|---|--:|--:|--:|---|
 | `adventureworks_dw` | [https://github.com/microsoft/sql-server-samples](https://github.com/microsoft/sql-server-samples) | `sql-server-samples@73c27309` | MIT | 29 | 349 | 1,047,466 | 0.95 / 0.95 *(warehouse alone)* |
 | `cms_physician` | [https://data.cms.gov](https://data.cms.gov) | `2023 annual release, downloaded 2026-10-11` | US Government Works | 2 | 109 | 209 | — *(no FK gate)* |
-| `dbt_synthea` | [https://github.com/OHDSI/dbt-synthea](https://github.com/OHDSI/dbt-synthea) | `33fdbfa` | Apache-2.0 | 87 | 995 | 408,455 | 0.45 / 0.40 *(warehouse alone)*<br>0.85 / 0.80 *(with manifest)* |
+| `dbt_synthea` | [https://github.com/OHDSI/dbt-synthea](https://github.com/OHDSI/dbt-synthea) | `33fdbfa` | Apache-2.0 | 87 | 995 | 408,455 | 0.75 / 0.68 *(warehouse alone)*<br>0.85 / 0.80 *(with manifest)* |
+| `gtfs_manteca` | [https://s3.amazonaws.com/etatransit.gtfs/mantecatransit.etaspot.net/gtfs.zip](https://s3.amazonaws.com/etatransit.gtfs/mantecatransit.etaspot.net/gtfs.zip) | `cf4ba3eabc433f6bc52e1a0b18d682f894ee33823f94ab42e88f34acb9de0512` | CC BY 4.0 | — | — | — | — *(no FK gate)* |
+| `spider2` | [https://github.com/xlang-ai/Spider2](https://github.com/xlang-ai/Spider2) | `cafb867313aab4e674652054198f383cf4018943` | MIT | 16,115 | 1,054,656 | — | — *(no FK gate)* |
 
 ### `adventureworks_dw`
 
 - **Source**: https://github.com/microsoft/sql-server-samples
 - **Licence**: MIT ([terms](https://github.com/microsoft/sql-server-samples/blob/master/license.txt)), verified 2026-10-09
 - **Gold**: vendor_declared — the vendor's own declared keys, not ours, so the answer key was written by someone with no stake in our score.
+- **Gold scope**: 28 primary keys and 41 foreign keys, parsed from the vendor's own loader script into declared_keys.json and deliberately NOT applied to the database, so Link must discover them. Semantic types and descriptions are not asserted; nobody can be asked what this schema's unwritten rules are.
 - **Fetch**: `python fixtures/external/fetch_adventureworks_dw.py`
-- **Why it was acquired**: `role_playing_dimension`, `fiscal_calendar`, `recursive_hierarchy`, `level_hierarchy`, `pascal_case_naming`
+- **Why it was acquired**: `role_playing_dimension`, `fiscal_calendar`, `recursive_hierarchy`, `level_hierarchy`, `pascal_case_naming`, `many_to_many_bridge`
 
 ### `cms_physician`
 
 - **Source**: https://data.cms.gov
 - **Licence**: US Government Works ([terms](https://www.usa.gov/government-works)), verified 2026-10-11
 - **Gold**: vendor_declared — the vendor's own declared keys, not ours, so the answer key was written by someone with no stake in our score.
+- **Gold scope**: CMS's own by-Provider totals are the answer key for reconciliation. No hand-authored gold: the engine cannot yet link these two tables, so there is nothing to score types against until that is fixed.
 - **Fetch**: `python fixtures/external/fetch_cms_physician.py`
 - **Why it was acquired**: `detail_plus_official_summary`, `suppression_rule`, `domain_identifiers`, `pii_in_a_real_schema`
 
@@ -110,18 +128,26 @@ Shape below is **as recorded at acquisition**, not measured on this machine: the
 - **Source**: https://github.com/OHDSI/dbt-synthea
 - **Licence**: Apache-2.0 ([terms](https://github.com/OHDSI/dbt-synthea/blob/main/LICENSE)), verified 2026-10-12
 - **Gold**: vendor_declared — the vendor's own declared keys, not ours, so the answer key was written by someone with no stake in our score.
+- **Gold scope**: 235 deduped foreign-key edges parsed from the project's own `relationships` and `relationships_where` tests, plus 421 declared column types. Semantic types, descriptions and metrics are NOT asserted: OMOP CDM documents the structure, not this warehouse's unwritten rules.
 - **Fetch**: `python fixtures/external/fetch_dbt_synthea.py`
 - **Why it was acquired**: `authoring_etl`, `declared_foreign_keys`, `conditional_foreign_keys`, `declared_column_types`, `hub_and_spoke_fk`, `intermediate_vs_published_pair`
 
-## Acquired, internal only (1)
+### `gtfs_manteca`
 
-Listed because withholding a result silently is indistinguishable from not having one. These datasets are used in development and **no number from them is published**, here or anywhere.
+- **Source**: https://s3.amazonaws.com/etatransit.gtfs/mantecatransit.etaspot.net/gtfs.zip
+- **Licence**: CC BY 4.0 ([terms](https://www.manteca.gov/384/GTFS-Data)), verified 2026-10-16
+- **Gold**: none — acquired to exercise a stage, not to score one; see its fetch script for what it is for.
+- **Fetch**: `python fixtures/external/fetch_gtfs_manteca.py`
+- **Why it was acquired**: `no_etl_convention`, `string_identifiers`, `role_playing_dimension`, `nothing_to_disambiguate`
 
-### `bird_dev` — results withheld
+### `spider2`
 
-- **Licence**: CC BY-SA 4.0 ([terms](https://bird-bench.github.io/))
-- **Why withheld**: the licence is share-alike, so a gold layer we author for it is plausibly a derivative work. We could not ship that gold without putting a share-alike obligation on users of our output — and a score nobody can reproduce is not a score we are willing to quote.
-- **What is public**: this entry and the fetch script. No gold, no recorded model responses, no measurements.
+- **Source**: https://github.com/xlang-ai/Spider2
+- **Licence**: MIT ([terms](https://github.com/xlang-ai/Spider2/blob/main/LICENSE)), verified 2026-10-16
+- **Gold**: partial — derived by us from artefacts the publisher shipped, not declared by them — so read `gold_scope` for what it does and does not license a claim about.
+- **Gold scope**: 148 distinct foreign-key pairs over 48 databases, extracted from the gold SQL by resolving every qualifier through each query's own FROM/JOIN aliases and dropping CTE and subquery sides. RECALL ONLY: the queries cover the joins their questions needed, not every join each schema has, so a pair absent from the corpus is NOT a negative and no precision figure may be computed from it. Primary keys, semantic types, descriptions and metrics are not asserted.
+- **Fetch**: `python fixtures/external/fetch_spider2.py`
+- **Why it was acquired**: `no_etl_convention`, `cross_name_foreign_keys`, `role_playing_dimension`, `undocumented_schema`, `nested_record_schema`
 
 ## Reproducing any of this
 

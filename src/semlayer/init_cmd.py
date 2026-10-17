@@ -1,6 +1,6 @@
 """`semlayer init` — generate the minimal-grant setup for a warehouse.
 
-The grant scripts are the PRODUCT's security story (PRD §11): the reader
+The grant scripts are the PRODUCT's security story: the reader
 persona gets USAGE + SELECT and nothing else; every extra grant is a
 documented opt-in. These templates are live-verified by the nightly
 connector tests (reader-cannot-write proofs).

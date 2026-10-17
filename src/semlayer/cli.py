@@ -80,6 +80,23 @@ def _build_parser() -> argparse.ArgumentParser:
                    help="SQL file (statements separated by ';'), or '-' for stdin")
     p.add_argument("--dialect", default="duckdb")
     p.add_argument("--json", action="store_true", help="machine-readable output")
+    p = sub.add_parser("probe", help="What evidence does this warehouse offer, "
+                                     "and what accuracy follows from it?")
+    p.add_argument("source",
+                   help="duckdb:<path> | postgresql://... | snowflake | bigquery | postgres")
+    p.add_argument("--manifest", metavar="PATH",
+                   help="dbt target/manifest.json, if there is one")
+    p.add_argument("--sample", action="store_true",
+                   help="Also read rows: do several tables hold the same key "
+                        "values? It is the one question a catalog cannot answer "
+                        "and the one that decides whether naming matters here.")
+    p.add_argument("--json", action="store_true", help="machine-readable")
+    p.add_argument("--share", action="store_true",
+                   help="Print the anonymous telemetry payload. Counts, fractions "
+                        "and booleans only -- never a table or column name, not "
+                        "even hashed. Printing it is the point: the claim is "
+                        "checkable rather than promised.")
+
     p = sub.add_parser("drift", help="Detect warehouse drift vs a semantic layer")
     p.add_argument("doc", help="semantic layer YAML path")
     p.add_argument("source",
@@ -233,6 +250,35 @@ def _cmd_review(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_probe(args: argparse.Namespace) -> int:
+    import json
+
+    from semlayer.pipeline import open_source_from_uri
+    from semlayer.probe import render, tier1, tier2
+
+    lineage = None
+    if args.manifest:
+        from semlayer.lineage import load_dbt_manifest
+
+        lineage = load_dbt_manifest(args.manifest)
+    src = open_source_from_uri(args.source)
+    p = tier1(src, lineage=lineage)
+    if args.sample:
+        p = tier2(src, p)
+
+    if args.json:
+        print(json.dumps(p.telemetry(), indent=1))
+    else:
+        print(render(p))
+        if not args.sample:
+            print("\nRun with --sample to measure whether several tables hold the "
+                  "same key values. That reads rows, so it is opt-in.")
+    if args.share:
+        print("\n# Telemetry payload (nothing is sent by this command):")
+        print(json.dumps(p.telemetry(), indent=1))
+    return 0
+
+
 def _cmd_drift(args: argparse.Namespace) -> int:
     from semlayer import drift as drift_mod
     from semlayer.pipeline import open_source_from_uri
@@ -318,6 +364,7 @@ _HANDLERS = {
     "init": _cmd_init,
     "infer": _cmd_infer,
     "review": _cmd_review,
+    "probe": _cmd_probe,
     "drift": _cmd_drift,
     "lint": _cmd_lint,
     "mcp": _cmd_mcp,

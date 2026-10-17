@@ -15,6 +15,31 @@
 # typed in here, for the same reason.
 
 synthetic:
+  - name: wide_conventional
+    purpose: >
+      2,000 tables at the documented support ceiling, named the way a dbt
+      project names things: stg_sales__customer, int__customer, customer.
+      Built to be compared against wide_opaque, which is identical in every
+      other respect. Row counts are small on purpose -- this fixture scales
+      the number of OBJECTS, because per-table and per-column costs are what
+      bite at 2,000 tables, not data volume.
+    generator: fixtures/generators/wide.py
+    seeded: true
+    on_request: true
+
+  - name: wide_opaque
+    purpose: >
+      The same 2,000-table warehouse with the convention removed: T_0075,
+      IMPR_MSTR_1270, and the same entity called CUST_NO here and
+      CUSTOMER_NUMBER there. Every disambiguation mechanism the engine has
+      reads names, each was measured only on tidy dbt projects, and no fixture
+      represented the population where they all go inert. The pair makes "what
+      does the naming convention buy us" a controlled experiment: identical
+      structure, identical key domains, names the only difference.
+    generator: fixtures/generators/wide.py
+    seeded: true
+    on_request: true
+
   - name: collision_heavy
     purpose: >
       Many small dimension tables whose key columns collide by name and by

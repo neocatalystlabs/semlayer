@@ -255,7 +255,7 @@ def test_reader_reads_planner_statistics_without_extra_grants(reader_dsn):
 def test_drift_detects_ddl_on_postgres(src, layer):
     """`semlayer drift <doc> postgres` is advertised, so the path is exercised.
 
-    Snapshot diffing is the universal fallback tier (PRD boundary decision 4) --
+    Snapshot diffing is the universal fallback tier --
     it needs nothing but `list_tables`, which is exactly why it should work on
     any new connector without connector-specific code. Asserted rather than
     assumed.

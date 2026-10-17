@@ -32,11 +32,20 @@ GENERATORS = [
     "snapshot_noval",
 ]  # extended as fixtures land
 
+# Built on request, not by default: 2,000 tables each, ~55 s apiece, and they
+# exist to be measured against rather than to guard a behaviour.
+#   python fixtures/build.py wide_conventional wide_opaque
+WIDE = {"wide_conventional": "build", "wide_opaque": "build_opaque"}
+
 
 def build_fixture(name: str) -> Path:
+    # The wide pair share one generator module and differ only in the entry
+    # point, because they must differ ONLY in naming -- two modules would
+    # drift and the comparison would stop being controlled.
+    module, entry = (("wide", WIDE[name]) if name in WIDE else (name, "build"))
     sys.path.insert(0, str(FIXTURES_DIR))
     try:
-        mod = importlib.import_module(f"generators.{name}")
+        mod = importlib.import_module(f"generators.{module}")
     finally:
         sys.path.pop(0)
     BUILD_DIR.mkdir(exist_ok=True)
@@ -45,7 +54,7 @@ def build_fixture(name: str) -> Path:
         out.unlink()
     con = duckdb.connect(str(out))
     try:
-        mod.build(con)
+        getattr(mod, entry)(con)
     finally:
         con.close()
     return out

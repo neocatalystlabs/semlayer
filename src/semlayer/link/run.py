@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 
+from semlayer.lineage import same_naming_layer
 from semlayer.link.candidates import (
     FKCandidate,
     _inclusion,
@@ -74,9 +75,14 @@ def _best_parent_per_child(
     27 person_id edges went to the staging step rather than the published table
     the project's own tests declare (docs/calibration.md, 2026-10-12).
 
-    **Both extra tiebreaks apply only when an ETL manifest was supplied.**
-    Without one the ranking is exactly what it always was, so no warehouse can
-    regress on the strength of this function alone.
+    **The pk guard applies only when an ETL manifest was supplied. The layer
+    rule applies always**, reading the stage from the manifest when there is
+    one and from the table name when there is not (2026-10-16). The guarantee
+    that replaced "no manifest means no behaviour change" is narrower and is
+    what messy_mart actually relies on: where no name carries a stage prefix
+    every candidate sits in the same "" layer, the term ties, and the ranking
+    is exactly what it always was. Both properties are tested by name in
+    tests/test_lineage.py.
 
     1. **The ETL builds one candidate from the other.** Among otherwise-tied
        candidates, the DOWNSTREAM table is the published one and the upstream
@@ -121,7 +127,22 @@ def _best_parent_per_child(
         return c.parent_column in (pks.get(c.parent_table) or ())
 
     def _same_layer(c: FKCandidate) -> bool:
-        return bool(lineage) and lineage.same_layer(c.parent_table, c.child_table)
+        """Co-location in the ETL: from the manifest, else from the names.
+
+        The manifest is better evidence and wins wherever it speaks. Where it
+        does not -- no manifest at all, or tables it does not know -- the names
+        still carry the convention, so the signal degrades rather than
+        vanishing. Measured on dbt_synthea with no manifest: 57 of 62 wrong
+        parents are wrong only because this tiebreak was inert.
+        """
+        # Naming is the fallback for NO manifest, not a per-table top-up. A
+        # first version consulted names whenever the manifest did not know a
+        # table, which changed the manifest path's answers in four unit tests:
+        # a name-derived layer is weaker evidence and must not interleave with
+        # a manifest's own judgement.
+        if lineage:
+            return lineage.same_layer(c.parent_table, c.child_table)
+        return same_naming_layer(c.parent_table, c.child_table)
 
     best: dict[tuple, FKCandidate] = {}
     lineage_wins: set[tuple] = set()
@@ -134,6 +155,13 @@ def _best_parent_per_child(
         # The pk guard is inert without a manifest: it exists only to stop the
         # lineage rule below walking downstream onto a fact table, and on its
         # own it is actively wrong (see the docstring).
+        # The pk guard stays gated on having a manifest. Ungating it was tried
+        # and reverted: messy_mart fell to 0.892 against its 0.95 floor, with
+        # sku_xref beating prod_ref for prod_id -- the exact failure the
+        # docstring describes. The reason the reasoning was wrong is worth
+        # keeping: "the guard is safe once the layer rule is active" assumes
+        # the layer rule DECIDES, and in messy_mart prod_ref and sku_xref are
+        # both unprefixed, so the layer term ties and the guard acts alone.
         score = (_same_layer(c), c.name_score, c.inclusion_ratio,
                  bool(lineage) and _is_pk(c))
         prev_score = (_same_layer(prev), prev.name_score, prev.inclusion_ratio,
