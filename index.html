@@ -84,11 +84,14 @@
   .quiet { font-size: 0.95rem; color: var(--muted); }
   .social { display: flex; gap: 1.15rem; align-items: center; }
   .social a {
-    display: inline-flex; width: 18px; height: 18px; color: var(--muted);
-    padding: 10px; margin: -10px;          /* 38px tap target, 18px visual */
+    /* box-sizing is border-box globally, so the tap target IS the box and
+       the icon is sized on the svg -- setting width:18px + padding:10px
+       here left a zero-width content box and the icons vanished. */
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 38px; height: 38px; margin: -10px; color: var(--muted);
   }
   .social a:hover, .social a:focus-visible { color: var(--accent); }
-  .social svg { width: 100%; height: 100%; fill: currentColor; }
+  .social svg { width: 18px; height: 18px; fill: currentColor; }
   figure { margin: 1.75rem 0; }
   figure img {
     display: block; width: 100%; height: auto;
