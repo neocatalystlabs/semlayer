@@ -3,16 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>semlayer — your AI writes perfect SQL and returns the wrong number</title>
-<meta name="description" content="Your AI answers warehouse questions in seconds and more than half are wrong. semlayer infers the rules your engineers keep in their heads — 42% to 87% correct on our messy-warehouse benchmark. Open source, Apache-2.0.">
+<title>semlayer — infer a semantic layer from your data warehouse</title>
+<meta name="description" content="semlayer is a command-line tool that reads your data warehouse and writes the semantic layer your AI agents need. On our messy-warehouse benchmark it took text-to-SQL accuracy from 42% to 87%. Fair Source; free for any internal use.">
+<meta name="theme-color" content="#ffffff">
+<link rel="canonical" href="https://semlayer.dev/">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://semlayer.dev/">
+<meta property="og:title" content="semlayer — infer a semantic layer from your data warehouse">
+<meta property="og:image" content="https://semlayer.dev/og-image.webp">
+<meta name="twitter:card" content="summary_large_image">
+<meta property="og:description" content="Your AI writes perfect SQL and returns the wrong number. semlayer infers the rules your engineers keep in their heads — 42% to 87% correct on our messy-warehouse benchmark.">
 <style>
   :root {
-    --bg: #ffffff; --fg: #1a1a2e; --muted: #566; --accent: #6b47dc;
+    --bg: #ffffff; --fg: #1a1a2e; --muted: #566; --accent: #6b47dc; --brand: #eb6834;
     --card: #f6f4fb; --code-bg: #16161f; --code-fg: #e8e6f0; --border: #e3e0ef;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #101018; --fg: #e8e6f0; --muted: #9a97b3; --accent: #9d82f0;
+      --bg: #101018; --fg: #e8e6f0; --muted: #9a97b3; --accent: #9d82f0; --brand: #eb6834;
       --card: #1a1a26; --code-bg: #0b0b12; --code-fg: #d8d6e8; --border: #2a2a3a;
     }
   }
@@ -20,12 +28,25 @@
   body {
     font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
     background: var(--bg); color: var(--fg); line-height: 1.6;
-    max-width: 46rem; margin: 0 auto; padding: 4rem 1.25rem 3rem;
+    max-width: 46rem; margin: 0 auto; padding: 1.5rem 1.25rem 3rem;
   }
   h1 { font-size: 2.4rem; letter-spacing: -0.02em; }
-  h1 span { color: var(--accent); }
-  .tagline { font-size: 1.2rem; color: var(--muted); margin: 0.5rem 0 2rem; }
+  h1 span { color: var(--brand); }
+  .tagline { font-size: 1.2rem; color: var(--muted); margin: 0.5rem 0 1.25rem; }
   p { margin-bottom: 1rem; }
+  nav {
+    display: flex; flex-wrap: wrap; gap: 0.35rem 1.1rem;
+    padding-bottom: 1.5rem; margin-bottom: 2rem;
+    border-bottom: 1px solid var(--border); font-size: 0.9rem;
+  }
+  nav a { color: var(--muted); text-decoration: none; }
+  nav a:hover { color: var(--accent); }
+  nav a.brand { color: var(--fg); font-weight: 700; margin-right: auto; }
+  nav a.brand span { color: var(--brand); }
+  .whatis {
+    font-size: 1.05rem; border-left: 3px solid var(--border);
+    padding-left: 1rem; margin-bottom: 2rem; color: var(--fg);
+  }
   .stat {
     background: var(--card); border-left: 3px solid var(--accent);
     padding: 0.9rem 1.1rem; border-radius: 4px; margin: 1.5rem 0;
@@ -60,12 +81,52 @@
     font-size: 0.95rem; color: var(--muted);
   }
   .quiet { font-size: 0.95rem; color: var(--muted); }
+  figure { margin: 1.75rem 0; }
+  figure img {
+    display: block; width: 100%; height: auto;
+    border-radius: 6px; background: var(--card);
+  }
+  @media (min-width: 42rem) {
+    figure.left  { float: left;  width: 40%; margin: 0.4rem 1.75rem 1.1rem 0; }
+    figure.right { float: right; width: 40%; margin: 0.4rem 0 1.1rem 1.75rem; }
+  }
+  h2, pre, ul, .stat, .caveat, .res, .ctas, .footer { clear: both; }
+  @media (prefers-color-scheme: dark) {
+    figure img { filter: brightness(0.86) saturate(0.95); }
+  }
+  .res { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.75rem 2rem; margin-top: 1.25rem; }
+  @media (max-width: 36rem) { .res { grid-template-columns: 1fr; } }
+  .res h3 {
+    font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--accent); margin-bottom: 0.6rem;
+  }
+  .res ul { margin: 0; list-style: none; }
+  .res li { margin-bottom: 0.7rem; font-size: 0.92rem; line-height: 1.45; }
+  .res li a { font-weight: 600; text-decoration: none; }
+  .res li a:hover { text-decoration: underline; }
+  .res li span { display: block; color: var(--muted); font-size: 0.87rem; }
 </style>
 </head>
 <body>
 
+<nav>
+  <a class="brand" href="/">sem<span>layer</span></a>
+  <a href="#what">What it does</a>
+  <a href="#how">How it works</a>
+  <a href="#warehouses">Warehouses</a>
+  <a href="#resources">Resources</a>
+  <a href="https://github.com/neocatalystlabs/semlayer">GitHub &#8599;</a>
+</nav>
+
 <h1>sem<span>layer</span></h1>
 <p class="tagline">Your AI writes perfect SQL and returns the wrong number.</p>
+
+<p class="whatis"><strong>semlayer is a command-line tool that reads your data
+warehouse and writes the semantic layer your AI agents need</strong> &mdash; what each
+table and column means, the foreign keys nobody declared, the filters your summary
+tables silently apply, and your metric definitions &mdash; as one open file, served
+to any agent over MCP. It infers all of it from your data. Nobody hand-writes a
+model, and nobody maintains it.</p>
 
 <p class="lede">Your company pointed Claude or Copilot at the data warehouse, and
 your business users can finally ask their own questions. The answers come back in
@@ -79,7 +140,14 @@ order tables is the one finance uses.</p>
 <p>That knowledge is real, and it is not written down anywhere a machine can read.
 It lives in the heads of the three engineers who built the warehouse.</p>
 
-<h2>What semlayer does</h2>
+<h2 id="what">What semlayer does</h2>
+
+<figure class="left">
+  <img src="side-plate.webp" width="750" height="768" alt="A nineteenth-century
+  botanical plate: a passionflower drawn whole at the centre, with its leaves,
+  buds, flower and sectioned fruit each drawn separately in bordered panels
+  around it.">
+</figure>
 
 <p><strong>It works those rules out for itself, from your data.</strong> Point it at your
 warehouse and it reads every table, finds the relationships nobody declared,
@@ -94,18 +162,21 @@ metric, both do it correctly, and arrive at the same meeting with different numb
 &mdash; nobody made a mistake, they used different definitions. semlayer writes the
 decision down: which rows count, what the denominator is, and the evidence behind
 it. Trust is not only about getting a correct number. It is about the same question
-returning the same number, to everyone, every time.</p>
+returning the same number, to everyone, every time.
+<a href="https://github.com/neocatalystlabs/semlayer/blob/main/docs/metrics.md">How
+metrics are defined &rarr;</a></p>
 
 <div class="stat">
 Same AI, same 38 business questions, same warehouse: <strong>42% answered
 correctly from the raw schema, 87% with the context semlayer inferred.</strong>
 The errors it fixes are the silent kind &mdash; raw-schema &ldquo;total revenue&rdquo;
 sums cancelled orders, reporting $16.3M where finance reports $14.6M.
+<a href="https://github.com/neocatalystlabs/semlayer/blob/main/docs/benchmark.md">Method,
+questions and both results &rarr;</a>
 </div>
 
-<p>Nobody hand-writes a model, and nobody maintains it. Re-run it on a schedule and
-the context stays in step with the schema. Your engineers add what only they know
-on top, and that is never overwritten.</p>
+<p>Re-run it on a schedule and the context stays in step with the schema. Your
+engineers add what only they know on top, and that is never overwritten.</p>
 
 <div class="caveat">
 <strong>Where it does not help:</strong> on a clean, well-documented warehouse the
@@ -114,39 +185,197 @@ result ships in the repo next to the good one. If your warehouse is tidy, you do
 not need this.
 </div>
 
-<h2>How it works</h2>
+<h2 id="how">How it works</h2>
 
 <p>It profiles every column, discovers the foreign keys nobody declared, decodes the
 status columns, recovers business rules hiding in your aggregate tables, and
 proposes the metrics those rules imply &mdash;
 verified against your own data, with <strong>confidence, provenance, and a review
 queue on every claim</strong>. Statistics alone never auto-accept a foreign key, and
-a doc that contradicts your data goes to review rather than being believed. Then any
-AI agent consumes the result over MCP.</p>
+a doc that contradicts your data goes to review rather than being believed.
+<a href="https://github.com/neocatalystlabs/semlayer/blob/main/docs/calibration.md">What
+the confidence numbers mean &rarr;</a></p>
 
 <pre><code>pip install semlayer
+semlayer init snowflake              <span class="c"># generates a minimal-grant, read-only setup script</span>
 semlayer infer snowflake -o layer.yaml --context ./docs/
 semlayer review layer.yaml           <span class="c"># accept/reject what it inferred</span>
 semlayer mcp layer.yaml              <span class="c"># serve it to Claude, Cursor, any agent</span></code></pre>
 
-<p class="quiet">Snowflake, BigQuery and DuckDB. Skip the quarter of hand-writing
-dbt YAML.</p>
+<p class="quiet">The inference runs an LLM over your schema and statistics, not over
+your rows, and you bring your own key. A
+<a href="https://github.com/neocatalystlabs/semlayer/blob/main/docs/cost-model.md">measured
+cost model</a> and an
+<a href="https://github.com/neocatalystlabs/semlayer/blob/main/docs/mcp.md">MCP setup
+guide</a> are in the docs.</p>
 
-<p>
+<h2 id="warehouses">Warehouses it reads</h2>
+
+<figure class="right">
+  <img src="side-joint.webp" width="660" height="660" loading="lazy" alt="A
+  close-up of a timber joint in walnut, where an upright post meets a horizontal
+  rail and the end of the tenon passes through and stands proud of it.">
+</figure>
+
+<p><strong>Snowflake, BigQuery, PostgreSQL and DuckDB</strong>, plus Iceberg on S3
+through the <a href="https://github.com/neocatalystlabs/semlayer/blob/main/docs/iceberg-bridge.md">DuckDB
+bridge</a>. The PostgreSQL connector also reaches Redshift and other
+Postgres-protocol engines, though their catalogs differ in places and we have not
+tested them &mdash; if you try one, we would like to hear what broke.</p>
+
+<p>It connects read-only. <code>semlayer init</code> generates the minimal-grant
+script for your warehouse, and the reader role is proved unable to write: on
+PostgreSQL by a test that runs in ordinary CI against a real server, and on
+Snowflake by a live suite you can run against your own account.</p>
+
+<p class="quiet">Exports to dbt, with any loss in translation reported rather than
+silent. Skip the quarter of hand-writing dbt YAML.</p>
+
+<p class="ctas">
 <a class="cta" href="https://github.com/neocatalystlabs/semlayer">GitHub &rarr;</a>
-<a class="cta alt" href="https://github.com/neocatalystlabs/semlayer/blob/main/docs/benchmark.md">Read the benchmark</a>
+<a class="cta alt" href="https://github.com/neocatalystlabs/semlayer/blob/main/docs/quickstart.md">Quickstart</a>
+<a class="cta alt" href="https://www.youtube.com/@semlayer">Watch the series</a>
 </p>
 
 <ul>
-  <li><strong>Free &amp; complete</strong>: Apache-2.0 CLI, runs in your environment with your keys &mdash; no caps, no signup. A paid hosted control plane (continuous re-inference, team review, dashboards) comes later; the CLI stays fully functional.</li>
+  <li><strong>Free for any internal use</strong>: the CLI runs in your own environment with your own keys &mdash; no caps, no signup, no licence key, in production and CI alike. It is <a href="https://github.com/neocatalystlabs/semlayer/blob/main/LICENSING.md">Fair Source</a> (FSL-1.1-ALv2), not open source: the only thing the licence prohibits is reselling semlayer or hosting it as a service that competes with it, and every release becomes Apache-2.0 two years after it ships. The format specification, its schemas and the exporters are Apache-2.0 and stay that way &mdash; a semantic layer nobody else can read is worth nothing. A paid hosted control plane (continuous re-inference, team review, dashboards) comes later; the CLI stays fully functional.</li>
   <li><strong>Honest by construction</strong>: every claim carries its evidence, and the whole eval suite ships in the repo so you can check whether it helped on your data.</li>
   <li><strong>Design partners wanted</strong>: got a messy warehouse and an AI initiative? <a href="mailto:hello@semlayer.dev">hello@semlayer.dev</a> &mdash; or file the <a href="https://github.com/neocatalystlabs/semlayer/issues/new/choose">beta feedback form</a>.</li>
 </ul>
 
+<h2 id="resources">Resources</h2>
+
+<div class="res">
+
+  <div>
+    <h3>Start</h3>
+    <ul>
+      <li><a href="https://github.com/neocatalystlabs/semlayer/blob/main/docs/quickstart.md">Quickstart</a>
+        <span>Install it, point it at a warehouse, read what came out.</span></li>
+      <li><a href="https://github.com/neocatalystlabs/semlayer">Source on GitHub</a>
+        <span>The engine, the fixtures and the whole eval suite.</span></li>
+      <li><a href="https://pypi.org/project/semlayer/">semlayer on PyPI</a>
+        <span><code>pip install semlayer</code> &mdash; currently a 0.5 beta.</span></li>
+    </ul>
+  </div>
+
+  <div>
+    <h3>Understand the problem</h3>
+    <ul>
+      <li><a href="https://medium.com/@rajdevnath/your-company-connected-ai-to-its-data-can-anyone-tell-if-the-numbers-are-right-0d7c55fcc4ca">Can anyone tell if the numbers are right?</a>
+        <span>Why a valid query returns a wrong answer, and why nobody notices.</span></li>
+      <li><a href="https://www.youtube.com/@semlayer">GenAI on your business data</a>
+        <span>Short episodes: what goes wrong, what the layer adds, what it looks like running.</span></li>
+      <li><a href="https://github.com/neocatalystlabs/semlayer/blob/main/ARCHITECTURE.md">How the pipeline is built</a>
+        <span>Profile, link, describe, enrich &mdash; and what each stage can and cannot know.</span></li>
+    </ul>
+  </div>
+
+  <div>
+    <h3>Check the claim</h3>
+    <ul>
+      <li><a href="https://medium.com/@rajdevnath/we-measured-what-a-semantic-layer-is-actually-worth-to-an-ai-agent-b5d7e62d9376">We measured what a semantic layer is worth</a>
+        <span>The write-up of the 42% to 87% result, including where it lost.</span></li>
+      <li><a href="https://github.com/neocatalystlabs/semlayer/blob/main/docs/benchmark.md">Benchmark report</a>
+        <span>The 38 questions, both warehouses, and the result that went the wrong way.</span></li>
+      <li><a href="https://github.com/neocatalystlabs/semlayer/blob/main/docs/calibration.md">Calibration report</a>
+        <span>Whether a confidence of 0.8 means anything &mdash; including the tiers still wrong.</span></li>
+    </ul>
+  </div>
+
+  <div>
+    <h3>Reference</h3>
+    <ul>
+      <li><a href="https://github.com/neocatalystlabs/semlayer/blob/main/spec/SPEC.md">Format specification</a>
+        <span>What is in the output file. Apache-2.0, and it stays that way.</span></li>
+      <li><a href="https://github.com/neocatalystlabs/semlayer/blob/main/docs/mcp.md">MCP setup</a>
+        <span>Serving the layer to Claude Desktop, Claude Code or any MCP client.</span></li>
+      <li><a href="https://github.com/neocatalystlabs/semlayer/blob/main/docs/warehouses.md">Warehouses and connectors</a>
+        <span>What we test against, and the grants each connector needs.</span></li>
+      <li><a href="https://github.com/neocatalystlabs/semlayer/blob/main/docs/scale.md">Scale</a>
+        <span>How big a warehouse it handles, and how to make a large run fast.</span></li>
+      <li><a href="https://github.com/neocatalystlabs/semlayer/blob/main/LICENSING.md">Licensing</a>
+        <span>What Fair Source permits, path by path, and when each release turns Apache-2.0.</span></li>
+    </ul>
+  </div>
+
+</div>
+
 <p class="footer">
-semlayer &middot; Apache-2.0 &middot; a Neocatalyst Labs project &middot;
-<a href="https://github.com/neocatalystlabs/semlayer">github.com/neocatalystlabs/semlayer</a>
+semlayer &middot; <a href="https://github.com/neocatalystlabs/semlayer/blob/main/LICENSING.md">Fair
+Source (FSL-1.1-ALv2)</a>, format Apache-2.0 &middot; a Neocatalyst Labs project &middot;
+<a href="https://github.com/neocatalystlabs/semlayer">GitHub</a>
+&middot; <a href="https://www.youtube.com/@semlayer">YouTube</a>
+&middot; <a href="https://medium.com/@rajdevnath">Medium</a>
+&middot; <a href="mailto:hello@semlayer.dev">hello@semlayer.dev</a>
 </p>
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "SoftwareApplication",
+      "name": "semlayer",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "macOS, Linux, Windows",
+      "url": "https://semlayer.dev/",
+      "downloadUrl": "https://pypi.org/project/semlayer/",
+      "codeRepository": "https://github.com/neocatalystlabs/semlayer",
+      "softwareVersion": "0.5.0b1",
+      "license": "https://github.com/neocatalystlabs/semlayer/blob/main/LICENSING.md",
+      "description": "A command-line tool that reads a data warehouse and infers a semantic layer -- table and column meanings, undeclared foreign keys, mandatory filters and metric definitions -- as one open file served to AI agents over MCP.",
+      "author": { "@type": "Organization", "name": "Neocatalyst Labs" },
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "What is semlayer?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "semlayer is a command-line tool that reads your data warehouse and infers the semantic layer your AI agents need: what each table and column means, the foreign keys nobody declared, the filters your summary tables silently apply, and your metric definitions. It writes all of it to one open file and serves it to any agent over MCP."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Which data warehouses does semlayer support?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Snowflake, BigQuery, PostgreSQL and DuckDB, plus Iceberg on S3 through the DuckDB bridge. The PostgreSQL connector also reaches Redshift and other Postgres-protocol engines, though those are untested."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How much does a semantic layer improve AI text-to-SQL accuracy?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "On our messy-warehouse benchmark, the same model answered 42% of 38 business questions correctly from the raw schema and 87% with the semantic layer semlayer inferred. On a clean, well-documented warehouse the raw schema won instead: 67% without the layer, 58% with it. Both results are published."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "When do I not need semlayer?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "If your warehouse has clean names, declared foreign keys and documented status codes, the raw schema already gives a model enough to work with, and our own benchmark shows the inferred layer making accuracy worse. semlayer is built for warehouses that are not tidy."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is semlayer open source?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. The engine and CLI are Fair Source under FSL-1.1-ALv2: free for any internal use with no caps or signup, and each release converts to Apache-2.0 two years after it ships. The only prohibited use is reselling semlayer or hosting it as a competing service. The format specification, its schemas and the exporters are Apache-2.0 permanently."
+          }
+        }
+      ]
+    }
+  ]
+}
+</script>
 
 </body>
 </html>
