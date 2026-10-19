@@ -15,7 +15,10 @@ open public issues for vulnerabilities.
   low-cardinality column are included in LLM prompts sent to your configured
   LLM provider. Nothing else leaves.
 - **`--no-sample-egress`**: cell values never enter prompts (statistics only).
-- **`--no-llm`**: nothing leaves your environment at all.
+- **`--no-llm`**: no schema, column names, or sample values are sent to any
+  LLM. Your data never reaches a model provider. This is a statement about
+  where your schema and data go, not about all network traffic -- see
+  Telemetry below.
 - **Telemetry**: anonymous command counts spooled to a local file only; no
   network transmission exists in this release. Opt out: `SEMLAYER_TELEMETRY=off`.
 - The MCP server binds stdio (local) and serves the semantic layer document;
