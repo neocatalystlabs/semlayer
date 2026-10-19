@@ -72,6 +72,15 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("doc", help="semantic layer YAML path")
     p.add_argument("--list", action="store_true", help="List items without prompting")
 
+    p = sub.add_parser("telemetry",
+                       help="Show or change anonymous usage telemetry")
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("--off", action="store_true",
+                   help="turn telemetry off permanently (writes a marker file)")
+    g.add_argument("--on", action="store_true", help="turn telemetry back on")
+    g.add_argument("--show", action="store_true",
+                   help="print the local spool, exactly as it would be sent")
+
     p = sub.add_parser("mcp", help="Serve a semantic layer over MCP (stdio)")
     p.add_argument("doc", help="semantic layer YAML path")
 
@@ -353,6 +362,46 @@ def _cmd_lint(args: argparse.Namespace) -> int:
     return worst
 
 
+def _cmd_telemetry(args: argparse.Namespace) -> int:
+    """Report or change the telemetry setting.
+
+    With no flag this prints status rather than doing nothing, because the
+    question a user has when they type `semlayer telemetry` is "is it on?".
+    """
+    from semlayer import telemetry
+
+    if args.off:
+        telemetry.turn_off()
+    elif args.on:
+        telemetry.turn_on()
+    elif args.show:
+        spool = telemetry.spool_path()
+        if spool.exists():
+            sys.stdout.write(spool.read_text())
+        else:
+            print(f"no events recorded ({spool})")
+        return 0
+
+    why = telemetry.disabled_by()
+    if why is None:
+        print("telemetry: on")
+        print("  events are recorded to a local file and NOT sent anywhere "
+              "in this release")
+        print("  see them:  semlayer telemetry --show")
+        print("  turn off:  semlayer telemetry --off")
+    else:
+        print("telemetry: off")
+        # Naming the reason matters: --on removes the marker but cannot clear
+        # an exported variable, so without this a user would turn it "on",
+        # see success, and still be off.
+        print(f"  turned off by: {why}")
+        if why == "SEMLAYER_TELEMETRY":
+            print("  this is an environment variable; `--on` cannot clear it. "
+                  "Unset it in your shell.")
+    print(f"  spool: {telemetry.spool_path()}")
+    return 0
+
+
 def _cmd_mcp(args: argparse.Namespace) -> int:
     from semlayer.mcp_server import build_server
 
@@ -369,6 +418,7 @@ _HANDLERS = {
     "drift": _cmd_drift,
     "lint": _cmd_lint,
     "mcp": _cmd_mcp,
+    "telemetry": _cmd_telemetry,
 }
 
 
@@ -381,7 +431,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     from semlayer import telemetry
 
-    telemetry.record("cli", command=args.command)
+    # The one command we do not record. Logging that someone opted out, at
+    # the moment they opted out, is exactly the behaviour the switch exists
+    # to prevent -- and `--show` must print what WOULD be sent, not a spool
+    # this invocation just appended to.
+    if args.command != "telemetry":
+        telemetry.record("cli", command=args.command)
     try:
         return _HANDLERS[args.command](args)
     except SemlayerError as e:

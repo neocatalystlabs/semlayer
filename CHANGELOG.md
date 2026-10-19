@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### The telemetry off switch now works
+
+`semlayer telemetry` shows whether telemetry is on, where the spool is, and
+what is in it. `--off` turns it off permanently, `--on` turns it back on,
+`--show` prints the spool exactly as it would be sent.
+
+**`telemetry.py` previously documented an off switch that did not exist.**
+Its docstring named a `telemetry` key in `~/.semlayer/config`; nothing has
+ever read that file, and this package has no config file and no parser for
+one. Only `SEMLAYER_TELEMETRY` worked. Anyone who followed that instruction
+had not opted out.
+
+Nothing was transmitted either way — there is still no sender, and this
+release adds none. But the claim had to stop being false before one exists,
+not alongside it.
+
+`--off` writes a marker file rather than a config key, so there is nothing
+to parse and therefore no malformed-input path that could leave telemetry on
+while you believe it is off. `semlayer telemetry` is also the one command
+that is never itself recorded.
+
+If you have `SEMLAYER_TELEMETRY=off` exported, `--on` cannot clear it; the
+status output says so by name rather than silently reporting success.
+
 ## v0.5.0-beta.1 (2026-10-17)
 
 ### Licence change: the engine and CLI are now Fair Source

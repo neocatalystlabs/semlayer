@@ -20,7 +20,9 @@ open public issues for vulnerabilities.
   where your schema and data go, not about all network traffic -- see
   Telemetry below.
 - **Telemetry**: anonymous command counts spooled to a local file only; no
-  network transmission exists in this release. Opt out: `SEMLAYER_TELEMETRY=off`.
+  network transmission exists in this release. Inspect: `semlayer telemetry
+  --show`. Opt out: `semlayer telemetry --off` (permanent) or
+  `SEMLAYER_TELEMETRY=off` (this shell).
 - The MCP server binds stdio (local) and serves the semantic layer document;
   it executes no warehouse queries.
 
