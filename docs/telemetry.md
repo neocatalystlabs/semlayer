@@ -1,14 +1,31 @@
 # Telemetry
 
-semlayer sends anonymous usage statistics. This page says exactly what, why,
-where it goes, and how to stop it.
+semlayer sends anonymous usage statistics, so we can tell which warehouses
+to support next, which commands are used, where runs fail, how long inference
+takes at what scale, and whether an upgrade fixed the thing it was supposed
+to fix. This page says exactly what is sent, and how to stop it.
 
-**Turn it off:**
+**Turn it off, or back on:**
 
 ```sh
-semlayer telemetry --off          # permanent
-export SEMLAYER_TELEMETRY=off     # this shell
+semlayer telemetry --off     # off permanently
+semlayer telemetry --on      # on again
+semlayer telemetry           # which of these is in effect, and where the spool is
 ```
+
+`--off` writes a marker file in `~/.semlayer/`; `--on` removes it. The
+decision survives new shells and upgrades until you change it.
+
+For one shell only, without changing the stored setting:
+
+```sh
+export SEMLAYER_TELEMETRY=off
+```
+
+If that variable is set, `semlayer telemetry --on` cannot override it — an
+environment variable is not ours to unset. `semlayer telemetry` says which
+switch is in effect, so you are never left wondering why `--on` appeared to
+do nothing.
 
 **See precisely what would be sent, before it is sent:**
 
@@ -69,29 +86,11 @@ is therefore a weak fingerprint of one particular warehouse. "21–50 tables"
 is not. The bucketing happens in the serializer rather than at call sites,
 so an exact count cannot be sent even by mistake.
 
-## Where it goes
-
-`POST https://telemetry.semlayer.dev/v1/events`, to infrastructure we run.
-No third-party analytics service is involved, and no advertising or
-tracking network receives anything.
-
-Events are stored in a Postgres database in the United States. Raw events
-are deleted after 13 months.
-
-Our hosting provider retains its own request logs, which include IP
-addresses, for the period of our plan. We do not read them and they are not
-joined to anything. This is stated because it is true, not because it is
-useful to us.
-
-### Unrecognised fields
-
-If a newer semlayer sends a field the receiver does not yet know, the field
-is **not** rejected — it is stored truncated in a separate column, excluded
-from every analysis query, and deleted after 30 days. Rejecting would mean
-that upgrading your client before we upgrade the receiver silently stops
-*all* your telemetry, which looks like declining usage rather than a bug.
-
 ## When it is sent
+
+Events are sent to `https://telemetry.semlayer.dev/v1/events`, infrastructure
+we run — no third-party analytics service is involved. They are stored in the
+United States and deleted after 13 months.
 
 At the end of a command, in a background thread with a 1.5-second deadline.
 If the endpoint is slow, down, or unreachable, the command is unaffected and
@@ -111,23 +110,3 @@ It is not a statement about all network traffic: telemetry still sends
 unless you turn it off. The two are separate switches because they protect
 different things, and conflating them would weaken the `--no-llm`
 guarantee, which is the stronger of the two.
-
-## If you upgraded from a version that did not send
-
-Earlier releases spooled events locally and transmitted nothing. Those
-events were recorded while the documentation promised that nothing left
-your machine, so **they are discarded, not sent.** The first run of a
-sending release prints a notice, deletes the existing spool, and starts
-fresh.
-
-## What we do with it
-
-Which warehouses to support next, which commands are used, where runs fail,
-how long inference takes at what scale, and whether an upgrade fixed the
-thing it was supposed to fix.
-
-We make no commitment to publish any of it, and the analysis queries are
-not published — doing so would read as "these are the only questions we
-ask", and we will certainly ask more. A claim we would break is worse than
-no claim. What you get instead is the complete field list above and
-`--show`, which together tell you everything that leaves your machine.

@@ -25,8 +25,8 @@ open public issues for vulnerabilities.
   column names, schema names, connection URIs, credentials, SQL, or cell
   values; the event is assembled on your machine and nothing is derived from
   the request. Inspect before it is sent: `semlayer telemetry --show`. Opt
-  out: `semlayer telemetry --off` (permanent) or `SEMLAYER_TELEMETRY=off`
-  (this shell). Full field list: [docs/telemetry.md](docs/telemetry.md).
+  out: `semlayer telemetry --off` (permanent, reversible with `--on`) or
+  `SEMLAYER_TELEMETRY=off` (this shell). Full field list: [docs/telemetry.md](docs/telemetry.md).
 - The MCP server binds stdio (local) and serves the semantic layer document;
   it executes no warehouse queries.
 

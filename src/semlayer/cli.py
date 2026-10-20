@@ -208,6 +208,7 @@ def _cmd_infer(args: argparse.Namespace) -> int:
                                     context=context, only=only, lineage=lineage,
                                     use_declared=not args.no_declared_constraints,
                                     state=state)
+    _note_run(report, doc, llm)
     if context:
         report["context"] = {"chunks": len(context.chunks),
                              "dictionary_rows": len(context.dictionary)}
@@ -277,6 +278,9 @@ def _cmd_probe(args: argparse.Namespace) -> int:
     if args.sample:
         p = tier2(src, p)
 
+    from semlayer import telemetry
+    telemetry.note(probe=p.telemetry())
+
     if args.json:
         print(json.dumps(p.telemetry(), indent=1))
     else:
@@ -285,7 +289,10 @@ def _cmd_probe(args: argparse.Namespace) -> int:
             print("\nRun with --sample to measure whether several tables hold the "
                   "same key values. That reads rows, so it is opt-in.")
     if args.share:
-        print("\n# Telemetry payload (nothing is sent by this command):")
+        # This used to say "nothing is sent by this command", which was true
+        # only while no sender existed. It is sent now, like every other
+        # event, unless telemetry is off.
+        print("\n# Telemetry payload (sent with this run unless telemetry is off):")
         print(json.dumps(p.telemetry(), indent=1))
     return 0
 
@@ -371,17 +378,38 @@ def _cmd_telemetry(args: argparse.Namespace) -> int:
     """
     from semlayer import telemetry
 
-    if args.off:
-        telemetry.turn_off()
-    elif args.on:
-        telemetry.turn_on()
-    elif args.show:
-        spool = telemetry.spool_path()
-        if spool.exists():
-            sys.stdout.write(spool.read_text())
-        else:
-            print(f"no events recorded ({spool})")
-        return 0
+    # These are the one place telemetry is allowed to fail loudly. Elsewhere
+    # it swallows everything, because it must never break the command the
+    # user actually ran -- but here changing the setting IS the command, and
+    # silently failing would leave them believing a privacy choice took
+    # effect when it did not.
+    try:
+        if args.off:
+            telemetry.turn_off()
+        elif args.on:
+            telemetry.turn_on()
+        elif args.show:
+            spool = telemetry.spool_path()
+            if spool.exists():
+                sys.stdout.write(spool.read_text())
+            else:
+                print(f"no events recorded ({spool})")
+            return 0
+    except OSError as e:
+        where = telemetry.spool_path().parent
+        if args.off:
+            raise SemlayerError(
+                f"could not turn telemetry off: {where} is not writable",
+                hint="telemetry is still ON. Set SEMLAYER_TELEMETRY=off in "
+                     "your environment, which needs no file, or make that "
+                     "directory writable") from e
+        if args.on:
+            raise SemlayerError(
+                f"could not turn telemetry on: {where} is not writable",
+                hint="telemetry remains off, which is the safe direction. "
+                     "Make that directory writable to change it") from e
+        raise SemlayerError(f"could not read the telemetry spool in {where}",
+                            hint="check that directory is readable") from e
 
     why = telemetry.disabled_by()
     if why is None:
@@ -430,6 +458,78 @@ warehouse type, table/column counts, version, OS. Never names, SQL, or data.
   Turn it off permanently:   semlayer telemetry --off
 Details: https://github.com/neocatalystlabs/semlayer/blob/main/docs/telemetry.md
 """
+
+
+def _note_run(report: dict, doc: dict | None = None, llm=None) -> None:
+    """Hand what the pipeline learned to telemetry.
+
+    The report already carries all of this -- it is what `infer --json`
+    prints -- so nothing new is computed and nothing new is measured. The
+    values pass through the whitelist on the way out, where the counts are
+    bucketed, so an exact table count cannot escape from here either.
+    """
+    from semlayer import telemetry
+
+    counts = report.get("counts") or {}
+    # `schemas` is not in the report, but every table's `source` is
+    # "schema.table", so the COUNT is derivable. Only the count leaves --
+    # the names are discarded here, and the count is bucketed on the way out.
+    schemas = None
+    if doc:
+        sl = doc.get("semantic_layer", doc)      # the document is wrapped
+        names = {str(t.get("source", "")).rsplit(".", 1)[0]
+                 for t in (sl.get("tables") or [])
+                 if "." in str(t.get("source", ""))}
+        schemas = len(names) or None
+    telemetry.note(
+        tables=counts.get("tables"),
+        columns=counts.get("columns"),
+        schemas=schemas,
+        stages={k: int(v) for k, v in (report.get("stages") or {}).items()},
+        llm=_llm_class(llm),
+    )
+
+
+def _llm_class(llm) -> str:
+    """Provider class only -- never the model, the key, or the endpoint."""
+    if llm is None:
+        return "none"
+    name = type(llm).__name__.lower()
+    if "anthropic" in name:
+        return "anthropic"
+    if "openai" in name:
+        return "openai"
+    return "other"
+
+
+def _note_invocation(args: argparse.Namespace) -> None:
+    """Facts knowable before the work: which warehouse, which flags.
+
+    Recorded up front so they survive a failure -- a run that dies on
+    connection is exactly the one where knowing the connector matters.
+    """
+    from semlayer import telemetry
+
+    # Known aliases only. Anything else falls through to the whitelist and
+    # is DROPPED, which is deliberate: this takes everything before the first
+    # colon, so `semlayer infer mydb.duckdb` yields "mydb.duckdb" -- a
+    # filename. A strict set with no "other" is what stops that becoming a
+    # recorded field.
+    aliases = {"postgresql": "postgres", "pg": "postgres",
+               "bq": "bigquery", "sf": "snowflake"}
+    scheme = None
+    for attr in ("source", "warehouse"):
+        value = getattr(args, attr, None)
+        if isinstance(value, str) and value:
+            raw = value.split(":", 1)[0].split("+", 1)[0].lower()
+            scheme = aliases.get(raw, raw)
+            break
+    telemetry.note(
+        connector=scheme,
+        flags=[f for f in ("no_llm", "no_sample_egress",
+                           "no_declared_constraints", "apply", "json", "share")
+               if getattr(args, f, False)],
+    )
 
 
 def _error_class(e: BaseException) -> str:
@@ -491,6 +591,7 @@ def main(argv: list[str] | None = None) -> int:
     # event could previously carry nothing but a command name. `t` is still
     # the start, so a run is attributed to the minute it began -- only the
     # write waits.
+    _note_invocation(args)
     started_wall, started = int(time.time()), time.monotonic()
     outcome, error_class = "ok", None
     try:

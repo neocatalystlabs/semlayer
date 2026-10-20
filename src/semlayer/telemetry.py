@@ -101,6 +101,25 @@ def _anon_id() -> str:
     return f.read_text().strip()
 
 
+_pending: dict = {}
+
+
+def note(**fields) -> None:
+    """Contribute fields to the event this run will write.
+
+    The event is written in main()'s `finally`, which has no access to what
+    a handler learned -- the table count, the stage timings, which provider
+    was used. Threading a telemetry object through the pipeline would touch
+    every signature for one line of bookkeeping, so handlers deposit here
+    and record() merges.
+
+    Process-scoped and never reset, because one CLI process runs exactly one
+    command. Values are still whitelisted and bucketed on the way out, so
+    this is a convenience, not a second route past the serializer.
+    """
+    _pending.update(fields)
+
+
 def _environment() -> dict:
     """Machine facts, identical on every event from a given machine.
 
@@ -143,8 +162,10 @@ def record(event: str, t: int | None = None, **props) -> None:
             "anon": _anon_id(),
             # _environment() last: machine facts are ours to state, not a
             # caller's to override.
+            # _pending first so an explicit argument wins, _environment()
+            # last because machine facts are ours to state.
             **telemetry_schema.serialize(
-                {**props, "event": event, **_environment()}),
+                {**_pending, **props, "event": event, **_environment()}),
         }
         _DIR.mkdir(parents=True, exist_ok=True)
         with open(_SPOOL, "a") as f:

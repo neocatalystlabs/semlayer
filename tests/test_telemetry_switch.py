@@ -105,3 +105,53 @@ def test_another_command_is_still_recorded(tmp_path, monkeypatch, capsys):
     importlib.reload(telemetry)
     telemetry.record("cli", command="validate")
     assert "validate" in (tmp_path / "telemetry.jsonl").read_text()
+
+
+def test_the_marker_can_be_removed_after_it_is_written(tele, tmp_path):
+    """A setting you cannot reverse is a trap. Deletion needs the DIRECTORY
+    writable rather than the file, so even a read-only marker comes off."""
+    tele.turn_off()
+    marker = tmp_path / "telemetry_off"
+    marker.chmod(0o444)
+    tele.turn_on()
+    assert not marker.exists()
+    assert tele.enabled()
+
+
+def test_failing_to_turn_it_off_says_it_is_still_on(tmp_path, monkeypatch, capsys):
+    """The dangerous direction. If the marker cannot be written the user is
+    still being measured, and must be told plainly -- plus the env var,
+    which needs no file and therefore always works."""
+    import importlib
+    monkeypatch.setenv("SEMLAYER_HOME", str(tmp_path))
+    monkeypatch.delenv("SEMLAYER_TELEMETRY", raising=False)
+    from semlayer import telemetry
+    importlib.reload(telemetry)
+    tmp_path.chmod(0o500)
+    try:
+        from semlayer.cli import main
+        assert main(["telemetry", "--off"]) == 2
+        err = capsys.readouterr().err
+        assert "still ON" in err
+        assert "SEMLAYER_TELEMETRY=off" in err
+        assert "Traceback" not in err
+    finally:
+        tmp_path.chmod(0o700)
+
+
+def test_failing_to_turn_it_on_is_reported_as_the_safe_direction(
+        tmp_path, monkeypatch, capsys):
+    import importlib
+    monkeypatch.setenv("SEMLAYER_HOME", str(tmp_path))
+    monkeypatch.delenv("SEMLAYER_TELEMETRY", raising=False)
+    from semlayer import telemetry
+    t = importlib.reload(telemetry)
+    t.turn_off()
+    tmp_path.chmod(0o500)
+    try:
+        from semlayer.cli import main
+        assert main(["telemetry", "--on"]) == 2
+        err = capsys.readouterr().err
+        assert "safe direction" in err and "Traceback" not in err
+    finally:
+        tmp_path.chmod(0o700)

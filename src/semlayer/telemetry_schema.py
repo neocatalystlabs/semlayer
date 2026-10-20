@@ -101,13 +101,34 @@ def _stage_times(v: object) -> dict[str, int] | None:
     return out or None
 
 
+# Probe reports counts as well as ratios, and they were going out exact --
+# straight past the bucketing applied to the very same quantities at the top
+# level. Bucketing `tables` because an exact pair fingerprints a warehouse,
+# while shipping that pair inside a nested object, is not a policy.
+_PROBE_BUCKETED = {"tables": _TABLE_BUCKETS, "columns": _COLUMN_BUCKETS,
+                   "schemas": _SCHEMA_BUCKETS}
+
+
 def _probe(v: object) -> dict | None:
-    """Probe.telemetry() output: grades and ratios, never names."""
+    """Probe.telemetry() output: grades and ratios, never names.
+
+    Counts are bucketed to the same granularity as the top-level fields.
+    Ratios stay exact -- they are already fractions and disclose nothing
+    about size.
+    """
     if not isinstance(v, dict):
         return None
-    out = {k: x for k, x in v.items()
-           if isinstance(k, str) and isinstance(x, (int, float, str, bool))
-           and not (isinstance(x, str) and len(x) > 32)}
+    out: dict[str, object] = {}     # bucket labels are str, ratios are float
+    for k, x in v.items():
+        if not isinstance(k, str):
+            continue
+        if k in _PROBE_BUCKETED:
+            b = _bucket(_PROBE_BUCKETED[k], x)
+            if b is not None:
+                out[k] = b
+        elif isinstance(x, (int, float, str, bool)) and not (
+                isinstance(x, str) and len(x) > 32):
+            out[k] = x
     return out or None
 
 
