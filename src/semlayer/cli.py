@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import time
 from pathlib import Path
 
 from semlayer.errors import SemlayerError
@@ -422,6 +423,38 @@ _HANDLERS = {
 }
 
 
+def _error_class(e: BaseException) -> str:
+    """Map an exception TYPE to the reported class. Never the message.
+
+    The message is where warehouse names, hostnames and SQL live, so it is
+    not read here at all. That is why this maps types, and why it is coarser
+    than the enum allows: `auth` is declared in the schema but unreachable,
+    because SourceError covers a bad URI, a refused login and a missing
+    grant alike and telling them apart would mean parsing text.
+
+    Builtins are mapped too. A missing file or an unreadable one is an
+    ordinary user mistake, and calling it "internal" would make that bucket
+    -- which should mean OUR bug -- mean nothing.
+    """
+    from semlayer.errors import DriftError, LLMError, SourceError, SpecError
+
+    # Most specific first: FileNotFoundError and PermissionError are both
+    # OSError, and SourceError/SpecError are both SemlayerError.
+    for kinds, label in (
+        ((SourceError,), "connection"),
+        ((SpecError,), "invalid_input"),
+        ((LLMError,), "llm"),
+        ((DriftError, SemlayerError), "other"),
+        ((PermissionError,), "permission"),
+        ((FileNotFoundError, IsADirectoryError, NotADirectoryError), "invalid_input"),
+        ((TimeoutError,), "timeout"),
+        ((ConnectionError,), "connection"),
+    ):
+        if isinstance(e, kinds):
+            return label
+    return "internal"
+
+
 def main(argv: list[str] | None = None) -> int:
     """Parse arguments, dispatch, and render taxonomy errors with hints."""
     args = _build_parser().parse_args(argv)
@@ -431,19 +464,43 @@ def main(argv: list[str] | None = None) -> int:
     )
     from semlayer import telemetry
 
-    # The one command we do not record. Logging that someone opted out, at
-    # the moment they opted out, is exactly the behaviour the switch exists
-    # to prevent -- and `--show` must print what WOULD be sent, not a spool
-    # this invocation just appended to.
-    if args.command != "telemetry":
-        telemetry.record("cli", command=args.command)
+    # Recorded in `finally`, not here. duration_s, outcome and error_class
+    # do not exist until the work is over, and recording up front is why the
+    # event could previously carry nothing but a command name. `t` is still
+    # the start, so a run is attributed to the minute it began -- only the
+    # write waits.
+    started_wall, started = int(time.time()), time.monotonic()
+    outcome, error_class = "ok", None
     try:
-        return _HANDLERS[args.command](args)
+        rc = _HANDLERS[args.command](args)
+        if rc != 0:
+            outcome = "error"      # a handler can fail without raising
+        return rc
     except SemlayerError as e:
+        outcome, error_class = "error", _error_class(e)
         print(f"error: {e}", file=sys.stderr)
         if e.hint:
             print(f"hint:  {e.hint}", file=sys.stderr)
         return 2
+    except KeyboardInterrupt:
+        outcome = "interrupted"
+        raise
+    except Exception as e:
+        # Caught only to classify. Re-raised immediately, so the user sees
+        # the same traceback as before -- but an unexpected failure stops
+        # being invisible to us.
+        outcome, error_class = "error", _error_class(e)
+        raise
+    finally:
+        # The one command we do not record. Logging that someone opted out,
+        # at the moment they opted out, is the behaviour the switch exists to
+        # prevent -- and `--show` must print what WOULD be sent, not a spool
+        # this invocation just appended to.
+        if args.command != "telemetry":
+            telemetry.record(
+                "cli", t=started_wall, command=args.command,
+                duration_s=int(time.monotonic() - started),
+                outcome=outcome, error_class=error_class)
 
 
 if __name__ == "__main__":

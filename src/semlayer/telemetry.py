@@ -22,9 +22,13 @@ from __future__ import annotations
 
 import json
 import os
+import platform
+import sys
 import time
 import uuid
 from pathlib import Path
+
+from semlayer import telemetry_schema
 
 _DIR = Path(os.environ.get("SEMLAYER_HOME", Path.home() / ".semlayer"))
 _SPOOL = _DIR / "telemetry.jsonl"
@@ -82,18 +86,53 @@ def _anon_id() -> str:
     return f.read_text().strip()
 
 
-def record(event: str, **props) -> None:
+def _environment() -> dict:
+    """Machine facts, identical on every event from a given machine.
+
+    Computed here rather than passed by callers, so there is one place that
+    decides what "the machine" discloses. Deliberately coarse: major.minor
+    for Python and no kernel release, because a full version string plus an
+    exact architecture narrows a population faster than it informs anything
+    we would act on.
+    """
+    from semlayer import __version__
+    machine = platform.machine().lower()
+    return {
+        "version": __version__,
+        "python": f"{sys.version_info.major}.{sys.version_info.minor}",
+        "os": platform.system().lower(),
+        "arch": "arm64" if machine in ("arm64", "aarch64")
+                else "x86_64" if machine in ("x86_64", "amd64") else "other",
+        "ci": bool(os.environ.get("CI")),
+    }
+
+
+def record(event: str, t: int | None = None, **props) -> None:
     """Append one event to the local spool.
 
-    Props must be counts/durations/enums only — never identifiers or content.
+    Every field passes through the whitelist in telemetry_schema; anything
+    not declared there is dropped, and counts are bucketed on the way out.
+    A caller cannot send an exact table count or an undeclared field even
+    by mistake, which is the point -- it makes the honesty contract a
+    property of this function rather than of everyone's future discipline.
+
+    `t` is the moment the command STARTED, passed in because the caller
+    records at the end, once duration and outcome exist.
     """
     if not enabled():
         return
     try:
+        row = {
+            "schema": telemetry_schema.SCHEMA,
+            "t": int(t if t is not None else time.time()),
+            "anon": _anon_id(),
+            # _environment() last: machine facts are ours to state, not a
+            # caller's to override.
+            **telemetry_schema.serialize(
+                {**props, "event": event, **_environment()}),
+        }
         _DIR.mkdir(parents=True, exist_ok=True)
         with open(_SPOOL, "a") as f:
-            f.write(json.dumps({
-                "t": int(time.time()), "anon": _anon_id(), "event": event, **props
-            }) + "\n")
+            f.write(json.dumps(row) + "\n")
     except OSError:
         pass  # telemetry must never break the tool
