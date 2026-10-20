@@ -118,7 +118,7 @@ def _probe(v: object) -> dict | None:
     """
     if not isinstance(v, dict):
         return None
-    out = {}
+    out: dict[str, object] = {}     # bucket labels are str, ratios are float
     for k, x in v.items():
         if not isinstance(k, str):
             continue
