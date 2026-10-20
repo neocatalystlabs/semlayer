@@ -378,17 +378,38 @@ def _cmd_telemetry(args: argparse.Namespace) -> int:
     """
     from semlayer import telemetry
 
-    if args.off:
-        telemetry.turn_off()
-    elif args.on:
-        telemetry.turn_on()
-    elif args.show:
-        spool = telemetry.spool_path()
-        if spool.exists():
-            sys.stdout.write(spool.read_text())
-        else:
-            print(f"no events recorded ({spool})")
-        return 0
+    # These are the one place telemetry is allowed to fail loudly. Elsewhere
+    # it swallows everything, because it must never break the command the
+    # user actually ran -- but here changing the setting IS the command, and
+    # silently failing would leave them believing a privacy choice took
+    # effect when it did not.
+    try:
+        if args.off:
+            telemetry.turn_off()
+        elif args.on:
+            telemetry.turn_on()
+        elif args.show:
+            spool = telemetry.spool_path()
+            if spool.exists():
+                sys.stdout.write(spool.read_text())
+            else:
+                print(f"no events recorded ({spool})")
+            return 0
+    except OSError as e:
+        where = telemetry.spool_path().parent
+        if args.off:
+            raise SemlayerError(
+                f"could not turn telemetry off: {where} is not writable",
+                hint="telemetry is still ON. Set SEMLAYER_TELEMETRY=off in "
+                     "your environment, which needs no file, or make that "
+                     "directory writable") from e
+        if args.on:
+            raise SemlayerError(
+                f"could not turn telemetry on: {where} is not writable",
+                hint="telemetry remains off, which is the safe direction. "
+                     "Make that directory writable to change it") from e
+        raise SemlayerError(f"could not read the telemetry spool in {where}",
+                            hint="check that directory is readable") from e
 
     why = telemetry.disabled_by()
     if why is None:
