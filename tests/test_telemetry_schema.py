@@ -147,3 +147,59 @@ def test_a_caller_cannot_leak_a_name_through_record(tele, tmp_path):
     row = _row(tmp_path)
     assert "warehouse_name" not in row and "sql" not in row
     assert row["tables"] == "21_50"
+
+
+# --- note(): how handlers contribute without being threaded a telemetry
+#     object through every signature ---------------------------------------
+
+def test_note_fields_reach_the_event(tele, tmp_path):
+    tele.note(connector="snowflake", tables=47)
+    tele.record("cli", command="infer")
+    row = _row(tmp_path)
+    assert row["connector"] == "snowflake"
+    assert row["tables"] == "21_50"          # still bucketed on the way out
+
+
+def test_an_explicit_argument_beats_a_noted_one(tele, tmp_path):
+    tele.note(outcome="ok")
+    tele.record("cli", command="infer", outcome="error")
+    assert _row(tmp_path)["outcome"] == "error"
+
+
+def test_note_is_not_a_second_route_past_the_whitelist(tele, tmp_path):
+    """The convenience must not become a hole."""
+    tele.note(warehouse_name="acme_prod", sql="select 1", tables=99999)
+    tele.record("cli", command="infer")
+    row = _row(tmp_path)
+    assert "warehouse_name" not in row and "sql" not in row
+    assert row["tables"] == "1000_plus"
+
+
+def test_machine_facts_still_win_over_note(tele, tmp_path):
+    tele.note(os="MyCustomOS", version="9.9.9")
+    tele.record("cli", command="infer")
+    row = _row(tmp_path)
+    assert row["os"] != "MyCustomOS" and row["version"] != "9.9.9"
+
+
+# --- probe counts must not bypass the bucketing --------------------------
+
+def test_probe_counts_are_bucketed_like_the_top_level_ones():
+    """They were exact, which made the top-level bucketing pointless: the
+    same numbers were going out inside a nested object."""
+    out = ts.serialize({"probe": {"tables": 36, "columns": 198, "schemas": 1,
+                                  "grade": "weak", "declared_pk_ratio": 0.4}})
+    p = out["probe"]
+    assert p["tables"] == "21_50"
+    assert p["columns"] == "51_200"
+    assert p["schemas"] == "1"
+    assert p["declared_pk_ratio"] == 0.4      # ratios stay exact
+    assert p["grade"] == "weak"
+
+
+def test_no_exact_count_survives_anywhere_in_an_event():
+    """Belt and braces: walk the whole structure looking for the raw numbers."""
+    out = ts.serialize({"tables": 36, "columns": 198,
+                        "probe": {"tables": 36, "columns": 198}})
+    flat = json.dumps(out)
+    assert "36" not in flat and "198" not in flat

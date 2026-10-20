@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.6.0-beta.1 (2026-10-20)
+
 ### Telemetry is now sent, and here is how to stop it
 
 Previous releases recorded anonymous usage statistics to a local file and
@@ -40,6 +42,32 @@ command, and the spool is cleared **only** when the server confirms receipt
 `--no-llm` is unchanged and still means no schema, names, or samples reach a
 model provider. It has never been a statement about all network traffic, and
 `SECURITY.md` says so explicitly.
+
+### Ordinary mistakes no longer look like crashes
+
+A mistyped filename and an unsupported warehouse URI both produced a Python
+traceback. They now produce an error and a hint:
+
+```
+$ semlayer validate nope.yaml
+FAIL  nope.yaml
+        file not found: nope.yaml
+
+$ semlayer infer snowflake://nope
+error: unsupported source uri: snowflake://nope
+hint:  expected one of: snowflake, bigquery, duckdb:<path>, postgres, postgresql://<dsn>
+```
+
+`validate` reports a missing file and carries on with the rest, rather than
+stopping on the first one.
+
+### `--no-llm` is documented more precisely
+
+`SECURITY.md` previously said `--no-llm` meant "nothing leaves your
+environment at all". It means no schema, column names, or sample values
+reach a model provider — a statement about where your data goes, not about
+all network traffic. The wording was corrected before telemetry made the old
+phrasing false, not after.
 
 ### The telemetry off switch now works
 

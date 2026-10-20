@@ -79,3 +79,45 @@ def test_a_user_mistake_is_not_recorded_as_internal(tmp_path, monkeypatch):
     row = json.loads(lines[-1])
     assert row["outcome"] == "error"
     assert row["error_class"] == "connection"
+
+
+def test_a_bare_filename_never_becomes_a_connector(tmp_path, monkeypatch):
+    """The scheme is everything before the first colon, so a path with no
+    scheme would otherwise record a filename."""
+    import argparse
+    import importlib
+    import json
+    monkeypatch.setenv("SEMLAYER_HOME", str(tmp_path))
+    monkeypatch.delenv("SEMLAYER_TELEMETRY", raising=False)
+    from semlayer import telemetry
+    importlib.reload(telemetry)
+    from semlayer.cli import _note_invocation
+
+    _note_invocation(argparse.Namespace(source="acme_finance_prod.duckdb"))
+    telemetry.record("cli", command="infer")
+    row = json.loads((tmp_path / "telemetry.jsonl").read_text().splitlines()[-1])
+    assert "connector" not in row
+    assert "acme_finance_prod" not in json.dumps(row)
+
+
+def test_the_connector_is_the_scheme_not_the_uri(tmp_path, monkeypatch):
+    """`connector` must be the warehouse type and nothing else -- the URI
+    carries accounts, hosts, databases and sometimes credentials."""
+    import argparse
+    import importlib
+    monkeypatch.setenv("SEMLAYER_HOME", str(tmp_path))
+    monkeypatch.delenv("SEMLAYER_TELEMETRY", raising=False)
+    from semlayer import telemetry
+    importlib.reload(telemetry)
+    from semlayer.cli import _note_invocation
+
+    secret = "postgresql://user:hunter2@db.internal.acme.com:5432/finance_prod"
+    _note_invocation(argparse.Namespace(source=secret))
+    telemetry.record("cli", command="infer")
+
+    import json
+    row = json.loads((tmp_path / "telemetry.jsonl").read_text().splitlines()[-1])
+    assert row["connector"] == "postgres"   # postgresql:// normalised
+    blob = json.dumps(row)
+    for leaked in ("hunter2", "acme", "finance_prod", "db.internal"):
+        assert leaked not in blob
