@@ -56,11 +56,25 @@ def test_unsupported_uris_never_raise_a_bare_builtin(uri):
         open_source_from_uri(uri)
 
 
-def test_the_cli_prints_error_and_hint_rather_than_a_traceback(capsys):
+def test_the_cli_prints_error_and_hint_rather_than_a_traceback(capsys, tmp_path):
+    """Steady state, so the first-run telemetry notice is not in the way.
+
+    This previously asserted stderr STARTED with "error:" and passed only
+    because the developer's real ~/.semlayer already had a notice marker.
+    Once every test got an isolated home the notice printed first and the
+    assertion failed -- correctly. The notice preceding an error on a
+    genuinely first run is right; the test's assumption was not.
+    """
+    import os
+    from pathlib import Path
+    Path(os.environ["SEMLAYER_HOME"]).mkdir(parents=True, exist_ok=True)
+    (Path(os.environ["SEMLAYER_HOME"]) / "telemetry_notice").touch()
+
     from semlayer.cli import main
     assert main(["infer", "snowflake://nope"]) == 2
     err = capsys.readouterr().err
     assert err.startswith("error:") and "hint:" in err
+    assert "Traceback" not in err
 
 
 def test_a_user_mistake_is_not_recorded_as_internal(tmp_path, monkeypatch):
