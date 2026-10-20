@@ -73,6 +73,9 @@ def test_a_user_mistake_is_not_recorded_as_internal(tmp_path, monkeypatch):
     importlib.reload(telemetry)
     from semlayer.cli import main
     main(["infer", "snowflake://nope"])
-    row = json.loads((tmp_path / "telemetry.jsonl").read_text().splitlines()[-1])
+    # The spool survives because conftest blocks the send, which is also
+    # what a user with no network sees.
+    lines = (tmp_path / "telemetry.jsonl").read_text().splitlines()
+    row = json.loads(lines[-1])
     assert row["outcome"] == "error"
     assert row["error_class"] == "connection"

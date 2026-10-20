@@ -423,6 +423,15 @@ _HANDLERS = {
 }
 
 
+_TELEMETRY_NOTICE = """\
+semlayer now sends anonymous usage statistics: command, duration, outcome,
+warehouse type, table/column counts, version, OS. Never names, SQL, or data.
+  See exactly what is sent:  semlayer telemetry --show
+  Turn it off permanently:   semlayer telemetry --off
+Details: https://github.com/neocatalystlabs/semlayer/blob/main/docs/telemetry.md
+"""
+
+
 def _error_class(e: BaseException) -> str:
     """Map an exception TYPE to the reported class. Never the message.
 
@@ -464,6 +473,19 @@ def main(argv: list[str] | None = None) -> int:
     )
     from semlayer import telemetry
 
+    # Printed before the work, not after, so a long `infer` cannot send its
+    # first event before the user has been told that sending now happens.
+    #
+    # Never for `telemetry` itself. That command is the inspection and
+    # control surface, and marking the notice TRUNCATES the spool -- so a
+    # user whose first command after upgrading is `telemetry --show` would
+    # be shown the notice, have the spool wiped, and then be shown nothing.
+    # They asked to see what would be sent and we would have deleted it.
+    if (args.command != "telemetry"
+            and telemetry.enabled() and telemetry.notice_pending()):
+        print(_TELEMETRY_NOTICE, file=sys.stderr)
+        telemetry.mark_notice_shown()
+
     # Recorded in `finally`, not here. duration_s, outcome and error_class
     # do not exist until the work is over, and recording up front is why the
     # event could previously carry nothing but a command name. `t` is still
@@ -501,6 +523,10 @@ def main(argv: list[str] | None = None) -> int:
                 "cli", t=started_wall, command=args.command,
                 duration_s=int(time.monotonic() - started),
                 outcome=outcome, error_class=error_class)
+            # Last thing, after the event exists. Bounded by its own
+            # deadline, so a dead network costs 1.5s once rather than
+            # hanging the command.
+            telemetry.flush()
 
 
 if __name__ == "__main__":

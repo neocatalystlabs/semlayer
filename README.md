@@ -44,7 +44,7 @@ Everything lands with `confidence` ([calibrated, with the misses published](docs
 - **`--no-llm`**: fully deterministic mode, zero API calls, still useful (0.780 typing / 0.834 role across 7 fixtures, against 0.809 / 0.838 with the model) — for orgs where LLM access needs procurement.
 - **`--no-sample-egress`**: no value read from a warehouse cell is sent to the LLM, at **no net accuracy cost** across our 7 fixtures (0.809 typing / 0.842 role, versus 0.809 / 0.838 with samples). Per warehouse it trades rather than being uniformly free — up to a point better or worse. Re-measured 2026-10-03; see [docs/cost-model.md](docs/cost-model.md).
 - **Read-only, minimal-grant**: `semlayer init` generates the grant script; the reader persona is proved unable to write — on PostgreSQL by a test that runs in ordinary CI against a real server (`tests/test_postgres.py`, no credentials needed), and on Snowflake by a live suite runnable against your own account (`tests/test_snowflake_live.py`).
-- **Telemetry**: anonymous command counts spooled *locally only* — nothing leaves your machine in this release. See them with `semlayer telemetry --show`; opt out permanently with `semlayer telemetry --off`, or per-shell with `SEMLAYER_TELEMETRY=off`. ([details](SECURITY.md))
+- **Telemetry**: anonymous usage statistics — command, duration, outcome, warehouse type, bucketed table/column counts, version, OS. Never names, SQL, or data. See exactly what is sent with `semlayer telemetry --show`; opt out with `semlayer telemetry --off`, or per-shell with `SEMLAYER_TELEMETRY=off`. ([what and why](docs/telemetry.md))
 
 ## Honest scope (beta)
 
