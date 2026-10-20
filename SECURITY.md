@@ -19,10 +19,14 @@ open public issues for vulnerabilities.
   LLM. Your data never reaches a model provider. This is a statement about
   where your schema and data go, not about all network traffic -- see
   Telemetry below.
-- **Telemetry**: anonymous command counts spooled to a local file only; no
-  network transmission exists in this release. Inspect: `semlayer telemetry
-  --show`. Opt out: `semlayer telemetry --off` (permanent) or
-  `SEMLAYER_TELEMETRY=off` (this shell).
+- **Telemetry**: anonymous usage statistics are sent to
+  `telemetry.semlayer.dev`, infrastructure we run — command, duration,
+  outcome, warehouse type, bucketed counts, version, OS. **Never** table or
+  column names, schema names, connection URIs, credentials, SQL, or cell
+  values; the event is assembled on your machine and nothing is derived from
+  the request. Inspect before it is sent: `semlayer telemetry --show`. Opt
+  out: `semlayer telemetry --off` (permanent) or `SEMLAYER_TELEMETRY=off`
+  (this shell). Full field list: [docs/telemetry.md](docs/telemetry.md).
 - The MCP server binds stdio (local) and serves the semantic layer document;
   it executes no warehouse queries.
 

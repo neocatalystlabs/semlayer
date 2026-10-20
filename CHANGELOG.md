@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+### Telemetry is now sent, and here is how to stop it
+
+Previous releases recorded anonymous usage statistics to a local file and
+transmitted nothing. **This release sends them** to
+`telemetry.semlayer.dev`, which is our own infrastructure — no third-party
+analytics service is involved.
+
+The first run prints a notice saying so, once.
+
+```sh
+semlayer telemetry --show     # exactly what would be sent, before it is
+semlayer telemetry --off      # permanently off
+```
+
+**What is sent**: command, duration, outcome, error class, warehouse type,
+bucketed table and column counts, version, Python major.minor, OS,
+architecture. **What is never sent**: table or column names, schema or
+database names, connection URIs, credentials, SQL, cell values, file paths.
+
+That is enforced rather than promised. Every field passes through a
+whitelist; a caller cannot send an undeclared key because the serializer has
+no path that writes one, and counts are bucketed there rather than at call
+sites, so an exact count cannot be sent by mistake. Full list and reasoning:
+[docs/telemetry.md](docs/telemetry.md).
+
+**Events collected by earlier versions are discarded, not sent.** They were
+recorded while the documentation promised that nothing left your machine, so
+transmitting them would make that promise retroactively false. The first run
+of this version deletes the existing spool and starts fresh.
+
+Sending happens at the end of a command, in a background thread with a
+1.5-second deadline. A slow or unreachable endpoint cannot slow or hang your
+command, and the spool is cleared **only** when the server confirms receipt
+— a failure never destroys pending events.
+
+`--no-llm` is unchanged and still means no schema, names, or samples reach a
+model provider. It has never been a statement about all network traffic, and
+`SECURITY.md` says so explicitly.
+
 ### The telemetry off switch now works
 
 `semlayer telemetry` shows whether telemetry is on, where the spool is, and

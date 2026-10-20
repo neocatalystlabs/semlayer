@@ -15,7 +15,6 @@ import pytest
 
 from semlayer import telemetry_schema as ts
 
-
 # --- the whitelist ----------------------------------------------------
 
 def test_undeclared_fields_are_dropped():
