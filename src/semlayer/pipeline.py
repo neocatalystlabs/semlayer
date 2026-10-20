@@ -8,6 +8,7 @@ import time
 
 from semlayer.describe import describe_source
 from semlayer.enrich import enrich_source
+from semlayer.errors import SourceError
 from semlayer.link import link_source
 from semlayer.profile.run import _scale_warning, profile_with_stats
 
@@ -120,4 +121,11 @@ def open_source_from_uri(uri: str):
     if uri == "postgres":
         from semlayer.connectors.postgres import PostgresSource
         return PostgresSource.from_env(persona="reader")
-    raise ValueError(f"unsupported source uri: {uri}")
+    # A SourceError rather than a ValueError: this is a user typing a URI,
+    # not a broken invariant, and it should read as advice rather than as a
+    # crash. It is also what lets telemetry record `connection` instead of
+    # `internal`, which should mean OUR bug.
+    raise SourceError(
+        f"unsupported source uri: {uri}",
+        hint="expected one of: snowflake, bigquery, duckdb:<path>, "
+             "postgres, postgresql://<dsn>")

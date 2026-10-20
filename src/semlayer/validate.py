@@ -286,6 +286,16 @@ def validate_file(path: str | Path) -> ValidationResult:
         doc = load_document(path)
     except yaml.YAMLError as e:
         return ValidationResult(errors=[f"yaml: {e}"])
+    except FileNotFoundError:
+        # Reported, not raised: `validate` takes several paths and should
+        # say which one is missing and carry on, the same as it does for a
+        # file that parses but fails. Previously this escaped as a
+        # traceback, so a mistyped filename looked like a crash.
+        return ValidationResult(errors=[f"file not found: {path}"])
+    except IsADirectoryError:
+        return ValidationResult(errors=[f"not a file: {path}"])
+    except PermissionError:
+        return ValidationResult(errors=[f"cannot read: {path}"])
     if not isinstance(doc, dict):
         return ValidationResult(errors=["document is not a mapping"])
     return validate_document(doc)

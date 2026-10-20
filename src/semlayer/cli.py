@@ -15,7 +15,7 @@ import sys
 import time
 from pathlib import Path
 
-from semlayer.errors import SemlayerError
+from semlayer.errors import SemlayerError, SpecError
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -126,10 +126,10 @@ def _load_doc(path: str) -> dict:
     try:
         doc = yaml.safe_load(Path(path).read_text())
     except FileNotFoundError as e:
-        raise SemlayerError(f"document not found: {path}",
+        raise SpecError(f"document not found: {path}",
                             hint="run `semlayer infer` first, or check the path") from e
     except yaml.YAMLError as e:
-        raise SemlayerError(f"document is not valid YAML: {path} ({e})") from e
+        raise SpecError(f"document is not valid YAML: {path} ({e})") from e
     if not isinstance(doc, dict) or "semantic_layer" not in doc:
         raise SemlayerError(f"not a semantic layer document: {path}",
                             hint="expected a top-level `semantic_layer:` mapping")
