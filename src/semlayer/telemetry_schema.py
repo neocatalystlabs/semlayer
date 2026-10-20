@@ -1,0 +1,154 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""What a telemetry event may contain, and the only way to build one.
+
+This module is the honesty contract in executable form. `record()` used to
+write whatever keyword arguments it was handed; now every field passes
+through `serialize()`, which drops anything not declared here and reshapes
+what is.
+
+Two properties follow from that, and neither depends on anyone remembering:
+
+  * A caller cannot send a field nobody declared. Not "should not" -- the
+    serializer has no path that writes an unknown key.
+  * A caller cannot send an exact table or column count, because the buckets
+    are applied HERE rather than at call sites. An exact count is a weak
+    fingerprint of a particular warehouse; a range is not.
+
+Bumping SCHEMA: any change to the fields below. Old events keep their old
+number and stay readable, because the receiver stores what it recognises and
+parks the rest rather than rejecting a batch it does not fully understand.
+"""
+
+from __future__ import annotations
+
+SCHEMA = 1
+
+# (lower_bound, label), highest first. A value is labelled by the first bound
+# it reaches.
+_TABLE_BUCKETS = [(1000, "1000_plus"), (201, "201_1000"), (51, "51_200"),
+                  (21, "21_50"), (6, "6_20"), (1, "1_5"), (0, "0")]
+_COLUMN_BUCKETS = [(10000, "10000_plus"), (2001, "2001_10000"), (501, "501_2000"),
+                   (201, "201_500"), (51, "51_200"), (1, "1_50"), (0, "0")]
+_SCHEMA_BUCKETS = [(6, "6_plus"), (2, "2_5"), (1, "1")]
+
+EVENTS = {"cli", "infer", "probe", "drift", "validate", "export", "mcp",
+          "init", "review", "lint", "telemetry"}
+CONNECTORS = {"snowflake", "bigquery", "postgres", "duckdb", "none"}
+OUTCOMES = {"ok", "error", "interrupted"}
+ERROR_CLASSES = {"connection", "auth", "permission", "llm", "timeout",
+                 "invalid_input", "internal", "other"}
+LLMS = {"anthropic", "openai", "other", "none"}
+OSES = {"linux", "darwin", "windows", "other"}
+ARCHES = {"x86_64", "arm64", "other"}
+FLAGS = {"no_llm", "no_sample_egress", "no_declared_constraints", "apply",
+         "json", "share"}
+
+
+def _bucket(buckets: list[tuple[int, str]], v: object) -> str | None:
+    if not isinstance(v, int) or isinstance(v, bool) or v < 0:
+        return None
+    for lo, label in buckets:
+        if v >= lo:
+            return label
+    return None
+
+
+def _enum(allowed: set[str], v: object) -> str | None:
+    """Unknown members become "other" where that exists, else are dropped.
+
+    Dropping is the safe default: a value we did not anticipate is exactly
+    the kind of thing that turns out to be a hostname or a database name.
+    """
+    if not isinstance(v, str):
+        return None
+    if v in allowed:
+        return v
+    return "other" if "other" in allowed else None
+
+
+def _int(v: object) -> int | None:
+    return v if isinstance(v, int) and not isinstance(v, bool) and v >= 0 else None
+
+
+def _bool(v: object) -> bool | None:
+    return v if isinstance(v, bool) else None
+
+
+def _version(v: object) -> str | None:
+    """A version string, length-capped. Never a path, never an interpreter."""
+    return v if isinstance(v, str) and 0 < len(v) <= 32 else None
+
+
+def _flags(v: object) -> list[str] | None:
+    if not isinstance(v, (list, tuple, set)):
+        return None
+    out = sorted({f for f in v if isinstance(f, str) and f in FLAGS})
+    return out or None
+
+
+def _stage_times(v: object) -> dict[str, int] | None:
+    """Stage name -> whole seconds.
+
+    Stage names are data, not an enum, so renaming or splitting a pipeline
+    stage does not bump SCHEMA. Values must be ints; anything else is
+    dropped rather than coerced, because a float here would most likely be
+    a measurement we did not mean to send.
+    """
+    if not isinstance(v, dict):
+        return None
+    out = {str(k)[:32]: x for k, x in v.items()
+           if isinstance(x, int) and not isinstance(x, bool) and 0 <= x <= 86400}
+    return out or None
+
+
+def _probe(v: object) -> dict | None:
+    """Probe.telemetry() output: grades and ratios, never names."""
+    if not isinstance(v, dict):
+        return None
+    out = {k: x for k, x in v.items()
+           if isinstance(k, str) and isinstance(x, (int, float, str, bool))
+           and not (isinstance(x, str) and len(x) > 32)}
+    return out or None
+
+
+# field -> transform. The whole whitelist; nothing else is ever written.
+FIELDS = {
+    "event":       lambda v: _enum(EVENTS, v),
+    "command":     lambda v: _enum(EVENTS, v),
+    "connector":   lambda v: _enum(CONNECTORS, v),
+    "outcome":     lambda v: _enum(OUTCOMES, v),
+    "error_class": lambda v: _enum(ERROR_CLASSES, v),
+    "llm":         lambda v: _enum(LLMS, v),
+    "os":          lambda v: _enum(OSES, v),
+    "arch":        lambda v: _enum(ARCHES, v),
+    "version":     _version,
+    "python":      _version,
+    "duration_s":  _int,
+    "ci":          _bool,
+    "flags":       _flags,
+    "stages":      _stage_times,
+    "probe":       _probe,
+    "tables":      lambda v: _bucket(_TABLE_BUCKETS, v),
+    "columns":     lambda v: _bucket(_COLUMN_BUCKETS, v),
+    "schemas":     lambda v: _bucket(_SCHEMA_BUCKETS, v),
+}
+
+# Set by record(), not by callers, and so deliberately absent from FIELDS:
+# schema, t, anon.
+RESERVED = {"schema", "t", "anon"}
+
+
+def serialize(props: dict) -> dict:
+    """Keep what is declared, reshaped. Drop everything else, silently.
+
+    Silently because the alternative is worse: raising would let a telemetry
+    mistake break a user's actual command, and warning would print noise
+    about a subsystem they did not ask about.
+    """
+    out = {}
+    for name, transform in FIELDS.items():
+        if name in props:
+            value = transform(props[name])
+            if value is not None:
+                out[name] = value
+    return out
