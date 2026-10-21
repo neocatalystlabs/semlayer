@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "a2ec036e2008",
+ "response": "[\n {\"id\": 0, \"correct\": false, \"useful\": true, \"issue\": \"Describes file name as sequential integer ID\"},\n {\"id\": 1, \"correct\": false, \"useful\": true, \"issue\": \"Describes event table as currency dimension\"},\n {\"id\": 2, \"correct\": false, \"useful\": true, \"issue\": \"sub_id mislabeled as creation date\"},\n {\"id\": 3, \"correct\": false, \"useful\": true, \"issue\": \"crt_dt mislabeled as event occurrence date\"},\n {\"id\": 4, \"correct\": false, \"useful\": true, \"issue\": \"evt_dt mislabeled as subscription identifier\"},\n {\"id\": 5, \"correct\": false, \"useful\": true, \"issue\": \"Describes currency dim as retail departments\"},\n {\"id\": 6, \"correct\": false, \"useful\": true, \"issue\": \"curr_nm mislabeled as currency code/PK\"},\n {\"id\": 7, \"correct\": false, \"useful\": true, \"issue\": \"curr_cd mislabeled as exchange rate\"},\n {\"id\": 8, \"correct\": false, \"useful\": true, \"issue\": \"to_usd_rate mislabeled as currency name\"}\n]",
+ "usage": {
+  "in": 2291,
+  "out": 1367
+ }
+}

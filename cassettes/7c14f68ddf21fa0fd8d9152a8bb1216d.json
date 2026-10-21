@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "a2ec036e2008",
+ "response": "[\n {\"id\": 0, \"correct\": true, \"useful\": false, \"issue\": \"generic restatement\"},\n {\"id\": 1, \"correct\": true, \"useful\": false, \"issue\": \"generic restatement\"},\n {\"id\": 2, \"correct\": true, \"useful\": false, \"issue\": \"generic restatement\"},\n {\"id\": 3, \"correct\": true, \"useful\": false, \"issue\": \"generic restatement\"},\n {\"id\": 4, \"correct\": true, \"useful\": false, \"issue\": \"generic restatement\"},\n {\"id\": 5, \"correct\": true, \"useful\": false, \"issue\": \"generic restatement\"},\n {\"id\": 6, \"correct\": true, \"useful\": false, \"issue\": \"generic restatement\"},\n {\"id\": 7, \"correct\": true, \"useful\": false, \"issue\": \"generic restatement\"},\n {\"id\": 8, \"correct\": true, \"useful\": false, \"issue\": \"generic restatement\"},\n {\"id\": 9, \"correct\": true, \"useful\": false, \"issue\": \"generic restatement\"},\n {\"id\": 10, \"correct\": true, \"useful\": false, \"issue\": \"generic restatement\"},\n {\"id\": 11, \"correct\": true, \"useful\": false, \"issue\": \"generic restatement\"}\n]",
+ "usage": {
+  "in": 3825,
+  "out": 671
+ }
+}

@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "a2ec036e2008",
+ "response": "[\n {\"id\": 0, \"correct\": true, \"useful\": false, \"issue\": \"Generic restatement of table name\"},\n {\"id\": 1, \"correct\": true, \"useful\": false, \"issue\": \"Generic restatement of column name\"},\n {\"id\": 2, \"correct\": true, \"useful\": false, \"issue\": \"Generic restatement of column name\"},\n {\"id\": 3, \"correct\": true, \"useful\": false, \"issue\": \"Generic restatement of table name\"},\n {\"id\": 4, \"correct\": true, \"useful\": false, \"issue\": \"Generic restatement of column name\"},\n {\"id\": 5, \"correct\": true, \"useful\": false, \"issue\": \"Generic restatement of column name\"},\n {\"id\": 6, \"correct\": true, \"useful\": false, \"issue\": \"Generic restatement of table name\"},\n {\"id\": 7, \"correct\": true, \"useful\": false, \"issue\": \"Generic restatement of column name\"},\n {\"id\": 8, \"correct\": true, \"useful\": false, \"issue\": \"Generic restatement of column name\"},\n {\"id\": 9, \"correct\": true, \"useful\": false, \"issue\": \"Generic restatement of column name\"},\n {\"id\": 10, \"correct\": true, \"useful\": false, \"issue\": \"Generic restatement of table name\"},\n {\"id\": 11, \"correct\": true, \"useful\": false, \"issue\": \"Generic restatement of column name\"}\n]",
+ "usage": {
+  "in": 3618,
+  "out": 737
+ }
+}

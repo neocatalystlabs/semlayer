@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "a2ec036e2008",
+ "response": "[\n {\"id\": 0, \"correct\": false, \"useful\": false, \"issue\": \"Describes date, but column is price\"},\n {\"id\": 1, \"correct\": false, \"useful\": false, \"issue\": \"Describes name, but column is date\"},\n {\"id\": 2, \"correct\": false, \"useful\": false, \"issue\": \"Describes payment methods, not address table\"},\n {\"id\": 3, \"correct\": false, \"useful\": false, \"issue\": \"Describes FK, but column is city name\"},\n {\"id\": 4, \"correct\": false, \"useful\": false, \"issue\": \"Describes postal code, but column is cust_id\"},\n {\"id\": 5, \"correct\": false, \"useful\": false, \"issue\": \"Describes city, but column is postal code\"},\n {\"id\": 6, \"correct\": false, \"useful\": false, \"issue\": \"Describes staging table, not payment dim\"},\n {\"id\": 7, \"correct\": false, \"useful\": false, \"issue\": \"Describes code, but column is description\"},\n {\"id\": 8, \"correct\": false, \"useful\": false, \"issue\": \"Describes description, but column is code\"},\n {\"id\": 9, \"correct\": false, \"useful\": false, \"issue\": \"Describes subscription fact, not staging table\"},\n {\"id\": 10, \"correct\": false, \"useful\": false, \"issue\": \"Describes timestamp, but column is raw_id\"},\n {\"id\": 11, \"correct\": false, \"useful\": false, \"issue\": \"Describes filename, but column is load_ts\"}\n]",
+ "usage": {
+  "in": 3263,
+  "out": 1143
+ }
+}
