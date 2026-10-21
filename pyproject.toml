@@ -33,7 +33,7 @@ dependencies = [
     # re-recorded cassettes, not something pip picks up on a Tuesday.
     "duckdb>=1.5,<2",
     "anthropic>=0.40",
-    "mcp>=1.0,<2",  # 2.x renamed FastMCP -> MCPServer and changed the tool API
+    "mcp>=1.0,<3",  # 2.x renamed FastMCP -> MCPServer and changed the tool API
     "sqlglot>=25",  # semantic SQL linter (MIT)
     # DuckDB returns a pytz tzinfo when it fetches a TIMESTAMPTZ value and does
     # not depend on pytz itself, so profiling any table with a timestamptz
