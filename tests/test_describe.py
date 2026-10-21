@@ -65,13 +65,12 @@ def test_describe_full_coverage_and_conformance():
     assert not missing, f"undescribed columns: {missing[:5]}"
 
 
-def test_description_judge_floor():
-    """Sonnet-judged correct+useful >= 0.80 (M3 target; measured 0.889)."""
-    doc, stats = _pipeline("messy_mart")
+def _judge_items(doc, stats):
+    """The judged sample. Byte-stable: the seed and the field order are both
+    part of the cassette key, so nothing here may be reordered."""
     rng = random.Random(42)  # MUST match the recording run for cassette hits
     sampled = rng.sample(doc["semantic_layer"]["tables"], 12)
-    judge = AnthropicProvider(model="claude-sonnet-5")
-    items, results = [], []
+    items = []
     for t in sampled:
         ts = stats[t["name"]]
         ev = [{"name": c["name"], "sql_type": c["sql_type"],
@@ -86,17 +85,30 @@ def test_description_judge_floor():
                           "n_distinct": ts.columns[c["name"]].n_distinct,
                           "samples": [v for v, _ in ts.columns[c["name"]].top_values[:5]],
                           "description": c.get("description", "")})
+    return items
+
+
+def _judge_run(judge, items):
+    results = []
+    for i in range(0, len(items), 12):
+        chunk = items[i:i + 12]
+        raw = judge.complete(JUDGE_SYS, json.dumps(
+            [{**it, "id": j} for j, it in enumerate(chunk)], indent=1, default=str))
+        m = re.search(r"\[.*\]", raw, re.DOTALL)
+        assert m, "judge returned no JSON"
+        for v in json.loads(m.group(0)):
+            j = v.get("id")
+            if isinstance(j, int) and 0 <= j < len(chunk):
+                results.append(v)
+    return results
+
+
+def test_description_judge_floor():
+    """Sonnet-judged correct+useful >= 0.80 (M3 target; measured 0.889)."""
+    doc, stats = _pipeline("messy_mart")
+    judge = AnthropicProvider(model="claude-sonnet-5")
     try:
-        for i in range(0, len(items), 12):
-            chunk = items[i:i + 12]
-            raw = judge.complete(JUDGE_SYS, json.dumps(
-                [{**it, "id": j} for j, it in enumerate(chunk)], indent=1, default=str))
-            m = re.search(r"\[.*\]", raw, re.DOTALL)
-            assert m, "judge returned no JSON"
-            for v in json.loads(m.group(0)):
-                j = v.get("id")
-                if isinstance(j, int) and 0 <= j < len(chunk):
-                    results.append(v)
+        results = _judge_run(judge, _judge_items(doc, stats))
     except CassetteMiss as e:
         pytest.skip(str(e))
     ok = sum(1 for v in results if v.get("correct") and v.get("useful"))
@@ -114,3 +126,80 @@ def test_table_type_meets_floor(fixture):
     acc = sum(1 for n, g in gt.items() if dt.get(n) == g) / len(gt)
     print(f"\n[{fixture}] table_type acc={acc:.3f}")
     assert acc >= TABLE_TYPE_FLOORS[fixture]
+
+
+# --- does the judge measure anything? (negative controls) ------------
+
+def _corrupt(items, arm):
+    """Break the descriptions in one known way, leaving the evidence intact.
+
+    Each arm attacks one of the judge's two stated axes, so a judge that
+    scores them all highly is failing in a diagnosable way rather than
+    merely being generous.
+    """
+    out = [dict(it) for it in items]
+    if arm == "generic":
+        for it in out:
+            it["description"] = ("A table in this data warehouse."
+                                 if it["kind"] == "table"
+                                 else "A column in this table.")
+        return out
+    if arm == "name_restatement":
+        for it in out:
+            it["description"] = (f"The {it['table']} table."
+                                 if it["kind"] == "table"
+                                 else f"The {it['column']} column.")
+        return out
+    if arm == "shuffled":
+        return _rotate_onto_siblings(out)
+    raise ValueError(arm)
+
+
+def _rotate_onto_siblings(out):
+    """Move each description onto a SIBLING column of the same table.
+
+    It stays domain-plausible that way, so only the evidence can expose it --
+    which is the point: a judge that passes this is not reading the stats.
+    """
+    groups: dict[str, list[int]] = {}
+    tables: list[int] = []
+    for i, it in enumerate(out):
+        if it["kind"] == "table":
+            tables.append(i)
+        else:
+            groups.setdefault(it["table"], []).append(i)
+    for idxs in [*groups.values(), tables]:
+        if len(idxs) < 2:
+            continue
+        descs = [out[i]["description"] for i in idxs]
+        for j, i in enumerate(idxs):
+            out[i]["description"] = descs[(j + 1) % len(descs)]
+    return out
+
+
+@pytest.mark.parametrize("arm", ["shuffled", "generic", "name_restatement"])
+def test_judge_rejects_broken_descriptions(arm):
+    """The floor above is only a quality signal if it collapses on bad input.
+
+    Without this, `test_description_judge_floor` could be scoring 0.867 for
+    reasons unrelated to description quality, and Spike A would pre-register
+    a metric nobody had checked. Measured 2026-10-21: baseline 0.867 against
+    0.000 for all three arms -- `shuffled` breaks `correct` (0.911 -> 0.000,
+    so the judge does consult the evidence) while `generic` and
+    `name_restatement` break `useful` (0.956 -> 0.000) with `correct` intact
+    at 1.000. The two axes discriminate independently.
+
+    These are COARSE corruptions. They establish the instrument is live, not
+    that it is sensitive to subtle degradation -- for that, the one data point
+    is the FK candidate widening, which moved the baseline 0.867 -> 0.778.
+    """
+    doc, stats = _pipeline("messy_mart")
+    judge = AnthropicProvider(model="claude-sonnet-5")
+    try:
+        results = _judge_run(judge, _corrupt(_judge_items(doc, stats), arm))
+    except CassetteMiss as e:
+        pytest.skip(str(e))
+    ok = sum(1 for v in results if v.get("correct") and v.get("useful"))
+    rate = ok / len(results)
+    print(f"\n[judge control: {arm}] {ok}/{len(results)} = {rate:.3f}")
+    assert rate <= 0.10, [v for v in results if v.get("correct") and v.get("useful")]

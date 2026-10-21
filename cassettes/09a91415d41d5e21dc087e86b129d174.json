@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "a2ec036e2008",
+ "response": "[{\"id\":0,\"correct\":true,\"useful\":false,\"issue\":\"generic, no real info\"},{\"id\":1,\"correct\":true,\"useful\":false,\"issue\":\"generic, no real info\"},{\"id\":2,\"correct\":true,\"useful\":false,\"issue\":\"generic, no real info\"},{\"id\":3,\"correct\":true,\"useful\":false,\"issue\":\"generic, no real info\"},{\"id\":4,\"correct\":true,\"useful\":false,\"issue\":\"generic, no real info\"},{\"id\":5,\"correct\":true,\"useful\":false,\"issue\":\"generic, no real info\"},{\"id\":6,\"correct\":true,\"useful\":false,\"issue\":\"generic, no real info\"},{\"id\":7,\"correct\":true,\"useful\":false,\"issue\":\"generic, no real info\"},{\"id\":8,\"correct\":true,\"useful\":false,\"issue\":\"generic, no real info\"},{\"id\":9,\"correct\":true,\"useful\":false,\"issue\":\"generic, no real info\"},{\"id\":10,\"correct\":true,\"useful\":false,\"issue\":\"generic, no real info\"},{\"id\":11,\"correct\":true,\"useful\":false,\"issue\":\"generic, no real info\"}]",
+ "usage": {
+  "in": 3602,
+  "out": 445
+ }
+}

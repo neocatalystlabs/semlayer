@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "a2ec036e2008",
+ "response": "[\n {\"id\": 0, \"correct\": false, \"useful\": false, \"issue\": \"Describes channel dimension, not dept_dim\"},\n {\"id\": 1, \"correct\": false, \"useful\": false, \"issue\": \"dept_nm described as code; values mismatched\"},\n {\"id\": 2, \"correct\": false, \"useful\": false, \"issue\": \"dept_cd described as name; values mismatched\"},\n {\"id\": 3, \"correct\": false, \"useful\": false, \"issue\": \"Describes order fact table, not chnl_dim\"},\n {\"id\": 4, \"correct\": false, \"useful\": false, \"issue\": \"chnl_cd described as name; samples are codes\"},\n {\"id\": 5, \"correct\": false, \"useful\": false, \"issue\": \"chnl_nm described as code; samples are names\"},\n {\"id\": 6, \"correct\": false, \"useful\": false, \"issue\": \"Describes campaign dimension, not ord_hdr\"},\n {\"id\": 7, \"correct\": false, \"useful\": false, \"issue\": \"date_key described as src_sys_id\"},\n {\"id\": 8, \"correct\": false, \"useful\": false, \"issue\": \"src_sys_id described as promo_id\"},\n {\"id\": 9, \"correct\": false, \"useful\": false, \"issue\": \"promo_id described as date_key\"},\n {\"id\": 10, \"correct\": false, \"useful\": false, \"issue\": \"Describes ETL metadata, not campaign dim\"},\n {\"id\": 11, \"correct\": false, \"useful\": false, \"issue\": \"end_dt described as cmpgn_id\"}\n]",
+ "usage": {
+  "in": 3936,
+  "out": 1374
+ }
+}
