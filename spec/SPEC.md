@@ -96,13 +96,18 @@ date column that was assumed.
 
 A consumer that writes SQL itself (rather than compiling a metric) SHOULD verify it against the document before execution — via the `check_sql` tool of a conforming server, or an equivalent linter over this format. The verifier is deterministic and reports, at minimum: references to objects not in the document; unqualified columns that resolve to an outer query block; reads of `deprecated`/`orphaned` objects; absent `required_filters` within their `scope`; additive aggregation of a parent's measure in a block that also joins a `fanout_risk` child; and SCD2 tables read without their validity window or current flag. Findings are `error` (the answer is wrong or unsafe), `warning` (probably wrong), or `info`. A consumer MUST NOT execute SQL with unresolved `error` findings without surfacing them; it SHOULD repair and re-verify. Execution-error repair alone is insufficient: the findings above are silent at execution time.
 
+### 2.12 Absence vs. omission
+
+A document's `tables` list is not a claim that nothing else exists. Where the producer emits `coverage`, a consumer MUST distinguish three cases: a table in `tables` (modelled); a table in `coverage.skipped` (exists, deliberately not modelled); and a table in neither (nothing is known either way). Asked about a `skipped` table, a consumer MUST NOT report it as absent. When the entry carries `same_shape_as`, the consumer MAY answer structural questions about it from the named table — the two share an exact column signature, which is why one was skipped — but MUST NOT assume their rows agree, and MUST NOT compile a metric over the skipped table without profiling it. A document without `coverage` makes no claim, and a consumer MUST NOT infer completeness from its absence.
+
 ## 3. Producer rules (normative)
 
 1. Metrics MUST reference only modeled objects (measures, declared dimensions/levels) — never raw SQL against unmodeled columns.
 2. Every SQL-bearing field is dialect-taggable; a bare string is the document's default dialect.
 3. Re-inference MUST NOT overwrite `reviewed`/`certified` content; conflicts are recorded in `conflicts[]` and queued for review. When a certified object's warehouse element disappears, the producer MUST transition it to `orphaned` (never delete silently, never leave it `certified`).
 4. Producers MUST populate `generated_by` (engine, model, timestamp) on generated documents; engine-version changes are a distinct drift class from warehouse changes.
-5. `confidence` MUST be calibration-tested by the producing engine; a document's confidence values are meaningless without a published calibration report. (semlayer's own report: [docs/calibration.md](../docs/calibration.md).)
+5. A producer that enumerates more tables than it models SHOULD emit `coverage`. Skipping work is legitimate — profiling the four hundredth copy of a shape you already have is waste — but doing it silently makes the document indistinguishable from one describing a smaller warehouse.
+6. `confidence` MUST be calibration-tested by the producing engine; a document's confidence values are meaningless without a published calibration report. (semlayer's own report: [docs/calibration.md](../docs/calibration.md).)
 
 ## 4. References
 

@@ -28,6 +28,7 @@
         "aggregate_tables": {"type": "array", "items": {"$ref": "#/$defs/aggregate_table"}},
         "metrics": {"type": "array", "items": {"$ref": "#/$defs/metric"}},
         "repo_knowledge": {"$ref": "#/$defs/repo_knowledge"},
+        "coverage": {"$ref": "#/$defs/coverage"},
         "document_set": {
           "type": "string",
           "minLength": 1,
@@ -525,6 +526,34 @@
           "description": "Alternate names for natural-language lookup (e.g. 'revenue', 'sales'). Hand- or docs-populated; consumers use for search only, never for identity."
         },
         "fanout_safety": {"$ref": "#/$defs/fanout_safety"}
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "required": ["tables_seen", "tables_modelled"],
+      "additionalProperties": false,
+      "description": "What the producer looked at, versus what it modelled. Without this block a consumer cannot tell 'that table exists but is not modelled here' from 'that table does not exist'. A document omitting it makes no claim either way.",
+      "properties": {
+        "tables_seen": {"type": "integer", "minimum": 0, "description": "Tables in this run's scope: what the producer enumerated from the warehouse catalogue, after any scope the caller asked for and before the producer's own skipping. `tables_seen - tables_modelled` SHOULD equal the length of `skipped`."},
+        "tables_modelled": {"type": "integer", "minimum": 0, "description": "Count of entries in `tables`. Never greater than `tables_seen`."},
+        "skipped": {
+          "type": "array",
+          "description": "Tables seen but not modelled. A consumer asked about one of these SHOULD answer that it exists and is not modelled, rather than that it is unknown.",
+          "items": {
+            "type": "object",
+            "required": ["name", "reason"],
+            "additionalProperties": false,
+            "properties": {
+              "name": {"type": "string", "minLength": 1, "description": "Table name as the warehouse catalogue reports it."},
+              "reason": {
+                "type": "string",
+                "enum": ["duplicate", "filtered", "unreadable"],
+                "description": "`duplicate`: shares a column signature and a name stem with a table that WAS modelled, so its shape is already described there. `filtered`: excluded by scope arguments or a skip list. `unreadable`: enumerated but could not be profiled, e.g. permission denied."
+              },
+              "same_shape_as": {"type": "string", "minLength": 1, "description": "For `duplicate` only: the modelled table whose column signature this one shares. A consumer MAY answer structural questions about this table from that one, but MUST NOT assume the rows agree."}
+            }
+          }
+        }
       }
     },
     "repo_knowledge": {
