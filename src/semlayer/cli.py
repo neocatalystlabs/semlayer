@@ -597,7 +597,13 @@ def main(argv: list[str] | None = None) -> int:
     try:
         rc = _HANDLERS[args.command](args)
         if rc != 0:
-            outcome = "error"      # a handler can fail without raising
+            # A handler can fail without raising: an invalid document, a
+            # missing path reported as FAIL, drift found. Exit code 1 is the
+            # document-domain outcome, so it is the input that was wrong,
+            # not the environment and not us. Left unclassified, these were
+            # the only error rows with a null class -- indistinguishable
+            # from a crash, which is the one thing the class exists to tell.
+            outcome, error_class = "error", "invalid_input"
         return rc
     except SemlayerError as e:
         outcome, error_class = "error", _error_class(e)

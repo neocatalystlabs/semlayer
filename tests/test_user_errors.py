@@ -135,3 +135,24 @@ def test_the_connector_is_the_scheme_not_the_uri(tmp_path, monkeypatch):
     blob = json.dumps(row)
     for leaked in ("hunter2", "acme", "finance_prod", "db.internal"):
         assert leaked not in blob
+
+
+def test_a_nonzero_exit_without_an_exception_is_classified(tmp_path, monkeypatch):
+    """validate on a missing file returns 1 and raises nothing.
+
+    That path recorded outcome=error with no class at all -- the first real
+    error row telemetry received had error_class null, so the table could
+    not say whether a user had mistyped a path or the tool had crashed.
+    """
+    import importlib
+    import json
+    monkeypatch.setenv("SEMLAYER_HOME", str(tmp_path))
+    monkeypatch.delenv("SEMLAYER_TELEMETRY", raising=False)
+    from semlayer import telemetry
+    importlib.reload(telemetry)
+    from semlayer.cli import main
+    assert main(["validate", str(tmp_path / "does-not-exist.yaml")]) == 1
+    lines = (tmp_path / "telemetry.jsonl").read_text().splitlines()
+    row = json.loads(lines[-1])
+    assert row["outcome"] == "error"
+    assert row["error_class"] == "invalid_input"
