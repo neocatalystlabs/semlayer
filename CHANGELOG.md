@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+### Duplicate copies are profiled once (spec 0.3.0 → 0.4.0)
+
+Two tables that share a name stem and an exact column signature are copies of
+each other — `orders` / `orders_v2`, `ga_sessions_20161121` through `…25`.
+Across 287 real warehouses, 67% of an analytics warehouse's tables are copies
+of this kind (ga360 100%, ebi_chembl 94%), against ~0% of an application
+schema (one ERP's 799 tables: zero).
+
+`semlayer infer` now profiles one member of each group and records the rest in
+a new document-level `coverage` block:
+
+```yaml
+coverage:
+  tables_seen: 412
+  tables_modelled: 139
+  skipped:
+    - name: analytics.ga_sessions_20161122
+      reason: duplicate
+      same_shape_as: analytics.ga_sessions_20161125
+```
+
+Nothing disappears: a consumer asked about a skipped table can still answer
+that it exists and what shape it has (SPEC.md §2.12). `--only` disables
+deduplication, because an explicit table list is the scope.
+
+Which member gets profiled: the unsuffixed name if there is one, never a
+`_backup`/`_old`/`_tmp` copy while anything else is available, otherwise the
+lexicographically greatest name — which for dates and version numbers is the
+most recent.
+
+`coverage` is a new optional field, so this is a MINOR spec bump and existing
+documents remain valid.
+
 ## v0.6.0-beta.1 (2026-10-20)
 
 ### Telemetry is now sent, and here is how to stop it

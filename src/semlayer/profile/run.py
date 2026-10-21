@@ -152,23 +152,19 @@ def profile_with_stats(source, no_sample_values: bool = False, llm=None, context
         tables_meta = _drop_partition_children(source, tables_meta, state)
     n_comments = 0
     if only is not None:
-        wanted = {n.lower() for n in only}
-        matched = {n for t in tables_meta for n in (t.name.lower(),
-                                                    f"{t.schema}.{t.name}".lower())} & wanted
-        tables_meta = [t for t in tables_meta
-                       if t.name.lower() in wanted
-                       or f"{t.schema}.{t.name}".lower() in wanted]
-        # Say so rather than quietly profiling fewer tables than asked for. A
-        # typo in a table name is the likeliest reason a targeted re-profile
-        # comes back thinner than expected, and silence makes it look like the
-        # table had nothing in it.
-        missing = sorted(wanted - matched)
-        if missing:
-            raise SemlayerError(
-                f"--only named {len(missing)} table(s) not in this warehouse: "
-                f"{', '.join(missing)}",
-                hint="check spelling and schema qualification; "
-                     "run without --only to list what is there")
+        tables_meta = _apply_only(tables_meta, only)
+    # Duplicate copies are skipped unless the caller named tables explicitly:
+    # --only IS the scope, and silently dropping one of two tables someone
+    # asked for by name would be wrong. 67% of an analytics warehouse's tables
+    # are versioned or partitioned copies (ga360 100%, ebi_chembl 94%) against
+    # ~0% of an application schema, so this is the largest single saving
+    # available and it costs nothing on the schemas where it finds nothing.
+    coverage: dict[str, object] = {"tables_seen": len(tables_meta)}
+    if only is None:
+        tables_meta, skipped = _dedup(tables_meta, source)
+        if skipped:
+            coverage["skipped"] = skipped
+
     partitions = _partitions_or_empty(source) if state is not None else {}
 
     out_tables = []
@@ -202,17 +198,94 @@ def profile_with_stats(source, no_sample_values: bool = False, llm=None, context
     model = "none/heuristic" if llm is None else f"{llm.model}/escalation"
     out: dict = {
         "semantic_layer": {
-            "spec_version": "0.3.0",
+            "spec_version": "0.4.0",
             "name": "profiled",
             "generated_by": {"engine": ENGINE_VERSION, "model": model},
             "tables": out_tables,
         }
     }
+    coverage["tables_modelled"] = len(out_tables)
+    out["semantic_layer"]["coverage"] = coverage
     if partitions:
         # Stripped before serialisation, like _link_audit. Without it a user who
         # passed --state has no way to see whether it saved them anything.
         out["_partition_audit"] = {"profiled": profiled_total, "reused": reused_total}
     return out, stats_by_table
+
+
+def _apply_only(tables_meta: list, only: set[str]) -> list:
+    """Narrow the run to the named tables, or say which names did not exist.
+
+    Silence is the wrong behaviour here: a typo in a table name is the
+    likeliest reason a targeted re-profile comes back thinner than expected,
+    and it looks exactly like the table having had nothing in it.
+    """
+    wanted = {n.lower() for n in only}
+    matched = {n for t in tables_meta for n in (t.name.lower(),
+                                                f"{t.schema}.{t.name}".lower())} & wanted
+    missing = sorted(wanted - matched)
+    if missing:
+        raise SemlayerError(
+            f"--only named {len(missing)} table(s) not in this warehouse: "
+            f"{', '.join(missing)}",
+            hint="check spelling and schema qualification; "
+                 "run without --only to list what is there")
+    return [t for t in tables_meta
+            if t.name.lower() in wanted or f"{t.schema}.{t.name}".lower() in wanted]
+
+
+def _dedup(tables_meta: list, source) -> tuple[list, list[dict]]:
+    """Keep one table per duplicate group; report the rest as coverage.
+
+    The skipped copies are not lost: each is recorded with `same_shape_as`
+    pointing at the member that WAS profiled, so a consumer asked about one
+    can answer that it exists and shares that shape -- which is the thing a
+    bare omission cannot distinguish from "no such table".
+
+    Declared partitions are exempt, and the distinction is not pedantic. A
+    partition child looks exactly like a copy -- Postgres lists `evt_2024_01`
+    beside `evt` with an identical signature and a shared stem -- but the
+    parent's rows are the UNION of the children's, so `same_shape_as` would
+    assert the one thing that is false about them, that their rows might not
+    agree. They have their own mechanism (`_drop_partition_children` plus
+    partition-wise profiling) with the right semantics, and the default path
+    must keep profiling them as ordinary tables.
+    """
+    from semlayer.probe import duplicate_groups, representative
+
+    groups = duplicate_groups(tables_meta)
+    if not groups:
+        return tables_meta, []
+    # Queried only when a group was found, so a warehouse with no duplicates
+    # issues no extra catalogue call and the default path is unchanged.
+    children = {(p.schema, p.name)
+                for ps in _partitions_or_empty(source).values() for p in ps}
+    if children:
+        groups = [g for g in ([t for t in grp
+                               if (t.schema, t.name) not in children]
+                              for grp in groups) if len(g) > 1]
+        if not groups:
+            return tables_meta, []
+    drop: dict = {}
+    skipped: list[dict] = []
+    for g in groups:
+        keep = representative(g)
+        for t in g:
+            if t is keep:
+                continue
+            drop[(t.schema, t.name)] = True
+            skipped.append({
+                "name": _qualified(t),
+                "reason": "duplicate",
+                "same_shape_as": _qualified(keep),
+            })
+    kept = [t for t in tables_meta if (t.schema, t.name) not in drop]
+    skipped.sort(key=lambda s: s["name"])
+    return kept, skipped
+
+
+def _qualified(t) -> str:
+    return f"{t.schema}.{t.name}" if getattr(t, "schema", None) else t.name
 
 
 def _rule_detail(col: dict) -> str | None:

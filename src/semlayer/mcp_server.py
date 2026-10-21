@@ -53,12 +53,39 @@ def list_tables(doc: dict, domain: str | None = None) -> list[dict]:
     return out
 
 
+def _skipped_or_unknown(sl: dict, name: str) -> dict:
+    """A table not in `tables` may still be known to exist (SPEC.md §2.12).
+
+    Reporting a deliberately-skipped duplicate as unknown is the one answer
+    the spec forbids: an agent told "no such table" concludes the warehouse
+    does not have it, and stops. Coverage names are schema-qualified while
+    `tables[].name` is not, so match either spelling.
+    """
+    want = name.lower()
+    for entry in (sl.get("coverage") or {}).get("skipped") or []:
+        got = entry["name"].lower()
+        if want not in (got, got.rsplit(".", 1)[-1]):
+            continue
+        out = {"name": entry["name"], "NOT_MODELLED": True,
+               "reason": entry["reason"],
+               "exists": "this table is in the warehouse but was not modelled"}
+        same = entry.get("same_shape_as")
+        if same:
+            out["same_shape_as"] = same
+            out["guidance"] = (
+                f"identical column signature to '{same}', which IS modelled -- "
+                "read that table for the shape, but do not assume the rows "
+                "agree, and profile this table before querying it")
+        return out
+    return {"error": f"unknown table '{name}'"}
+
+
 def get_table(doc: dict, name: str) -> dict:
     """Full detail for one table: columns, keys, relationships, required filters."""
     sl = doc["semantic_layer"]
     t = next((x for x in sl["tables"] if x["name"] == name), None)
     if t is None:
-        return {"error": f"unknown table '{name}'"}
+        return _skipped_or_unknown(sl, name)
     out = {k: t[k] for k in ("name", "description", "ai_context", "table_type",
                              "grain", "scd", "source", "primary_key", "freshness",
                              "lifecycle", "confidence") if k in t}

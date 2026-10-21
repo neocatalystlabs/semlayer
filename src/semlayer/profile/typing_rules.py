@@ -284,6 +284,41 @@ _CAMEL_ACRONYM_RE = re.compile(r"([A-Z]+)([A-Z][a-z])")
 _CAMEL_BOUNDARY_RE = re.compile(r"([a-z0-9])([A-Z])")
 
 
+# One definition of "key-like", because there were three and they disagreed.
+#
+#   probe.py          a tolerant regex with a lookbehind
+#   link/candidates   (_id|_key|...)$ -- underscore REQUIRED
+#   link/run.py       normalise_name + endswith (_id,_key,_sk)
+#
+# Measured over 53,536 key-like columns in the acquired corpus, the
+# candidates.py form missed 29.5% of them: 12.1% camelCase (playerID, lgID)
+# and 17.4% with no separator at all (actorid, movieid, directorid). Because
+# that regex gates CANDIDATE GENERATION rather than scoring, those columns
+# were never tested as foreign keys -- not ranked low, not tested.
+#
+# normalise_name alone is not enough: it folds CustomerID to customer_id but
+# leaves actorid as actorid, which is why the tolerant form is needed too.
+#
+# The lookbehind does match a few English words ending in these tokens --
+# grid, unpaid, valid. Measured: 26 columns in 53,536, so they are listed
+# rather than engineered around.
+_NOT_KEYS = frozenset((
+    "void", "valid", "invalid", "paid", "unpaid", "overpaid", "rapid", "humid",
+    "grid", "solid", "avoid", "said", "hybrid", "acid", "lipid", "bid", "mid",
+    "liquid", "candid", "period", "rigid", "vivid", "squid", "plaid", "afraid",
+))
+_KEYISH = re.compile(
+    r"(?:^|_|(?<=[a-z0-9]))(id|key|no|num|number|code|cd|sk|pk|nbr)$",
+    re.IGNORECASE)
+
+
+def is_keyish(name: str) -> bool:
+    """Does this column name look like a key, in any casing convention?"""
+    if name.lower() in _NOT_KEYS:
+        return False
+    return bool(_KEYISH.search(name) or _KEYISH.search(normalise_name(name)))
+
+
 def normalise_name(raw: str) -> str:
     """Fold a column name to lower_snake_case so every naming rule sees tokens.
 
