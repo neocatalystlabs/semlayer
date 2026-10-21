@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Telemetry: a non-zero exit is classified
+
+A command that returned exit code 1 without raising -- `validate` on an
+invalid or missing document, `drift` finding drift -- recorded
+`outcome: error` with no `error_class`. Those rows were indistinguishable
+from a crash. They now carry `error_class: invalid_input`. No new field, no
+schema bump; the receiver already stores the class.
+
 ### Duplicate copies are profiled once (spec 0.3.0 → 0.4.0)
 
 Two tables that share a name stem and an exact column signature are copies of
