@@ -24,7 +24,14 @@ requires-python = ">=3.10"
 dependencies = [
     "pyyaml>=6.0",
     "jsonschema>=4.20",
-    "duckdb>=1.5",
+    # Upper bound deliberate: 2.0.0 changes floating-point aggregation in
+    # the last bits -- avg(tot_amt) on messy_mart is 2037.53035625 on 1.5.x
+    # and 2037.5303562499998 on 2.0.0. Query results are embedded in LLM
+    # prompts, so that reaches cassette keys: it broke 9 tests on main with
+    # prompts that had never been recorded. Our published numbers are pinned
+    # to a duckdb build; moving major versions is a deliberate change with
+    # re-recorded cassettes, not something pip picks up on a Tuesday.
+    "duckdb>=1.5,<2",
     "anthropic>=0.40",
     "mcp>=1.0,<2",  # 2.x renamed FastMCP -> MCPServer and changed the tool API
     "sqlglot>=25",  # semantic SQL linter (MIT)
