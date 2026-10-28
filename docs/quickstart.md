@@ -104,3 +104,19 @@ The levers, in order of effect: partition your big facts and pass
 `--state layer.state.json`; give the warehouse more parallelism; declare your
 keys and keep statistics analyzed; pass `--manifest target/manifest.json`; and
 narrow with `--only`. Details and the measured numbers: [scale.md](scale.md).
+
+Two flags control client-side parallelism, both default 4, and the output is
+byte-identical at any value:
+
+```bash
+semlayer infer snowflake --llm-workers 8 --query-workers 8 -o layer.yaml
+```
+
+`--llm-workers` is how many model calls are in flight (typing escalation,
+foreign-key validation and both Describe passes); raise it as far as your API
+rate limit allows, and 1 is fully serial. `--query-workers` is how many
+foreign-key queries run at once in *your* warehouse, spending your compute,
+which is why its default is modest. A `--no-llm` build has no model calls and
+still uses `--query-workers`. Measured on a 15,000-table warehouse with 8
+query workers, the free build finished in under four minutes of engine time
+([scale.md](scale.md)).
