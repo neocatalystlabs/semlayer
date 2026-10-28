@@ -40,6 +40,20 @@ synthetic:
     seeded: true
     on_request: true
 
+  - name: scale_N
+    purpose: >
+      N tables, N programmable (--tables), in an enterprise tier mix that is
+      deliberately mostly noise: 8% core star schemas, 22% staging copies,
+      45% raw shards and change feeds, 25% scratch. Exists to walk the
+      table-count ladder past the 2,000 the wide pair is pinned at and see
+      which stage curves upward and what fails first. Every table's tier is
+      written to a sidecar meta.json so a run can be scored per tier against
+      the hypothesis that only 10-20% of an estate is worth modelling. Not
+      built by fixtures/build.py; run the generator directly.
+    generator: fixtures/generators/scale.py
+    seeded: true
+    on_request: true
+
   - name: collision_heavy
     purpose: >
       Many small dimension tables whose key columns collide by name and by

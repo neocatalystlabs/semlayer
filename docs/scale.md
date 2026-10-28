@@ -18,7 +18,7 @@ Measured, not estimated — the workings are in
 | limit | bites at | why |
 |---|---|---|
 | **foreign-key accuracy** | **already, at any size** | when several tables contain the same key values, inclusion testing cannot tell them apart and the engine can pick the wrong one. On a 116-table dbt warehouse with no ETL manifest supplied, **79%** of the foreign keys it asserts on columns the project itself documents are right; supplying `--manifest` takes that to 91% (§4 below). It was 50% until 2026-10-16, when the ETL stage turned out to be readable from table-naming conventions (`stg_`, `int__`) and not only from a manifest. **A warehouse that follows no naming convention still gets the 50% path** -- the signal is the convention, not the names |
-| query volume | ~2,000 tables | foreign-key testing dominates, and the cost is per CHILD column, not per column. On a 116-table warehouse: **23,198 inclusion tests over 667 children** — 1,312 columns exist but only half issue any test. That is **34.8 per tested child, median 40, with 74% sitting at the `MAX_QUERIES_PER_CHILD` cap of 40**. A 29-table warehouse measured 13.9 per child with none at the cap, so the rate **rises with table count** as more parents compete for the same child. **Budget against the cap.** At ~15,000 columns that is **~600,000 queries**; at **815 ms serial**, **~136 h**, or ~20 h at 8-way client concurrency (`--query-workers 8`; tests/test_fk_query_cost.py) |
+| query volume | ~2,000 tables | foreign-key testing dominates, and the cost is per CHILD column, not per column. On a 116-table warehouse: **23,198 inclusion tests over 667 children** — 1,312 columns exist but only half issue any test. That is **34.8 per tested child, median 40, with 74% sitting at the `MAX_QUERIES_PER_CHILD` cap of 40**. A 29-table warehouse measured 13.9 per child with none at the cap, so the rate **rises with table count** as more parents compete for the same child. **Budget against the cap.** At ~15,000 columns that is **~600,000 tests**. Since 2026-10-28 a child's tests go out as ONE statement (up to the cap of 40), so the round trips are per tested child, not per test; the **815 ms per statement** measured on BigQuery before batching gave ~136 h serial / ~20 h at 8 workers for 600,000 statements, and the batched form has not yet been timed on a network warehouse (tests/test_fk_query_cost.py) |
 | wall-clock | ~2,000 tables | ~8.8 s of other fixed cost per table — round-trips plus two LLM calls. Typing escalation, foreign-key validation and both Describe passes fan out over `--llm-workers` (default 4) and contend on nothing of yours; the second Describe pass reads its neighbours from a snapshot taken at the pass boundary, which is what lets it join the pool. Measured live on the 116-table `dbt_synthea` warehouse: 2,556 s serial, **354 s at 8 workers (7.2x)**, §2 below. Inclusion queries fan out over `--query-workers` (default 4) and do |
 | output document | ~30,000 columns | 1,209 bytes per column, so 450,000 columns is ~544 MB in one file |
 
@@ -145,13 +145,35 @@ layer.
 
 ## If you are past 2,000 tables
 
-Tell us. Supporting tens of thousands of tables needs a different approach in
-two specific places — how foreign-key queries are batched, and whether the
-output is one document or many — and we would rather design that against a real
-warehouse than guess at it. In the meantime `--only` and a schema filter will
-get you a correct layer over the part of the warehouse that matters.
+The free build has been walked up a ladder of synthetic warehouses
+(`fixtures/generators/scale.py`: N tables in an enterprise mix of 8% core
+star schemas, 22% staging copies, 45% raw shards, 25% scratch; every copy of
+an entity shares its key values, so only names separate them). No LLM,
+`--query-workers 8`, a 20-core machine, in-process DuckDB, 2026-10-28. Link
+was the whole story, and two changes to it, both with byte-identical
+output, moved the line:
 
-Note the honest version of the 2,000-table line: it is where we have **tested**,
-and at that size foreign-key discovery alone is tens of hours even with
-client-side concurrency. It is a supported-scale statement, not a promise that
-2,000 tables is quick.
+| tables | columns | engine | profile | link | enrich | total | peak RSS |
+|---|---|---|---|---|---|---|---|
+| 2,000 | ~13,000 | before | 19 s | 362 s | 3 s | 395 s | |
+| 2,000 | | parents ranked from a name index | 18 s | 118 s | 2 s | 150 s | |
+| 2,000 | | + one statement per child | 19 s | 37 s | 3 s | 70 s | |
+| 5,000 | ~34,000 | before | 42 s | 917 s | 29 s | 1,000 s | 1.5 GB |
+| 5,000 | | parents ranked from a name index | 43 s | 370 s | 32 s | 461 s | 1.5 GB |
+| 5,000 | | + one statement per child | 43 s | 111 s | 35 s | 204 s | 1.0 GB |
+
+What the ladder found, in order: the per-child sort of candidate parents ran
+on one core before any query was issued and grew as children times parents;
+then the inclusion tests themselves, one round trip per pair, at about two
+milliseconds of overhead each around almost no work. Both are gone. The
+layer at 5,000 tables is 14 MB; the output document is not the constraint it
+was once expected to be. Enrich grew from 3 s to 35 s between the two rungs,
+faster than the table count, and is the next stage to watch; higher rungs
+are being measured.
+
+Two honest limits remain. The ladder is an in-process DuckDB file, so the
+query term is CPU on one machine and does not predict a network warehouse,
+where each statement is a round trip to your compute. And the warehouse is
+synthetic: it has the shape of a large estate, not the content of yours. If
+you are past 2,000 tables on a real warehouse, tell us; `--only` and a schema
+filter will get you a correct layer over the part that matters meanwhile.

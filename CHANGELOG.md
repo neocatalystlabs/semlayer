@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### Link scales: parents ranked from a name index, one statement per child
+
+Two changes to foreign-key discovery, output byte-identical, measured on a
+synthetic 5,000-table warehouse (`fixtures/generators/scale.py`, no LLM,
+`--query-workers 8`, 20-core machine, in-process DuckDB): Link 917 s to
+111 s, the whole free build 1,000 s to 204 s, peak memory 1.5 GB to 1.0 GB.
+
+*Ranking.* Candidate parents were sorted by name similarity for every child
+column, scoring children x parents pairs in Python before the first query:
+at 5,000 tables that loop ran on one core for most of Link while the other
+nineteen idled. `ParentIndex` keys parents by the four things a nonzero
+score can depend on, scores only a child's block and appends the rest in
+list order, which is exactly what the stable sort produced.
+`tests/test_candidate_blocking.py` checks that against the brute-force
+sort on seven fixtures and on the names that exercised each scoring branch.
+
+*Batching.* Inclusion tests were one query per (child, parent) pair, about
+two milliseconds of round trip around almost no work. A child's candidates
+now go in one statement, up to the 40-per-child cap: the child's distinct
+values computed once, one `sum(CASE WHEN NOT EXISTS ...)` column per parent.
+Same predicate, same ratios; 24,847 statements became 637 on a 300-table
+warehouse. The shape parses in duckdb, postgres, snowflake, bigquery and
+oracle and the worker pool's unit is now a child column.
+
 ### Describe pass 2 fans out too; it reads a pass-boundary snapshot
 
 The second Describe pass read each neighbour's description as it was
