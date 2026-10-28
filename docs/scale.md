@@ -19,7 +19,7 @@ Measured, not estimated — the workings are in
 |---|---|---|
 | **foreign-key accuracy** | **already, at any size** | when several tables contain the same key values, inclusion testing cannot tell them apart and the engine can pick the wrong one. On a 116-table dbt warehouse with no ETL manifest supplied, **79%** of the foreign keys it asserts on columns the project itself documents are right; supplying `--manifest` takes that to 91% (§4 below). It was 50% until 2026-10-16, when the ETL stage turned out to be readable from table-naming conventions (`stg_`, `int__`) and not only from a manifest. **A warehouse that follows no naming convention still gets the 50% path** -- the signal is the convention, not the names |
 | query volume | ~2,000 tables | foreign-key testing dominates, and the cost is per CHILD column, not per column. On a 116-table warehouse: **23,198 inclusion tests over 667 children** — 1,312 columns exist but only half issue any test. That is **34.8 per tested child, median 40, with 74% sitting at the `MAX_QUERIES_PER_CHILD` cap of 40**. A 29-table warehouse measured 13.9 per child with none at the cap, so the rate **rises with table count** as more parents compete for the same child. **Budget against the cap.** At ~15,000 columns that is **~600,000 queries**; at **815 ms serial**, **~136 h**, or ~20 h at 8-way client concurrency (`--query-workers 8`; tests/test_fk_query_cost.py) |
-| wall-clock | ~2,000 tables | ~8.8 s of other fixed cost per table — round-trips plus two LLM calls. Typing escalation, foreign-key validation and both Describe passes fan out over `--llm-workers` (default 4) and contend on nothing of yours; the second Describe pass reads its neighbours from a snapshot taken at the pass boundary, which is what lets it join the pool. Measured live on the 116-table `dbt_synthea` warehouse before validation was fanned out: its 92 validation chunks took 910 s in series in both arms, more than the whole of Describe at 8 workers, because each chunk returns ~1,270 output tokens and chunks ran one after another; inclusion queries fan out over `--query-workers` (default 4) and do |
+| wall-clock | ~2,000 tables | ~8.8 s of other fixed cost per table — round-trips plus two LLM calls. Typing escalation, foreign-key validation and both Describe passes fan out over `--llm-workers` (default 4) and contend on nothing of yours; the second Describe pass reads its neighbours from a snapshot taken at the pass boundary, which is what lets it join the pool. Measured live on the 116-table `dbt_synthea` warehouse: 2,556 s serial, **354 s at 8 workers (7.2x)**, §2 below. Inclusion queries fan out over `--query-workers` (default 4) and do |
 | output document | ~30,000 columns | 1,209 bytes per column, so 450,000 columns is ~544 MB in one file |
 
 **Foreign-key accuracy is a disambiguation problem, not a budget problem.**
@@ -74,23 +74,30 @@ default to a small pool deliberately -- `--query-workers 4` -- because the
 queries run in *your* warehouse and contend *your* slots; `--query-workers 8`
 is available if you want it, and the output is identical at any value.
 
-**Measured live, end to end (2026-10-27).** The LLM-side pool was argued from
-the query-side curve until it was run: the whole pipeline on the 116-table
-`dbt_synthea` warehouse, discovery mode with `--manifest`, Haiku 4.5, on a
-20-core machine with an in-process DuckDB file, so the warehouse term is
-small and what remains is the model.
+**Measured live, end to end (2026-10-27 and 2026-10-28).** The LLM-side pool
+was argued from the query-side curve until it was run: the whole pipeline on
+the 116-table `dbt_synthea` warehouse, discovery mode with `--manifest`, Haiku
+4.5, on a 20-core machine with an in-process DuckDB file, so the warehouse
+term is small and what remains is the model. Each row is one live run, about
+$2.15 of Haiku, and the serial row was run once.
 
-| `--llm-workers` | profile | link | describe | total | speedup |
-|---|---|---|---|---|---|
-| 1 | 413 s | 925 s | 1,218 s | 2,556 s | 1.0x |
-| 8 | 62 s | 933 s | 678 s | 1,673 s | 1.53x |
+| `--llm-workers` | engine | profile | link | describe | total | speedup |
+|---|---|---|---|---|---|---|
+| 1 | 2026-10-27 | 413 s | 925 s | 1,218 s | 2,556 s | 1.0x |
+| 8 | 2026-10-27, two of the four LLM loops in the pool | 62 s | 933 s | 678 s | 1,673 s | 1.53x |
+| 8 | 2026-10-28, all four loops in the pool | 53 s | 142 s | 159 s | **354 s** | **7.2x** |
 
-Typing escalation reached the 6.7x the query curve predicts, so the API is not
-the limit at eight. Describe gained 1.8x because its second pass is serial and
-is ~600 s of the 678. Link did not move at all, and that was the finding: its
-foreign-key validation ran its 92 chunks one after another and never read the
-pool setting, 910 s in both arms, the largest single LLM term in the run. It
-fans out now; the table will be re-measured.
+The first 8-worker run is kept because of what it found. Typing escalation
+reached the 6.7x the query curve predicts, so the API was not the limit at
+eight; Describe gained only 1.8x because its second pass was serial; and Link
+did not move at all, because its foreign-key validation ran its 92 chunks one
+after another and never read the pool setting, 910 s in both arms and the
+largest single LLM term in the run. With validation and the second Describe
+pass in the pool, every stage is within 10% of the 8x ceiling: profile 7.8x,
+link 6.5x (of its 142 s, about 22 s are the inclusion queries themselves), and
+describe 7.7x. Output was the same shape in all three runs, 116 tables and
+1,312 columns, with 260 to 265 relationships; the run-to-run spread is the
+temperature-0 disagreement described in `calibration.md`, not the worker count.
 
 ### 3. Declare your keys, and keep statistics fresh
 
