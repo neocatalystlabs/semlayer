@@ -239,7 +239,7 @@ def build(con, n_tables: int, seed: int = SEED) -> dict:
     # its own write-ahead-log entry and catalog version: 86 s for 3,000 tiny
     # tables, superlinear, on one core, with the WAL held in memory. In one
     # transaction per TXN_TABLES tables it is 14 s, and the CHECKPOINT at
-    # each commit keeps memory flat. Measured 2026-10-28 (prd/bench).
+    # each commit keeps memory flat. Measured 2026-10-28 on 3,000 tiny tables.
     created = 0
 
     def create(name: str, cols: list[str], rows: list[tuple]) -> None:
