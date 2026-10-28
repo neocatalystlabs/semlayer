@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Enrich caches identical queries; layers open with the C loader
+
+Aggregate reconciliation tries every rollup candidate against every fact
+and runs per-group SUM queries on both sides per measure pair and per
+exclusion hypothesis; the fact side is the same query for every candidate
+and the aggregate side the same for every fact. On a 15,000-table
+warehouse the stage took 477 s, growing as the square of the table count.
+A read-through cache over the source for the life of one Enrich run (bounded
+by rows held; the warehouse is read-only during a run, so the output cannot
+change) took it to 7 s. 5,000 tables: 88 s to 4 s, layer byte-identical.
+
+Every command that opens a layer used PyYAML's pure-Python loader: 44 s for
+a 6 MB layer, minutes for the 42 MB one 15,000 tables produce. The C loader
+(same grammar, verified to return the same document) parses the 42 MB file
+in 14 s. After startup every MCP tool answers in under a millisecond except
+semantic search at ~200 ms, measured on that layer. The scale warning no
+longer claims the output "becomes impractical to load".
+
 ### Link scales: parents ranked from a name index, one statement per child
 
 Two changes to foreign-key discovery, output byte-identical, measured on a

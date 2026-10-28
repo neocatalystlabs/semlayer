@@ -157,23 +157,47 @@ output, moved the line:
 |---|---|---|---|---|---|---|---|
 | 2,000 | ~13,000 | before | 19 s | 362 s | 3 s | 395 s | |
 | 2,000 | | parents ranked from a name index | 18 s | 118 s | 2 s | 150 s | |
-| 2,000 | | + one statement per child | 19 s | 37 s | 3 s | 70 s | |
-| 5,000 | ~34,000 | before | 42 s | 917 s | 29 s | 1,000 s | 1.5 GB |
+| 2,000 | | + one statement per child | 19 s | 37 s | 3 s | 70 s | 0.55 GB |
+| 5,000 | ~29,000 | before | 42 s | 917 s | 29 s | 1,000 s | 1.5 GB |
 | 5,000 | | parents ranked from a name index | 43 s | 370 s | 32 s | 461 s | 1.5 GB |
 | 5,000 | | + one statement per child | 43 s | 111 s | 35 s | 204 s | 1.0 GB |
+| 15,000 | ~87,000 | + one statement per child | 149 s | 257 s | 477 s | 929 s | 2.4 GB |
+| 15,000 | | + Enrich caches identical queries | 157 s | 225 s | 7 s | 443 s | 2.6 GB |
 
-What the ladder found, in order: the per-child sort of candidate parents ran
-on one core before any query was issued and grew as children times parents;
-then the inclusion tests themselves, one round trip per pair, at about two
-milliseconds of overhead each around almost no work. Both are gone. The
-layer at 5,000 tables is 14 MB; the output document is not the constraint it
-was once expected to be. Enrich grew from 3 s to 35 s between the two rungs,
-faster than the table count, and is the next stage to watch; higher rungs
-are being measured.
+Totals include generating the synthetic warehouse (11 s, 33 s, 208 s), which
+is why the 15,000 row's stages sum to less than its total. Table counts are
+the generator's; the engine folds mechanical copies (same column signature
+and name stem) into one representative, so the layers hold 1,844, 4,008 and
+11,682 tables respectively.
+
+What the ladder found, in order. The per-child sort of candidate parents ran
+on one core before any query was issued and grew as children times parents.
+Then the inclusion tests themselves, one round trip per pair, at about two
+milliseconds of overhead each around almost no work. Then aggregate
+reconciliation, which tried every rollup candidate against every fact and
+re-ran the same per-group SUM queries for each pairing, growing as the
+square of the table count; it was invisible behind Link until Link was fixed.
+All three are gone, each with byte-identical output. From 5,000 to 15,000
+tables the engine now takes 1.4x the time for 3x the tables. Peak memory is
+the one figure still climbing, roughly linearly in columns.
+
+**Using the result.** The 15,000-table layer is 42 MB. Through the MCP server
+on the same machine: the file parses once at startup in 14 s, the server
+builds in 1 s, and after that every tool answers in under a millisecond
+(table detail, metrics, routing, domains, listing all 11,682 tables in 5 ms)
+except semantic search at about 200 ms per call, which scans every table and
+column and would want an index past ~40,000 tables. The file was never meant
+to be read whole by a person or a model; agents reach it a table at a time.
+The usability limit that remains is the review queue: 7,563 low-confidence
+items at 2,000 tables, most of them raw and scratch copies the engine
+classified as business tables because it has no notion of a warehouse tier.
 
 Two honest limits remain. The ladder is an in-process DuckDB file, so the
 query term is CPU on one machine and does not predict a network warehouse,
 where each statement is a round trip to your compute. And the warehouse is
-synthetic: it has the shape of a large estate, not the content of yours. If
-you are past 2,000 tables on a real warehouse, tell us; `--only` and a schema
-filter will get you a correct layer over the part that matters meanwhile.
+synthetic: it has the shape of a large estate, not the content of yours. The
+2,000-table line above is where the engine is tested on REAL warehouses and
+it has not moved; the ladder says what to expect past it, not that it is
+supported there. If you are past 2,000 tables on a real warehouse, tell us;
+`--only` and a schema filter will get you a correct layer over the part that
+matters meanwhile.

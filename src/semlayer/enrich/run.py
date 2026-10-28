@@ -17,7 +17,7 @@ Key moves:
 from __future__ import annotations
 
 import re
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from dataclasses import dataclass
 from typing import Any
 
@@ -27,12 +27,61 @@ _LEGACY_RE = re.compile(r"(_legacy|_old|_bak|_deprecated|_archive)$")
 _AGG_NAME_RE = re.compile(r"(^|_)(agg|summary|rollup)($|_)|^(dly|mth|wkly)_")
 
 
+class _CachingSource:
+    """A read-through cache over `source.query`, for the life of one Enrich run.
+
+    Aggregate reconciliation tests every rollup candidate against every fact
+    table, and for each surviving pair runs per-group SUM queries on both
+    sides, for each (aggregate measure, fact measure) pair, and again under
+    each exclusion hypothesis. The fact side of that is the same query for
+    every candidate tried against the fact; the aggregate side is the same
+    query for every fact tried against the candidate. On a 15,000-table
+    warehouse the stage took 477 s, growing as the square of the table count,
+    almost all of it re-running identical SQL.
+
+    The warehouse is read-only for the duration of a run, so the same SQL
+    returns the same rows and caching it changes nothing in the output.
+    Exceptions are not cached (a failing query is re-raised each time, as
+    `_grain_covers` expects). The cache is bounded by rows held, not entries,
+    because one per-group result can be 50,000 rows.
+    """
+
+    MAX_ROWS = 2_000_000
+
+    def __init__(self, source) -> None:
+        self._source = source
+        self._cache: OrderedDict[str, list[tuple]] = OrderedDict()
+        self._rows = 0
+        self.hits = 0
+        self.misses = 0
+
+    def __getattr__(self, name: str) -> Any:        # qualify, row_cap_clause, ...
+        return getattr(self._source, name)
+
+    def query(self, sql: str) -> list[tuple]:
+        hit = self._cache.get(sql)
+        if hit is not None:
+            self._cache.move_to_end(sql)
+            self.hits += 1
+            return hit
+        self.misses += 1
+        rows = self._source.query(sql)
+        n = max(1, len(rows))
+        while self._cache and self._rows + n > self.MAX_ROWS:
+            _, old = self._cache.popitem(last=False)
+            self._rows -= max(1, len(old))
+        self._cache[sql] = rows
+        self._rows += n
+        return rows
+
+
 def enrich_source(source, doc: dict, stats: dict) -> dict:
     """Run the deterministic enrich tier.
 
     Covers decodes, deprecation, freshness, metrics, aggregate
     reconciliation, routing/domains, and snapshot filters.
     """
+    source = _CachingSource(source)
     sl = doc["semantic_layer"]
     _upgrade_enum_decodes(source, sl, stats)
     # after Link, because "no relationship was discovered for this column" is

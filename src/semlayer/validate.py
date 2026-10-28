@@ -39,10 +39,23 @@ def _load_schema() -> dict:
         return json.load(f)
 
 
+# PyYAML's pure-Python SafeLoader parsed a 6 MB layer (2,000 tables) in
+# 44 s; the C loader, same grammar and same result, in 7 s. Every command
+# that opens a layer went through the slow one, so a 42 MB layer (15,000
+# tables) took about five minutes to open. The C extension ships in the
+# PyYAML wheels for every platform we run on; the fallback is for a source
+# build without libyaml.
+_SAFE_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+
+
+def load_yaml(text: str) -> dict:
+    """yaml.safe_load, with the C loader when PyYAML has one."""
+    return yaml.load(text, Loader=_SAFE_LOADER)  # a safe loader, C-accelerated
+
+
 def load_document(path: str | Path) -> dict:
     """Parse a semantic layer YAML document into a plain dict."""
-    text = Path(path).read_text()
-    return yaml.safe_load(text)
+    return load_yaml(Path(path).read_text())
 
 
 @dataclass
