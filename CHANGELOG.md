@@ -2,6 +2,109 @@
 
 ## Unreleased
 
+### Spend estimate is per unit of work, not per table
+
+`examples/assisted_build` estimated LLM spend as $0.70 per 100 tables, the
+messy_mart figure from `docs/cost-model.md`. A live run on the 116-table
+`dbt_synthea` warehouse cost 2.6x that, because Describe scales with
+columns and FK validation with the candidates that survive inclusion
+testing, which rise faster than table count. The estimate is now
+`columns x $0.00077 + tables x $0.0027 + inclusion_tests x $0.000035`,
+which reproduces both measured warehouses within 20%; cost-model.md
+carries the second measurement and the derivation.
+
+### Output-token ceilings sized to the payload
+
+Every LLM call had a flat 1,500-token output ceiling. The provider detects
+truncation and repeats the call at four times the budget, so nothing was
+lost, but the first attempt was paid for twice. Measured live on the
+116-table `dbt_synthea` warehouse: a 25-column typing escalation returned
+~2,050 tokens and retried in both arms, and a 33-column Describe reply
+(~1,440) and a 30-candidate FK chunk (~1,437) sat within 5% of the cap,
+where a slightly chattier answer would tip them over. Each call site now
+passes a ceiling from its item count at roughly twice the measured tokens
+per item (escalation ~90 per column, Describe ~53, validation ~42 per
+candidate), never below 1,500 and never above the provider's 24,000. A
+ceiling costs nothing unless used; cassette keys do not include it, so
+every recorded replay is unchanged.
+
+### Link's foreign-key validation fans out over `--llm-workers`
+
+The validator asks the model about 30 candidates per call and ran those
+calls one after another. On the 116-table `dbt_synthea` warehouse that was
+92 calls of ~1,270 output tokens each, 910 s in series, measured live in
+both arms of the timing run: the single largest LLM term in the pipeline,
+larger than the whole of Describe at 8 workers, and it ignored the worker
+setting. It now runs `llm_workers` chunks at once with the same shape as
+the other fan-outs: a worker only calls and parses, verdicts are merged on
+the calling thread in chunk order, and a worker that raises fails the run.
+Output is identical at any width: proven by thread tests on a fake
+provider, and by replaying both arms' live cassettes through the full
+pipeline at 1 and 8 workers to byte-identical YAML.
+
+### `examples/assisted_build`: probe, estimate, confirm, build
+
+One script that chains the shipped primitives into a run that says what it
+will do before it spends anything: the probe's evidence grade and
+confidence cap, which of its own warnings apply (provisional grade, no
+manifest, how many tables are repeat copies), an estimate of wall-clock and
+LLM spend extrapolated from the measured figures in `docs/scale.md` and
+labelled as such, then `infer` with both concurrency pools, validation, and
+the review-queue count. The report beside the layer carries the probe
+payload, the estimate and the options, so a layer can be reproduced from
+its report. It asks before building unless `--yes` is passed or stdin is
+not a terminal.
+
+### API failures surface as `LLMError` with a next step
+
+A rate limit, a bad key, a 5xx or an unreachable API used to escape the
+provider as a raw SDK traceback. Each is now an `LLMError` with a hint, and
+the live client retries six times with the SDK's backoff instead of the
+default two -- sized for a worker pool, where several calls land in the
+same second and a small account's rate limit answers all of them at once.
+A rate limit that survives the retries names `--llm-workers` as the fix,
+and records nothing, so re-running resumes where it stopped.
+
+### `InferOptions`: the run's settings as one object
+
+`semlayer.pipeline.infer` and `infer_with_report` had grown to ten
+positional-capable parameters, and each new knob meant threading it through
+four signatures by hand. The five settings that shape a run -- `no_sample_egress`,
+`only`, `use_declared`, `llm_workers`, `query_workers` -- now live in a frozen
+`InferOptions` dataclass; the inputs a run operates on (source, LLM, context,
+lineage, state) stay as parameters. The run report records the options under
+`options`, so a document can be reproduced from its report. Worker counts
+below 1 are refused up front. The individual keywords still work unchanged;
+passing both forms is an error, not a merge.
+
+### Foreign-key inclusion queries run concurrently (`--query-workers`, default 4)
+
+Link's inclusion loop is the long pole at scale: ~600,000 queries at 2,000
+tables, ~136 hours serial at BigQuery's 815 ms round-trip. The set of
+queries is fixed before any of them runs -- the per-child cap counts tests
+issued, not matches found -- so they now go out over a small pool and the
+ratios are applied in the original order. The accepted candidates are
+byte-identical at any worker count, and a test proves it on three fixtures.
+Each worker thread gets its own executor via `source.for_worker()`: a fresh
+cursor on DuckDB, the shared client on BigQuery and Snowflake, the shared
+(serialising) connection on Postgres. A source without `for_worker` stays
+serial rather than share a connection across threads. The default is 4
+because these queries run in *your* warehouse: measured 3.3x at 4 and 6.7x
+at 8, flat after (docs/scale.md).
+
+### The two per-table LLM calls run concurrently (`--llm-workers`, default 4)
+
+`semlayer infer` now issues Profile's typing escalation and the first
+Describe pass -- one call per table each, from that table's own evidence --
+over a thread pool. The document is
+byte-identical at any worker count, and tests replay the committed
+messy_mart cassettes at 1 and 8 workers to prove it for both calls; a worker that raises
+fails the run rather than leaving a table silently undescribed. Pass 2 stays
+serial on purpose: it reads neighbour descriptions as it writes them, so
+fanning it out changes every prompt, and that change has to be judged
+(docs/calibration.md), not assumed. Link's inclusion loop is unchanged and
+remains the long pole at scale (docs/scale.md).
+
 ### Telemetry: a non-zero exit is classified
 
 A command that returned exit code 1 without raising -- `validate` on an

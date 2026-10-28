@@ -11,10 +11,15 @@ statistics alone NEVER auto-include an FK.
 
 from __future__ import annotations
 
+import logging
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 from semlayer.profile.typing_rules import normalise_name, strip_ordinal
+
+logger = logging.getLogger(__name__)
 
 MIN_INCLUSION = 0.95          # candidate threshold
 # Candidate parent columns considered warehouse-wide. This caps a SORT, not
@@ -303,8 +308,17 @@ def _testable(ranked, ctn: str, cstat, stats_by_table) -> list[tuple[str, str]]:
     return head + tail
 
 
-def generate_candidates(ex, stats_by_table: dict, doc: dict) -> list[FKCandidate]:
-    """stats_by_table: {table_name: TableStats}; doc: profile-stage document."""
+def generate_candidates(ex, stats_by_table: dict, doc: dict,
+                        query_workers: int = 1) -> list[FKCandidate]:
+    """stats_by_table: {table_name: TableStats}; doc: profile-stage document.
+
+    `query_workers`: how many inclusion queries are in flight at once. The
+    set of queries is fixed before any of them runs -- the cap counts tests
+    issued, not matches found, and nothing in the loop feeds back into which
+    parents are tested -- so the candidates come out identical at any count.
+    These queries run in the customer's warehouse and contend on their
+    compute, which is why the default is small (see docs/scale.md).
+    """
     cols = {
         (t["name"], c["name"]): c
         for t in doc["semantic_layer"]["tables"] for c in t["columns"]
@@ -348,7 +362,7 @@ def generate_candidates(ex, stats_by_table: dict, doc: dict) -> list[FKCandidate
     ]
     children = sorted(set(children))
 
-    out: list[FKCandidate] = []
+    plan: list[tuple[str, str, str, str]] = []
     for ctn, ccn in children:
         cstat = stats_by_table[ctn].columns[ccn]
         # test the most name-plausible parents FIRST so the query cap
@@ -358,20 +372,60 @@ def generate_candidates(ex, stats_by_table: dict, doc: dict) -> list[FKCandidate
             key=lambda p: name_similarity(ccn, ctn, p[1], p[0]),
             reverse=True,
         )
-        tested = 0
-        for ptn, pcn in _testable(ranked, ctn, cstat, stats_by_table):
-            pstat = stats_by_table[ptn].columns[pcn]
-            if tested >= MAX_QUERIES_PER_CHILD:
-                break
-            tested += 1
-            ratio = _inclusion(ex, stats_by_table, ctn, ccn, ptn, pcn)
-            if ratio >= MIN_INCLUSION:
-                out.append(FKCandidate(
-                    ctn, ccn, ptn, pcn, round(ratio, 4),
-                    cstat.n_distinct, pstat.n_distinct,
-                    name_similarity(ccn, ctn, pcn, ptn),
-                ))
+        testable = _testable(ranked, ctn, cstat, stats_by_table)
+        plan.extend((ctn, ccn, ptn, pcn) for ptn, pcn in testable[:MAX_QUERIES_PER_CHILD])
+
+    ratios = _inclusion_many(ex, stats_by_table, plan, query_workers)
+
+    out: list[FKCandidate] = []
+    for (ctn, ccn, ptn, pcn), ratio in zip(plan, ratios, strict=True):
+        if ratio >= MIN_INCLUSION:
+            out.append(FKCandidate(
+                ctn, ccn, ptn, pcn, round(ratio, 4),
+                stats_by_table[ctn].columns[ccn].n_distinct,
+                stats_by_table[ptn].columns[pcn].n_distinct,
+                name_similarity(ccn, ctn, pcn, ptn),
+            ))
     return out
+
+
+def _inclusion_many(ex, stats_by_table, plan: list[tuple[str, str, str, str]],
+                    workers: int) -> list[float]:
+    """One inclusion ratio per planned test, in plan order.
+
+    Each worker thread gets its own executor from `ex.for_worker()` -- a
+    source without one runs serially, because a connection shared across
+    threads is not something to assume safe. Results are applied in plan
+    order by the caller, so the fan-out cannot change which candidates
+    survive. A worker that raises fails the run.
+    """
+    for_worker = getattr(ex, "for_worker", None)
+    if workers <= 1 or len(plan) <= 1 or for_worker is None:
+        if workers > 1 and for_worker is None:
+            logger.info("source %s has no per-worker executor; inclusion tests run serially",
+                        type(ex).__name__)
+        return [_inclusion(ex, stats_by_table, *job) for job in plan]
+
+    local = threading.local()
+    made: list = []
+    lock = threading.Lock()
+
+    def init() -> None:
+        local.ex = for_worker()
+        with lock:
+            made.append(local.ex)
+
+    def one(job) -> float:
+        return _inclusion(local.ex, stats_by_table, *job)
+
+    try:
+        with ThreadPoolExecutor(max_workers=min(workers, len(plan)), initializer=init) as pool:
+            return list(pool.map(one, plan))
+    finally:
+        for w in made:
+            close = getattr(w, "close", None)
+            if close is not None and w is not ex:
+                close()
 
 
 def _inclusion(ex, stats_by_table, ctn, ccn, ptn, pcn) -> float:

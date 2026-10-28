@@ -297,6 +297,14 @@ class PostgresSource:
         i = self.con.info
         return f"postgres:{i.host or 'local'}:{i.port}/{i.dbname}"
 
+    def for_worker(self):
+        """Per-worker executor: the shared connection.
+
+        A psycopg connection is thread-safe but serialises its queries, so
+        workers gain nothing here until a connection pool exists.
+        """
+        return self
+
     def close(self) -> None:
         """Close the connection; safe to call twice."""
         try:

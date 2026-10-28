@@ -611,13 +611,18 @@ def _apply_composite_pks(source, doc: dict, stats_by_table: dict) -> None:
                       f"{ts.row_count} rows; no member is unique alone",
         })
 
-def link_source(source, doc: dict, stats_by_table: dict, llm=None, lineage=None,
-                use_declared: bool = True) -> dict:
+def link_source(source, doc: dict, stats_by_table: dict, llm=None, lineage=None,  # noqa: PLR0913, PLR0917
+                use_declared: bool = True, query_workers: int = 1,
+                llm_workers: int = 1) -> dict:
     """Run the Link stage over a profiled document.
 
     Mutates and returns doc: adds foreign_key blocks, relationships,
     table_type. Also returns audit info in doc['_link_audit'] (stripped
     before serialization; used by eval).
+
+    `query_workers`: concurrent inclusion queries (see candidates.py);
+    `llm_workers`: concurrent validation chunks (see validate_llm.py). The
+    output is identical at any count of either; only wall-clock changes.
     """
     # Rung 1 of the read-before-scan ladder: the catalog's own declarations,
     # one query and no table touched. Optional on the source, like comments.
@@ -645,7 +650,7 @@ def link_source(source, doc: dict, stats_by_table: dict, llm=None, lineage=None,
 
     # BEFORE candidate generation, which reads primary_key to decide parents.
     _apply_composite_pks(source, doc, stats_by_table)
-    candidates = generate_candidates(source, stats_by_table, doc)
+    candidates = generate_candidates(source, stats_by_table, doc, query_workers=query_workers)
     # A declared FK settles that column; rediscovering it wastes an inclusion
     # check and risks asserting a second, different parent for the same column.
     if declared_edges:
@@ -657,7 +662,7 @@ def link_source(source, doc: dict, stats_by_table: dict, llm=None, lineage=None,
     verdicts = {}
     if llm is not None and candidates:
         from semlayer.link.validate_llm import validate_candidates
-        verdicts = validate_candidates(llm, candidates)
+        verdicts = validate_candidates(llm, candidates, workers=max(1, llm_workers))
 
     cols = {
         (t["name"], c["name"]): c

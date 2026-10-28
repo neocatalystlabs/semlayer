@@ -10,6 +10,7 @@ PK candidates come from full-column uniqueness + id-naming.
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from importlib.metadata import version
 
 from semlayer.errors import SemlayerError
@@ -127,12 +128,15 @@ def profile_source(source, no_sample_values: bool = False, llm=None,
     return doc
 
 
-def profile_with_stats(source, no_sample_values: bool = False, llm=None, context=None,
-                       only: set[str] | None = None, state=None, lineage=None):
+def profile_with_stats(source, no_sample_values: bool = False, llm=None, context=None,  # noqa: PLR0913, PLR0917
+                       only: set[str] | None = None, state=None, lineage=None,
+                       llm_workers: int = 1):
     """Returns (document, stats_by_table) — Link consumes both.
 
     `context` (v0.2): a semlayer.context.ContextBundle; relevant prose excerpts
     join the typing-escalation evidence as priors.
+    `llm_workers`: concurrent typing-escalation calls. One call per table from
+    that table's own statistics, so the document is identical at any count.
 
     `only`: profile just these table names. The filter is applied AFTER
     `list_tables()` so no connector changes: metadata enumeration is one
@@ -171,6 +175,7 @@ def profile_with_stats(source, no_sample_values: bool = False, llm=None, context
     stats_by_table: dict = {}
     reused_total = 0
     profiled_total = 0
+    pending: list[tuple[TableStats, dict]] = []   # escalation, after the scan
     for t in sorted(tables_meta, key=lambda x: (x.schema, x.name)):
         parts = partitions.get((t.schema, t.name)) if partitions else None
         inc = None
@@ -192,9 +197,9 @@ def profile_with_stats(source, no_sample_values: bool = False, llm=None, context
             apply_cardinality(doc, inc)
         n_comments += _apply_comments(doc, ts, comments)
         n_comments += _apply_dbt_docs(doc, ts, lineage)
-        if llm is not None:
-            _escalate(llm, ts, doc, no_sample_values, context=context)
+        pending.append((ts, doc))
         out_tables.append(doc)
+    _escalate_all(llm, pending, no_sample_values, context, max(1, llm_workers))
     model = "none/heuristic" if llm is None else f"{llm.model}/escalation"
     out: dict = {
         "semantic_layer": {
@@ -293,9 +298,8 @@ def _rule_detail(col: dict) -> str | None:
     return prov[0].get("detail") if prov else None
 
 
-def _escalate(llm, ts: TableStats, doc: dict, no_sample_values: bool, context=None) -> None:
-    from semlayer.profile.llm_typing import escalate_table
-
+def _escalation(ts: TableStats, doc: dict, context=None) -> tuple[list[dict], set[str]] | None:
+    """Which of this table's columns go to the LLM: (batch, promoted names), or None."""
     low = [
         c
         for c in doc["columns"]
@@ -303,19 +307,59 @@ def _escalate(llm, ts: TableStats, doc: dict, no_sample_values: bool, context=No
     ]
     promoted = _doc_promoted(context, ts.table.name, doc["columns"], low)
     if not low and not promoted:
+        return None
+    return low + promoted, {c["name"] for c in promoted}
+
+
+def _escalate_all(llm, pending: list[tuple[TableStats, dict]], no_sample_values: bool,
+                  context, workers: int) -> None:
+    """Typing escalation for every profiled table, one LLM call per table.
+
+    Runs after the scan rather than inside it, so the calls can be in flight
+    together. Each call reads only its own table's statistics and sibling
+    names, so no prompt depends on another table's verdict and the document
+    is identical at any worker count. Workers build, call and parse; the
+    verdicts are applied here, in table order, on the calling thread --
+    nothing mutable is shared. A worker that raises fails the run.
+    """
+    if llm is None:
         return
+    jobs = [j for j in (_escalation_job(ts, doc, context) for ts, doc in pending) if j]
+
+    def one(job) -> dict[str, dict]:
+        from semlayer.profile.llm_typing import escalate_table
+        ts, batch, _promoted, excerpts = job
+        return escalate_table(
+            llm, ts.table.name, [c.name for c in ts.table.columns],
+            [ts.columns[c["name"]] for c in batch],
+            no_sample_egress=no_sample_values, doc_excerpts=excerpts,
+        )
+
+    if workers <= 1 or len(jobs) <= 1:
+        results = [one(j) for j in jobs]
+    else:
+        with ThreadPoolExecutor(max_workers=min(workers, len(jobs))) as ex:
+            results = list(ex.map(one, jobs))
+
+    for (_ts, batch, promoted_names, _ex), verdicts in zip(jobs, results, strict=True):
+        _apply_verdicts(batch, promoted_names, verdicts)
+
+
+def _escalation_job(ts: TableStats, doc: dict, context) -> tuple | None:
+    """One table's escalation: (stats, batch, promoted names, doc excerpts), or None."""
+    plan = _escalation(ts, doc, context)
+    if plan is None:
+        return None
+    batch, promoted_names = plan
     excerpts = None
     if context is not None and context.chunks:
         from semlayer.context import relevant_excerpts
         excerpts = relevant_excerpts(
             context.chunks, ts.table.name, [c.name for c in ts.table.columns]) or None
-    batch = low + promoted
-    stats = [ts.columns[c["name"]] for c in batch]
-    verdicts = escalate_table(
-        llm, ts.table.name, [c.name for c in ts.table.columns], stats,
-        no_sample_egress=no_sample_values, doc_excerpts=excerpts,
-    )
-    promoted_names = {c["name"] for c in promoted}
+    return ts, batch, promoted_names, excerpts
+
+
+def _apply_verdicts(batch: list[dict], promoted_names: set[str], verdicts: dict) -> None:
     for c in batch:
         v = verdicts.get(c["name"])
         if not v:

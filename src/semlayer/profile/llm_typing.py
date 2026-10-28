@@ -12,6 +12,8 @@ from __future__ import annotations
 import json
 import re
 
+from semlayer.llm.provider import output_budget
+
 PROMPT_VERSION = "v1"
 
 _TAXONOMY = [
@@ -78,7 +80,11 @@ def escalate_table(provider, table_name: str, sibling_columns: list[str],
             "excerpts": doc_excerpts,
         }
     user = json.dumps(payload, indent=1)
-    raw = provider.complete(SYSTEM, user)
+    # ~90 output tokens per classified column, measured live (type, role,
+    # confidence and a reason each); budget twice that so wide tables do
+    # not pay for a truncated first attempt.
+    raw = provider.complete(SYSTEM, user,
+                            max_tokens=output_budget(len(escalated), per_item=180))
     return _parse(raw, {cs.name for cs in escalated})
 
 
