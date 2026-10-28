@@ -49,6 +49,10 @@ except ImportError:
 
 SEED = 20261028
 TXN_TABLES = 1000       # tables per transaction while building; see create()
+# Bump when the generated DATA changes for the same (n_tables, seed), so a
+# runner that keeps warehouses knows to rebuild. 2: staging copies carry
+# the full key set (v1 sampled a subset and the gold was inconsistent).
+GENERATOR_VERSION = 2
 TIERS = (("core", 0.08), ("staging", 0.22), ("raw", 0.45), ("scratch", 0.25))
 
 DOMAINS = [
@@ -344,7 +348,7 @@ def build(con, n_tables: int, seed: int = SEED) -> dict:
     if created % TXN_TABLES:
         con.execute("COMMIT")
     meta = {
-        "n_tables": len(tables), "seed": seed,
+        "n_tables": len(tables), "seed": seed, "generator_version": GENERATOR_VERSION,
         "tiers": {k: sum(1 for t in tables if t["tier"] == k) for k, _ in TIERS},
         "tables": {t["name"]: {"tier": t["tier"], "kind": t["kind"]} for t in tables},
         "gold_fks": gold,
