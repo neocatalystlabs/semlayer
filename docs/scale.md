@@ -199,7 +199,12 @@ are `modeling: inventory_only`: listed with their shape, excluded from
 everything else (SPEC.md 2.13). On the same 2,000-table warehouse that took
 the review queue to 1,708 items, Link from 220 s to 129 s, and foreign-key
 precision against the gold from 0.31 to 0.94 with recall 1.00, because raw
-copies no longer compete as join targets. On every real fixture the tier is
+copies no longer compete as join targets. At 15,000 tables (11,698 after
+folding; 7,387 of them inventory-only) the engine asserted 4,562
+relationships against 4,361 gold keys: recall 1.00, precision 0.956, zero
+wrong parents; the 201 extras are dimension key columns linked 1:1 to
+another copy of the same entity. The review queue there is 11,845 items
+over the 4,311 modelled tables, plus two lines for the 7,387 set aside. On every real fixture the tier is
 core or staging throughout, so nothing there changed. A reviewer who
 disagrees with a tier changes it, and the next run models the table in full.
 
