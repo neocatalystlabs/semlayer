@@ -1,8 +1,9 @@
-"""Describe pass 1 fans out across a thread pool; pass 2 stays serial.
+"""Both Describe passes fan out across a thread pool.
 
 The property that matters is not speed but sameness: the document produced
-with N workers must be byte-identical to the serial one, because pass-1
-prompts depend only on a table's own evidence. Two tests prove it two ways:
+with N workers must be byte-identical to the serial one. Pass-1 prompts
+depend only on a table's own evidence; pass-2 prompts read neighbours from a
+snapshot taken at the pass boundary. Tests prove it two ways:
 a fake provider that records which thread served each call (so the fan-out
 is real, not a pool of one), and the committed messy_mart cassettes (so the
 real prompts replay identically at any worker count).
@@ -84,10 +85,43 @@ def test_workers_change_nothing_but_the_thread():
 
     assert json.dumps(serial_doc, sort_keys=True) == json.dumps(pooled_doc, sort_keys=True)
     n_tables = len(serial_doc["semantic_layer"]["tables"])
-    # the fan-out happened: more than one thread served pass 1
+    # the fan-out happened in both passes: more than one thread served each
     assert len(set(pooled.threads[:n_tables])) > 1
-    # and pass 2 ran on the calling thread, after the pool was joined
-    assert set(pooled.threads[n_tables:]) == {threading.get_ident()}
+    assert len(set(pooled.threads[n_tables:])) > 1
+    # and nothing ran on the calling thread, which only applies results
+    assert threading.get_ident() not in pooled.threads
+
+
+class _PassAwareLLM(_FakeLLM):
+    """Says which pass produced each description, and echoes what it was shown."""
+
+    def complete(self, system: str, user: str, max_tokens: int = 1500) -> str:
+        ev = json.loads(user)
+        with self._lock:
+            self.calls += 1
+            self.threads.append(threading.get_ident())
+        shown = ev.get("joined_neighbor_tables", {})
+        pass_n = 2 if shown else 1
+        time.sleep(self.delay)
+        return json.dumps({
+            "table_description": f"{ev['table']} pass {pass_n} saw "
+                                 + ";".join(f"{k}=[{v}]" for k, v in sorted(shown.items())),
+            "ai_context": "x",
+            "table_type": "unknown",
+            "columns": [{"name": c["name"], "description": "c"} for c in ev["columns"]],
+        })
+
+
+def test_pass_two_reads_the_pass_boundary_snapshot():
+    """No table sees a neighbour's pass-2 text, whatever the completion order."""
+    for workers in (1, 4):
+        doc, stats = _profiled("fan_trap")
+        describe_source(doc, stats, _PassAwareLLM(delay=0.01), llm_workers=workers)
+        for t in doc["semantic_layer"]["tables"]:
+            d = t["description"]
+            if "pass 2 saw" in d:
+                assert "pass 2 saw" not in d.split("saw", 1)[1], (workers, d)
+                assert "pass 1 saw" in d, (workers, d)
 
 
 def test_a_dead_worker_fails_the_run():

@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "dbd020e76368",
+ "response": "ANSWER {\"revenue\": 14621503.3, \"sql\": \"SELECT SUM(tot_amt) AS revenue FROM ord_hdr WHERE sts_cd <> 'X'\"}",
+ "usage": {
+  "in": 5102,
+  "out": 46
+ }
+}

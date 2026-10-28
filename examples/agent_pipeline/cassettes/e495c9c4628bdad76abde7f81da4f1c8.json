@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "dbd020e76368",
+ "response": "CALL table_detail {\"name\": \"ord_hdr\"}",
+ "usage": {
+  "in": 1309,
+  "out": 17
+ }
+}

@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### Describe pass 2 fans out too; it reads a pass-boundary snapshot
+
+The second Describe pass read each neighbour's description as it was
+written, so a table described later in the pass saw a neighbour's pass-2
+text rather than its pass-1 text. That was deterministic only because the
+loop was serial and sorted, and it was the one LLM loop the worker pool
+could not reach: about 600 of the 678 s Describe took at 8 workers on the
+116-table `dbt_synthea` warehouse. Pass 2 now reads every neighbour from a
+snapshot taken when the pass begins, builds all its prompts up front, and
+runs them over `--llm-workers` like pass 1. Output is byte-identical at any
+worker count.
+
+The snapshot changes the prompts, so the model reworded descriptions: on
+messy_mart 18 of 36 table descriptions and 113 of 198 column descriptions,
+no table types. The description judge (Sonnet, `tests/test_describe.py`)
+scored the new text 0.867, the same as the old, with all three negative
+controls at 0.000. Because the benchmark embeds descriptions in its
+prompts, its cassettes were re-recorded under the same model IDs; the
+Sonnet row reproduced exactly (0.55 / 0.87 / 0.87); the Haiku rows moved by
+one or two questions each (messy_mart semantic 0.87 -> 0.89, ontology 0.82
+-> 0.79; tpcds_clean semantic 0.42 -> 0.58), which is the answering model's
+run-to-run variance, and `docs/benchmark.md` now states the recording date
+and the point-in-time policy beside the table.
+
 ### Spend estimate is per unit of work, not per table
 
 `examples/assisted_build` estimated LLM spend as $0.70 per 100 tables, the

@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "1d25ef67b201",
+ "response": "[{\"id\": 0, \"verdict\": \"reject\", \"reason\": \"Vague, unmodeled 'vibe' concept\"}, {\"id\": 1, \"verdict\": \"reject\", \"reason\": \"No profit/cost metric modeled\"}, {\"id\": 2, \"verdict\": \"reject\", \"reason\": \"Unmodeled data: no headcount/floor entities\"}, {\"id\": 3, \"verdict\": \"reject\", \"reason\": \"Ambiguous, undefined 'good' threshold\"}, {\"id\": 4, \"verdict\": \"reject\", \"reason\": \"Completely ambiguous, undefined terms\"}, {\"id\": 5, \"verdict\": \"reject\", \"reason\": \"Churn undefined business term, no metric\"}]",
+ "usage": {
+  "in": 6465,
+  "out": 376
+ }
+}
