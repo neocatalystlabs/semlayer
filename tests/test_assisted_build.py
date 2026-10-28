@@ -3,14 +3,27 @@ records what it planned beside what it built."""
 
 from __future__ import annotations
 
+import importlib.util
 import json
-import sys
 from pathlib import Path
 
 import pytest
 
 OSS = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(OSS / "examples" / "assisted_build"))
+
+
+def _load_script():
+    """The script under its own module name: a plain `import build` resolved
+    to fixtures/build.py in CI, where that file had already been imported."""
+    path = OSS / "examples" / "assisted_build" / "build.py"
+    spec = importlib.util.spec_from_file_location("assisted_build_script", path)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+build = _load_script()
 
 FIXTURE = OSS / "fixtures" / "build" / "messy_mart.duckdb"
 pytestmark = pytest.mark.skipif(not FIXTURE.exists(),
@@ -18,8 +31,6 @@ pytestmark = pytest.mark.skipif(not FIXTURE.exists(),
 
 
 def test_no_llm_build_writes_a_valid_layer_and_a_reproducible_report(tmp_path, capsys):
-    import build
-
     out = tmp_path / "layer.yaml"
     rc = build.main([f"duckdb:{FIXTURE}", "--no-llm", "--no-declared-constraints",
                      "--yes", "-o", str(out), "--query-workers", "4"])
@@ -37,8 +48,6 @@ def test_no_llm_build_writes_a_valid_layer_and_a_reproducible_report(tmp_path, c
 
 
 def test_estimate_scales_with_workers_and_says_so():
-    import build
-
     class P:
         tables, columns, duplicate_copies_removable = 200, 3000, 50
 
@@ -53,8 +62,6 @@ def test_estimate_scales_with_workers_and_says_so():
 
 
 def test_declining_the_prompt_writes_nothing(tmp_path, monkeypatch):
-    import build
-
     monkeypatch.setattr(build, "confirm", lambda args: False)
     out = tmp_path / "layer.yaml"
     rc = build.main([f"duckdb:{FIXTURE}", "--no-llm", "-o", str(out)])
