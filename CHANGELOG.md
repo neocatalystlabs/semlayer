@@ -12,7 +12,8 @@ could not reach: about 600 of the 678 s Describe took at 8 workers on the
 116-table `dbt_synthea` warehouse. Pass 2 now reads every neighbour from a
 snapshot taken when the pass begins, builds all its prompts up front, and
 runs them over `--llm-workers` like pass 1. Output is byte-identical at any
-worker count.
+worker count. Measured live on that warehouse with all four LLM loops in the
+pool: 354 s at 8 workers against 2,556 s serial, 7.2x (`docs/scale.md` §2).
 
 The snapshot changes the prompts, so the model reworded descriptions: on
 messy_mart 18 of 36 table descriptions and 113 of 198 column descriptions,
