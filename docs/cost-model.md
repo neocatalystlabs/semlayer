@@ -17,6 +17,52 @@ cheap tier alone** — no frontier-model escalation was needed to hit any M1–M
 accuracy target (on messy_mart: typing 0.904, FK F1 1.0, descriptions 0.889
 judge-approved; across all 7 fixtures / 759 columns: typing 0.809).
 
+## Second measurement: dbt_synthea, 116 tables, live (2026-10-27)
+
+The table above is one fixture. A live run of the whole pipeline on the
+116-table / 1,312-column `dbt_synthea` warehouse (discovery mode, no declared
+keys, `--manifest` supplied), run twice, cost **2.6x the per-100-tables
+extrapolation**, and the reason changes how the number should be quoted.
+
+| Stage | LLM calls | Tokens (in/out) | Cost @ Haiku ($1/$5 per M) | Share |
+|---|---|---|---|---|
+| Profile — typing escalation (104 of 116 tables) | 104 | 110K / 40K | $0.31 | 15% |
+| Link — FK validation (2,745 candidates, 30/call) | 92 | 231K / 117K | $0.81 | 38% |
+| Describe — 2 passes (116 + 96 calls) | 212 | 400K / 121K | $1.01 | 47% |
+| **Total inference** | **408** | **741K / 278K** | **$2.13** | **~$1.84 per 100 tables** |
+
+Per 100 tables is not a constant, because the stages do not scale with tables:
+
+- **Describe scales with columns**: ~305 in / ~93 out per column across both
+  passes here, against ~329 / ~114 on messy_mart. Same rate; synthea tables are
+  twice as wide (11.3 columns against 5.5).
+- **Validation scales with FK candidates**, and candidates rise faster than
+  tables as more parents compete for each child: messy_mart had 120 candidates
+  over 36 tables (3.3 per table), synthea 2,745 over 116 (23.7 per table).
+  Per candidate the rate is the same, ~84 in / ~42 out. This stage was 13% of
+  messy_mart's spend and 38% here.
+- **Escalation scales with tables** at ~0.9 calls per table, with output
+  growing with the columns escalated (~90 tokens each).
+
+So the honest estimate is per unit of work, and that is what the assisted
+build script now computes:
+
+```
+spend ≈ columns × $0.00077 + tables × $0.0027 + inclusion_tests × $0.000035
+```
+
+The last term uses the measured 11.8% of inclusion tests that become
+candidates. It reproduces $2.13 on synthea by construction and gives $0.30 on
+messy_mart against $0.25 measured. Quote it as [E]; the run reports what it
+actually spent.
+
+Two further things the live run showed. Output tokens, not input, are the
+larger cost term at Haiku's 5:1 price ratio, and every validation verdict
+carries a one-line reason, which is 42% of all output tokens. And the two
+runs were not the same run: 3.8% of validation verdicts, 6.7% of escalated
+column types and 7 of 116 table types differed between them at temperature 0
+(docs/calibration.md, 2026-10-27), so the tokens vary by a few percent too.
+
 Not included:
 - Sonnet description-judging (~$0.10 per 45-item sample) — a development/eval
   cost, not a per-customer inference cost.

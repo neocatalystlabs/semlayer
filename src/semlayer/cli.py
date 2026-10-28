@@ -42,6 +42,17 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-llm", action="store_true", help="Deterministic dry-run (no LLM calls)")
     p.add_argument("--no-sample-egress", action="store_true",
                    help="Never include cell values in LLM prompts")
+    p.add_argument("--llm-workers", type=int, default=4, metavar="N",
+                   help="Concurrent LLM calls in typing escalation, foreign-key "
+                        "validation and the first Describe pass (default 4). "
+                        "The output is identical at any value; only wall-clock "
+                        "changes. Raise it if your API rate limit allows; 1 is "
+                        "fully serial.")
+    p.add_argument("--query-workers", type=int, default=4, metavar="N",
+                   help="Concurrent foreign-key inclusion queries (default 4). These run "
+                        "in YOUR warehouse and use your compute; measured 3.3x at 4 and "
+                        "6.7x at 8 on BigQuery, flat after. Output is identical at any "
+                        "value. 1 is fully serial.")
     p.add_argument("--state", metavar="PATH",
                    help="Partition-wise profiling with a state sidecar: "
                         "re-read only partitions whose change token moved")
@@ -173,7 +184,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
 def _cmd_infer(args: argparse.Namespace) -> int:
     import json
 
-    from semlayer.pipeline import infer_with_report, open_source_from_uri
+    from semlayer.pipeline import InferOptions, infer_with_report, open_source_from_uri
     from semlayer.review import collect
     from semlayer.validate import validate_document
 
@@ -204,10 +215,11 @@ def _cmd_infer(args: argparse.Namespace) -> int:
     only = {x.strip() for x in args.only.split(",") if x.strip()} if args.only else None
     if only:
         print(f"profiling {len(only)} table(s) only: {', '.join(sorted(only))}")
-    doc, report = infer_with_report(src, llm=llm, no_sample_egress=args.no_sample_egress,
-                                    context=context, only=only, lineage=lineage,
-                                    use_declared=not args.no_declared_constraints,
-                                    state=state)
+    options = InferOptions(no_sample_egress=args.no_sample_egress, only=only,
+                           use_declared=not args.no_declared_constraints,
+                           llm_workers=args.llm_workers, query_workers=args.query_workers)
+    doc, report = infer_with_report(src, llm=llm, options=options, context=context,
+                                    lineage=lineage, state=state)
     _note_run(report, doc, llm)
     if context:
         report["context"] = {"chunks": len(context.chunks),

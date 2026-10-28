@@ -158,6 +158,14 @@ class SnowflakeSource:
         finally:
             cur.close()
 
+    def for_worker(self):
+        """Per-worker executor: the shared connection.
+
+        It may be used from several threads; `query` already opens a cursor
+        per call.
+        """
+        return self
+
     def close(self) -> None:
         """Close the Snowflake connection."""
         self.con.close()

@@ -469,3 +469,38 @@ class DuckDBSource:
     def query(self, sql: str) -> list[tuple]:
         """Execute `sql` on the underlying DuckDB connection and fetch all rows."""
         return self.con.execute(sql).fetchall()
+
+    def for_worker(self) -> WorkerExecutor:
+        """An executor one thread may use while others use the connection.
+
+        DuckDB forbids two threads sharing one connection object; `cursor()`
+        opens a second connection to the same database. Everything but
+        `query` -- qualification, quoting, the attached-catalog map -- is
+        delegated back to this source, so a query built through the worker
+        is byte-identical to one built through the source.
+        """
+        return WorkerExecutor(self, self.con.cursor())
+
+
+class WorkerExecutor:
+    """A QueryExecutor for one worker thread, backed by its own cursor.
+
+    `query` goes to the private cursor; every other attribute is read from
+    the source it was made from. `close()` releases the cursor only -- never
+    the source's connection.
+    """
+
+    def __init__(self, source, cursor):
+        self._source = source
+        self._cursor = cursor
+
+    def query(self, sql: str) -> list[tuple]:
+        """Execute `sql` on this worker's private cursor and fetch all rows."""
+        return self._cursor.execute(sql).fetchall()
+
+    def close(self) -> None:
+        """Release the private cursor; the source's connection is untouched."""
+        self._cursor.close()
+
+    def __getattr__(self, name: str):
+        return getattr(self._source, name)

@@ -1414,3 +1414,63 @@ Fixing it moved `messy_mart` FK precision **1.000 -> 0.973**: restoring the
 discarded verdicts admits one false positive the model does assert. The 1.000
 had been flattered by the defect. Floor is 0.95, so it still holds, and 0.973 is
 the figure that reproduces.
+
+## Two live runs of the same warehouse disagree (2026-10-27)
+
+The timing run on `dbt_synthea` was two full live runs over identical input,
+identical prompts, temperature 0, differing only in how many LLM calls were in
+flight. The relationship count came out 265 in one and 260 in the other. The
+cassettes from both arms were kept, so the disagreement can be measured rather
+than guessed at.
+
+**Every one of the 281 prompts the two runs shared got a different answer as
+text.** Structurally, the disagreement is smaller but reaches every layer:
+
+| layer | items | differed between the two runs |
+|---|---|---|
+| FK validation verdicts | 2,745 | 103 (3.8%) |
+| escalated column `semantic_type` | 432 | 29 (6.7%) |
+| column `entity_role` | 1,312 | 34 |
+| column PII flag | 1,312 | 2 |
+| `table_type` | 116 | 7 |
+| metrics | 76 | 1 swapped |
+| relationships | 266 distinct | 7 (6 in one run only, 1 in the other) |
+
+The 259 relationships both runs produced are byte-identical, confidence
+included. The seven that differ are the borderline cases a reviewer would want
+to see: `encounter_id` against `visit_id` across OMOP staging and mart layers,
+concept ids against vocabulary mapping tables, provider source values,
+self-references. The model gave each of these the opposite verdict with an
+equally confident one-line reason each time.
+
+One of them is not borderline. `imaging_studies.PATIENT -> patients.Id` is a
+genuine foreign key in the Synthea source data. One run asserted it at
+confidence 0.90; the other dropped it, because the validation verdict flipped
+from plausible to implausible on identical input (the plausible run's reason:
+"one patient unused, normal"). Nothing in the output marks the asserted
+version as contested, and nothing in the other output records that it was
+ever a candidate.
+
+The two PII flips deserve their own line: a column tagged `pii_name` in one
+run and not the other is exactly the case the record-never-enforce policy has
+to be honest about. The warehouse enforces; we record; and what we record can
+differ between two runs.
+
+What this does and does not mean:
+
+- The pipeline is deterministic given the model's answers. Replaying either
+  arm's cassettes through the whole pipeline at 1 and 8 workers gives
+  byte-identical YAML. The earlier non-determinism (2026-10-13) was ours and
+  is fixed; this one is the model's.
+- It is the empirical case for three things the product already does:
+  cassettes pin a run so a re-run is a diff and not a lottery; every inference
+  carries confidence and provenance; and a review surface exists because
+  reruns disagree. It is also launch-post material, since no vendor publishes
+  this number.
+- It is also a limit on what a single confidence value means. A flipped
+  verdict carried 0.90, the same as a stable one. Running the validator twice
+  on the borderline set and marking disagreement as low confidence would route
+  exactly these cases to review, for a second call on a subset only. Not
+  built; recorded here as the obvious next experiment.
+- Token counts vary with the wording, so a cost estimate from one run is
+  within a few percent of the next, not exact.

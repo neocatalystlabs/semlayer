@@ -97,6 +97,10 @@ class BigQuerySource:
         """Run sql and return plain row tuples."""
         return [tuple(row.values()) for row in self.client.query(sql).result()]
 
+    def for_worker(self):
+        """Per-worker executor: the BigQuery client is thread-safe; every worker may share it."""
+        return self
+
     def close(self) -> None:
         """Release the underlying client."""
         self.client.close()

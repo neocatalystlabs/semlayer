@@ -16,6 +16,9 @@ from __future__ import annotations
 
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
+
+from semlayer.llm.provider import output_budget
 
 PROMPT_VERSION = "v1"
 TABLE_TYPES = ["fact", "dimension", "denormalized", "aggregate",
@@ -77,11 +80,21 @@ def _evidence(t: dict, stats, neighbors: dict[str, str], no_samples: bool,
 
 
 def describe_source(doc: dict, stats: dict, llm, no_samples: bool = False,
-                    passes: int = 2, context=None) -> dict:
+                    passes: int = 2, context=None, llm_workers: int = 1) -> dict:
     """Describe every table via iterative context propagation (see module docstring).
 
     `context` (v0.2): a semlayer.context.ContextBundle of knowledge-doc priors;
     relevant excerpts and dictionary descriptions ride into the evidence.
+
+    `llm_workers`: how many pass-1 calls are in flight at once. Pass 1 reads
+    only a table's own evidence, so its prompts do not depend on order and the
+    document comes out byte-identical at any worker count. Pass 2 stays serial:
+    it reads `descriptions` as it writes them, so a table described later sees
+    its neighbour's pass-2 text rather than its pass-1 text. That makes pass 2
+    order-dependent today, deterministic only because iteration is serial and
+    sorted. Parallelising it means snapshotting at the pass boundary, which
+    changes every prompt and needs the description-judge floor (0.867,
+    tests/test_describe.py) to adjudicate.
     """
     tables = doc["semantic_layer"]["tables"]
     rels = doc["semantic_layer"].get("relationships", [])
@@ -93,25 +106,59 @@ def describe_source(doc: dict, stats: dict, llm, no_samples: bool = False,
 
     descriptions: dict[str, str] = {}
     for pass_n in range(passes):
+        if pass_n == 0:
+            # Workers do only the pure part -- build evidence, call the model,
+            # parse -- and the results are applied here, serially, in table
+            # order. Nothing mutable is shared across threads, and provenance
+            # entries land in the same order the serial loop produced.
+            evidence = [_evidence(t, stats, {}, no_samples, context=context)
+                        for t in tables]
+            budgets = [_budget(t) for t in tables]
+            results = _complete_many(llm, evidence, budgets, max(1, llm_workers))
+            for t, ev, parsed in zip(tables, evidence, results, strict=True):
+                if not parsed:
+                    continue
+                if '"reference_docs"' in ev:
+                    t.setdefault("provenance", []).append(
+                        {"signal": "docs", "detail": "context docs in describe evidence"})
+                _apply_parsed(t, parsed, pass_n)
+                descriptions[t["name"]] = t["description"]
+            continue
         for t in tables:
-            neighbors = {}
-            if pass_n > 0:
-                neighbors = {n: descriptions.get(n, "")
-                             for n in sorted(neigh_map.get(t["name"], set()))
-                             if descriptions.get(n)}
-                if not neighbors and t.get("description"):
-                    continue  # isolated table: pass 1 result is final
+            neighbors = {n: descriptions.get(n, "")
+                         for n in sorted(neigh_map.get(t["name"], set()))
+                         if descriptions.get(n)}
+            if not neighbors and t.get("description"):
+                continue  # isolated table: pass 1 result is final
             ev = _evidence(t, stats, neighbors, no_samples, context=context)
-            raw = llm.complete(SYSTEM, ev)
-            parsed = _parse(raw)
+            parsed = _parse(llm.complete(SYSTEM, ev, max_tokens=_budget(t)))
             if not parsed:
                 continue
-            if pass_n == 0 and '"reference_docs"' in ev:
-                t.setdefault("provenance", []).append(
-                    {"signal": "docs", "detail": "context docs in describe evidence"})
             _apply_parsed(t, parsed, pass_n)
             descriptions[t["name"]] = t["description"]
     return doc
+
+
+def _budget(t: dict) -> int:
+    """Output ceiling for one table's reply: ~53 tokens per column measured live."""
+    return output_budget(len(t["columns"]), per_item=110, base=400)
+
+
+def _complete_many(llm, evidence: list[str], budgets: list[int], workers: int) -> list[dict]:
+    """One parsed response per evidence string, in input order.
+
+    A worker that raises fails the run: `executor.map` re-raises when its
+    result is read, so a table is never silently left undescribed by a thread
+    that died. The cassette layer already writes atomically, so concurrent
+    recorders cannot interleave a file.
+    """
+    def one(ev: str, budget: int) -> dict:
+        return _parse(llm.complete(SYSTEM, ev, max_tokens=budget))
+
+    if workers <= 1 or len(evidence) <= 1:
+        return [one(ev, b) for ev, b in zip(evidence, budgets, strict=True)]
+    with ThreadPoolExecutor(max_workers=min(workers, len(evidence))) as ex:
+        return list(ex.map(one, evidence, budgets))
 
 
 def _from_catalog(obj: dict) -> bool:
