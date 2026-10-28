@@ -438,9 +438,16 @@ def select_parents_and_children(stats_by_table: dict, doc: dict
     Split out of `generate_candidates` so the ranking can be tested against
     the brute-force sort on real fixtures without issuing a query.
     """
+    # Inventory-only tables (raw shards, backups: semlayer.tier) are neither
+    # children nor parents. As parents they were the wrong-copy problem: every
+    # copy of an entity holds the same key values, and on a 2,000-table
+    # synthetic estate 69% of statistical foreign keys pointed at a raw or
+    # scratch copy instead of the dimension. As children they were 70% of the
+    # query budget spent on tables nobody models against.
     cols = {
         (t["name"], c["name"]): c
-        for t in doc["semantic_layer"]["tables"] for c in t["columns"]
+        for t in doc["semantic_layer"]["tables"] if t.get("modeling") != "inventory_only"
+        for c in t["columns"]
     }
 
     def _has_validity_cols(tn: str) -> bool:

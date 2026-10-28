@@ -16,6 +16,7 @@ from importlib.metadata import version
 from semlayer.errors import SemlayerError
 from semlayer.profile.stats import TableStats, profile_table
 from semlayer.profile.typing_rules import ALWAYS_ESCALATE, classify
+from semlayer.tier import infer_tier, is_informational
 
 logger = logging.getLogger(__name__)
 
@@ -203,7 +204,7 @@ def profile_with_stats(source, no_sample_values: bool = False, llm=None, context
     model = "none/heuristic" if llm is None else f"{llm.model}/escalation"
     out: dict = {
         "semantic_layer": {
-            "spec_version": "0.4.0",
+            "spec_version": "0.5.0",
             "name": "profiled",
             "generated_by": {"engine": ENGINE_VERSION, "model": model},
             "tables": out_tables,
@@ -324,7 +325,8 @@ def _escalate_all(llm, pending: list[tuple[TableStats, dict]], no_sample_values:
     """
     if llm is None:
         return
-    jobs = [j for j in (_escalation_job(ts, doc, context) for ts, doc in pending) if j]
+    jobs = [j for j in (_escalation_job(ts, doc, context) for ts, doc in pending
+                        if doc.get("modeling") != "inventory_only") if j]
 
     def one(job) -> dict[str, dict]:
         from semlayer.profile.llm_typing import escalate_table
@@ -583,10 +585,18 @@ def _table_doc(ts: TableStats, no_sample_values: bool) -> dict:
             pk_candidates.append((name, typ.confidence))
         cols.append(col)
 
+    tier = infer_tier(ts.table.name, list(ts.columns))
     doc: dict = {
         "name": ts.table.name,
         "source": ts.table.qualified,
         "table_type": "unknown",   # Link-stage decision
+        "tier": {"value": tier.tier, "confidence": tier.confidence,
+                 "provenance": tier.provenance()},
+        # Raw and scratch tiers are listed with their shape and nothing more:
+        # no escalation, no foreign-key budget, no descriptions, no metrics, no
+        # review items. See semlayer.tier for why, and SPEC.md 2.13 for what a
+        # consumer does with one.
+        "modeling": "inventory_only" if is_informational(tier) else "full",
         "lifecycle": "inferred",
         "columns": cols,
     }

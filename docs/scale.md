@@ -188,9 +188,20 @@ builds in 1 s, and after that every tool answers in under a millisecond
 except semantic search at about 200 ms per call, which scans every table and
 column and would want an index past ~40,000 tables. The file was never meant
 to be read whole by a person or a model; agents reach it a table at a time.
-The usability limit that remains is the review queue: 7,563 low-confidence
-items at 2,000 tables, most of them raw and scratch copies the engine
-classified as business tables because it has no notion of a warehouse tier.
+
+**Tiers.** The usability limit that remained was the review queue: 7,563
+low-confidence items at 2,000 tables, 76% of them on raw and scratch copies
+the engine had classified as business tables because it had no notion of a
+warehouse tier. It has one now. Every table carries a `tier` (core, staging,
+raw, scratch or unknown) inferred from its name and ETL metadata columns,
+with confidence and provenance, and raw and scratch tables at 0.8 or above
+are `modeling: inventory_only`: listed with their shape, excluded from
+everything else (SPEC.md 2.13). On the same 2,000-table warehouse that took
+the review queue to 1,708 items, Link from 220 s to 129 s, and foreign-key
+precision against the gold from 0.31 to 0.94 with recall 1.00, because raw
+copies no longer compete as join targets. On every real fixture the tier is
+core or staging throughout, so nothing there changed. A reviewer who
+disagrees with a tier changes it, and the next run models the table in full.
 
 Two honest limits remain. The ladder is an in-process DuckDB file, so the
 query term is CPU on one machine and does not predict a network warehouse,

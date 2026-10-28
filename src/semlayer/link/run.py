@@ -422,15 +422,25 @@ def _detect_bom_hierarchy(t: dict) -> list[dict]:
 def _detect_recursive_hierarchies(doc: dict, stats_by_table: dict, source) -> list[dict]:
     """Detect self-referential (org-chart) and parent_/child_ (BOM) recursive structures."""
     hierarchies = []
-    for t in doc["semantic_layer"]["tables"]:
+    for t in _modelled(doc):
         hierarchies.extend(_detect_self_ref_hierarchy(t, stats_by_table, source))
         hierarchies.extend(_detect_bom_hierarchy(t))
     return hierarchies
 
 
+def _modelled(doc: dict) -> list[dict]:
+    """The tables Link works on: everything not set aside as inventory-only.
+
+    An inventory-only table (semlayer.tier: raw and scratch tiers) keeps its
+    shape and nothing else -- no table type, no composite-key probing, no
+    hierarchies, no candidacy on either side of a foreign key.
+    """
+    return [t for t in doc["semantic_layer"]["tables"] if t.get("modeling") != "inventory_only"]
+
+
 def _classify_tables(doc: dict, fk_out: dict, fk_in: dict) -> None:
-    """Assign table_type + confidence/provenance to every table in place."""
-    for t in doc["semantic_layer"]["tables"]:
+    """Assign table_type + confidence/provenance to every modelled table in place."""
+    for t in _modelled(doc):
         ttype, conf, detail = classify_table(t, fk_out.get(t["name"], 0), fk_in.get(t["name"], 0))
         t["table_type"] = ttype
         # confidence in the LABEL, not a quality score -- see docs/calibration.md
@@ -588,6 +598,8 @@ def _declared_fk_edges(doc: dict, declared) -> list[tuple]:
         parent = idx.get((f.parent_schema, f.parent_table))
         if child is None or parent is None:
             continue          # references something outside the inferred scope
+        if "inventory_only" in (child.get("modeling"), parent.get("modeling")):
+            continue          # SPEC 2.13: no relationships to or from an inventory-only table
         if not f.child_columns or len(f.child_columns) != len(f.parent_columns):
             continue
         out.append((child["name"], list(f.child_columns),
@@ -597,7 +609,7 @@ def _declared_fk_edges(doc: dict, declared) -> list[tuple]:
 
 def _apply_composite_pks(source, doc: dict, stats_by_table: dict) -> None:
     """Set primary_key on tables whose key is a tuple, and mark the members."""
-    for t in doc["semantic_layer"]["tables"]:
+    for t in _modelled(doc):
         ts = stats_by_table.get(t["name"])
         if ts is None:
             continue

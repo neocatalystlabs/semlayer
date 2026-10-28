@@ -100,6 +100,10 @@ A consumer that writes SQL itself (rather than compiling a metric) SHOULD verify
 
 A document's `tables` list is not a claim that nothing else exists. Where the producer emits `coverage`, a consumer MUST distinguish three cases: a table in `tables` (modelled); a table in `coverage.skipped` (exists, deliberately not modelled); and a table in neither (nothing is known either way). Asked about a `skipped` table, a consumer MUST NOT report it as absent. When the entry carries `same_shape_as`, the consumer MAY answer structural questions about it from the named table — the two share an exact column signature, which is why one was skipped — but MUST NOT assume their rows agree, and MUST NOT compile a metric over the skipped table without profiling it. A document without `coverage` makes no claim, and a consumer MUST NOT infer completeness from its absence.
 
+### 2.13 Inventory-only tables
+
+A table may carry `modeling: inventory_only`. It is in `tables` so that it can be found, and it carries its shape -- name, columns and their SQL types, and a `tier` with confidence and provenance saying why the producer set it aside (a raw landing zone, a change feed, a date shard, a backup, a scratch copy). Nothing else about it was inferred: no relationships point to or from it, no descriptions, metrics or aggregate claims were made over it, and it generated no review items. A consumer MUST NOT route a query to an inventory-only table, MUST NOT compile a metric over it, and MUST NOT report it as absent; asked about it, the consumer SHOULD say what it is and which modelled table holds the same data when the document names one. Absent `modeling` means `full`. A reviewer who disagrees with the tier changes it; on the next run the table is modelled in full.
+
 ## 3. Producer rules (normative)
 
 1. Metrics MUST reference only modeled objects (measures, declared dimensions/levels) — never raw SQL against unmodeled columns.
@@ -108,6 +112,7 @@ A document's `tables` list is not a claim that nothing else exists. Where the pr
 4. Producers MUST populate `generated_by` (engine, model, timestamp) on generated documents; engine-version changes are a distinct drift class from warehouse changes.
 5. A producer that enumerates more tables than it models SHOULD emit `coverage`. Skipping work is legitimate — profiling the four hundredth copy of a shape you already have is waste — but doing it silently makes the document indistinguishable from one describing a smaller warehouse.
 6. `confidence` MUST be calibration-tested by the producing engine; a document's confidence values are meaningless without a published calibration report. (semlayer's own report: [docs/calibration.md](../docs/calibration.md).)
+7. A producer that sets a table aside as `inventory_only` MUST still list it with its columns and a `tier` carrying the reason, and MUST err towards modelling: a table whose name declares no tier is modelled in full.
 
 ## 4. References
 

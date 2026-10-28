@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+### Every table gets a tier; raw and scratch tiers are listed, not modelled (spec 0.4.0 → 0.5.0)
+
+Most of a large warehouse is not the part anyone models against. On a
+15,000-table synthetic estate in a realistic mix (8% core star schemas,
+22% staging copies, 45% raw shards and change feeds, 25% scratch) the
+engine had no notion of that: it profiled, linked, reconciled and queued for
+review every raw shard and backup as if it were a business table. At 2,000
+tables 76% of the review queue sat on raw and scratch tables, every one of
+them received a full foreign-key budget, and the raw copies competed as
+join targets, so most statistical foreign keys pointed at a copy instead of
+the dimension.
+
+Two optional table fields. `tier` is one of core, staging, raw, scratch or
+unknown, with confidence and provenance, inferred from the name's prefix and
+suffix vocabulary in precedence order (scratch first; declared staging and
+core prefixes beat raw-looking suffixes; raw by prefix, suffix or date shard)
+and from ETL metadata columns (two or more). A name with no signal is core at
+0.5: unprefixed is canonical, and under-modelling a real table is the error
+the engine refuses. `modeling` is `full` or `inventory_only`; raw and scratch
+at confidence 0.8 or above are inventory-only. SPEC.md 2.13 says what a
+consumer does with one: it is in `tables` with its columns and types, nothing
+else was inferred about it, and no query may be routed to it.
+
+What inventory-only means in the engine: no typing escalation, no candidacy
+on either side of a foreign key, no declared edges, no table type, no
+composite-key probing, no hierarchies, no description, no metric, aggregate,
+freshness, grain, SCD or filter claim, and one review line per tier instead
+of one per column. Measured on the 2,000-table synthetic warehouse, no LLM:
+foreign-key precision 0.31 → 0.94 against the gold with recall 1.00, review
+queue 7,563 → 1,708 items, Link 220 s → 129 s. On every real fixture the
+tier is core or staging throughout, so nothing else changed: every floor
+and every cassette replay is as it was. Suffixes that fired on real tables
+when tried (`_snapshot`, `_hist`, `_log`, `_source`, `_test`, `source_`)
+are excluded with the reasons recorded in `semlayer/tier.py`.
+
+The 0.31 figure was measured against a gold the data contradicted (staging
+copies in the generator sampled a subset of keys); the generator is fixed
+and both figures above are on the corrected warehouse.
+
 ### Enrich caches identical queries; layers open with the C loader
 
 Aggregate reconciliation tries every rollup candidate against every fact

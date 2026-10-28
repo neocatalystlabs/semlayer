@@ -98,7 +98,10 @@ def describe_source(doc: dict, stats: dict, llm, no_samples: bool = False,
     earlier-described neighbour; the description-judge floor in
     tests/test_describe.py adjudicated the change (numbers there).
     """
-    tables = doc["semantic_layer"]["tables"]
+    # Inventory-only tables (semlayer.tier) keep their shape and get no
+    # description: they are the part of the warehouse nobody models against,
+    # and on a large estate they are most of the model spend.
+    tables = [t for t in doc["semantic_layer"]["tables"] if t.get("modeling") != "inventory_only"]
     rels = doc["semantic_layer"].get("relationships", [])
     neigh_map: dict[str, set[str]] = {}
     for r in rels:

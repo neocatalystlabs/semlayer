@@ -48,6 +48,7 @@ except ImportError:
     from wide import ENTITIES, GRAINS, MEASURES, ORPHAN_COLS, PROCESSES
 
 SEED = 20261028
+TXN_TABLES = 1000       # tables per transaction while building; see create()
 TIERS = (("core", 0.08), ("staging", 0.22), ("raw", 0.45), ("scratch", 0.25))
 
 DOMAINS = [
@@ -234,9 +235,23 @@ def build(con, n_tables: int, seed: int = SEED) -> dict:
                      rng.random() < 0.9, "2024-01-01 00:00:00") for k in keys]
         return cols, rows
 
+    # Autocommit made every CREATE and INSERT its own transaction, each with
+    # its own write-ahead-log entry and catalog version: 86 s for 3,000 tiny
+    # tables, superlinear, on one core, with the WAL held in memory. In one
+    # transaction per TXN_TABLES tables it is 14 s, and the CHECKPOINT at
+    # each commit keeps memory flat. Measured 2026-10-28 (prd/bench).
+    created = 0
+
     def create(name: str, cols: list[str], rows: list[tuple]) -> None:
+        nonlocal created
+        if created % TXN_TABLES == 0:
+            con.execute("BEGIN")
         con.execute(f'CREATE TABLE "{name}" ({", ".join(cols)})')
         insert_rows(con, f'"{name}"', rows)
+        created += 1
+        if created % TXN_TABLES == 0:
+            con.execute("COMMIT")
+            con.execute("CHECKPOINT")
 
     etl_cols = ['"etl_batch_id" INTEGER', '"dw_inserted_at" TIMESTAMP',
                 '"src_system" VARCHAR', '"record_hash" VARCHAR']
@@ -302,8 +317,18 @@ def build(con, n_tables: int, seed: int = SEED) -> dict:
                         '"payload" VARCHAR', *etl_cols]
                 if kind == "cdc":
                     cols += ['"op" VARCHAR', '"changed_at" TIMESTAMP']
+                # A staging copy carries the entity's WHOLE key set, like
+                # wide.py's copies: that is what makes it indistinguishable
+                # from the dimension by inclusion and lets the gold name it as
+                # the same-stage parent. The first version sampled a subset,
+                # so the gold said "parent is the int__ copy" while the data
+                # said the copy lacked half the child's values, and the
+                # engine's data-correct choice scored as 361 wrong keys. Raw
+                # and scratch copies stay partial: shards and backups are.
+                subset = (keys if t["tier"] == "staging"
+                          else rng.sample(keys, rng.randint(len(keys) // 2, len(keys))))
                 rows = []
-                for k in rng.sample(keys, rng.randint(len(keys) // 2, len(keys))):
+                for k in subset:
                     row = [k, f"{ent}-{k}", f'{{"id":{k}}}', *etl_vals()]
                     if kind == "cdc":
                         row += [rng.choice(["I", "U", "D"]), "2025-02-01 00:00:00"]
@@ -316,6 +341,8 @@ def build(con, n_tables: int, seed: int = SEED) -> dict:
                     for r in range(rng.randint(5, 30))]
             create(name, cols, rows)
 
+    if created % TXN_TABLES:
+        con.execute("COMMIT")
     meta = {
         "n_tables": len(tables), "seed": seed,
         "tiers": {k: sum(1 for t in tables if t["tier"] == k) for k, _ in TIERS},
