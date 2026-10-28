@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "a2ec036e2008",
+ "response": "[\n {\"id\": 0, \"correct\": false, \"useful\": true, \"issue\": \"File name misdescribed as integer PK\"},\n {\"id\": 1, \"correct\": false, \"useful\": true, \"issue\": \"Wrong table domain: subscription events, not currency\"},\n {\"id\": 2, \"correct\": false, \"useful\": true, \"issue\": \"sub_id mislabeled as creation date\"},\n {\"id\": 3, \"correct\": false, \"useful\": true, \"issue\": \"crt_dt mislabeled as event date\"},\n {\"id\": 4, \"correct\": false, \"useful\": true, \"issue\": \"evt_dt mislabeled as subscription id\"},\n {\"id\": 5, \"correct\": false, \"useful\": true, \"issue\": \"Wrong domain: currency dim, not products\"},\n {\"id\": 6, \"correct\": false, \"useful\": true, \"issue\": \"curr_nm mislabeled as ISO code\"},\n {\"id\": 7, \"correct\": false, \"useful\": true, \"issue\": \"curr_cd mislabeled as exchange rate\"},\n {\"id\": 8, \"correct\": false, \"useful\": true, \"issue\": \"to_usd_rate mislabeled as currency name\"}\n]",
+ "usage": {
+  "in": 2271,
+  "out": 1166
+ }
+}

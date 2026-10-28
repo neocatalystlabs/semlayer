@@ -44,7 +44,7 @@ def _build_parser() -> argparse.ArgumentParser:
                    help="Never include cell values in LLM prompts")
     p.add_argument("--llm-workers", type=int, default=4, metavar="N",
                    help="Concurrent LLM calls in typing escalation, foreign-key "
-                        "validation and the first Describe pass (default 4). "
+                        "validation and both Describe passes (default 4). "
                         "The output is identical at any value; only wall-clock "
                         "changes. Raise it if your API rate limit allows; 1 is "
                         "fully serial.")

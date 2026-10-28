@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "a2ec036e2008",
+ "response": "[\n {\"id\": 0, \"correct\": false, \"useful\": false, \"issue\": \"Describes list_price as creation date\"},\n {\"id\": 1, \"correct\": false, \"useful\": false, \"issue\": \"Describes crt_dt as product name\"},\n {\"id\": 2, \"correct\": false, \"useful\": false, \"issue\": \"Table is address dim, not payment methods\"},\n {\"id\": 3, \"correct\": false, \"useful\": false, \"issue\": \"city_nm mislabeled as customer FK\"},\n {\"id\": 4, \"correct\": false, \"useful\": false, \"issue\": \"cust_id mislabeled as postal code\"},\n {\"id\": 5, \"correct\": false, \"useful\": false, \"issue\": \"postal_cd mislabeled as city name\"},\n {\"id\": 6, \"correct\": false, \"useful\": false, \"issue\": \"Table is payment method dim, not staging\"},\n {\"id\": 7, \"correct\": false, \"useful\": false, \"issue\": \"pmt_mthd_desc mislabeled as code/PK\"},\n {\"id\": 8, \"correct\": false, \"useful\": false, \"issue\": \"pmt_mthd_cd mislabeled as description\"},\n {\"id\": 9, \"correct\": false, \"useful\": false, \"issue\": \"Table is staging, not subscription fact\"},\n {\"id\": 10, \"correct\": false, \"useful\": false, \"issue\": \"raw_id mislabeled as load timestamp\"},\n {\"id\": 11, \"correct\": false, \"useful\": false, \"issue\": \"load_ts mislabeled as filename\"}\n]",
+ "usage": {
+  "in": 3264,
+  "out": 937
+ }
+}

@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "26fea8ed3e9d",
+ "response": "```json\n{\n  \"table_description\": \"Point-in-time inventory snapshot capturing on-hand and on-order quantities by store, product, and date across 2,500 records.\",\n  \"ai_context\": \"Join to date_dim, prod_ref, store_dim via date_key, prod_id, store_id. Filter by date_key for period analysis. Quantities are non-negative integers.\",\n  \"table_type\": \"snapshot_scd2\",\n  \"columns\": [\n    {\n      \"name\": \"snpsht_id\",\n      \"description\": \"Unique snapshot record identifier; primary key.\"\n    },\n    {\n      \"name\": \"date_key\",\n      \"description\": \"Date dimension foreign key (YYYYMMDD format); links to calendar attributes.\"\n    },\n    {\n      \"name\": \"store_id\",\n      \"description\": \"Store dimension foreign key (ST####); identifies retail location.\"\n    },\n    {\n      \"name\": \"prod_id\",\n      \"description\": \"Product reference foreign key (P######); identifies inventory item.\"\n    },\n    {\n      \"name\": \"on_hand_qty\",\n      \"description\": \"Physical inventory quantity available at store on snapshot date.\"\n    },\n    {\n      \"name\": \"on_order_qty\",\n      \"description\": \"Quantity of product on purchase order awaiting receipt at store.\"\n    }\n  ]\n}\n```",
+ "usage": {
+  "in": 1134,
+  "out": 335
+ }
+}

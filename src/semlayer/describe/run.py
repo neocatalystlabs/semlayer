@@ -86,15 +86,17 @@ def describe_source(doc: dict, stats: dict, llm, no_samples: bool = False,
     `context` (v0.2): a semlayer.context.ContextBundle of knowledge-doc priors;
     relevant excerpts and dictionary descriptions ride into the evidence.
 
-    `llm_workers`: how many pass-1 calls are in flight at once. Pass 1 reads
-    only a table's own evidence, so its prompts do not depend on order and the
-    document comes out byte-identical at any worker count. Pass 2 stays serial:
-    it reads `descriptions` as it writes them, so a table described later sees
-    its neighbour's pass-2 text rather than its pass-1 text. That makes pass 2
-    order-dependent today, deterministic only because iteration is serial and
-    sorted. Parallelising it means snapshotting at the pass boundary, which
-    changes every prompt and needs the description-judge floor (0.867,
-    tests/test_describe.py) to adjudicate.
+    `llm_workers`: how many calls are in flight at once, in either pass.
+    Pass 1 reads only a table's own evidence. Pass 2 reads its neighbours'
+    descriptions from a snapshot taken at the pass boundary, so every table
+    sees the text its neighbours had when the pass began, whatever the order
+    the calls complete in. The document is byte-identical at any worker
+    count. Until 2026-10-28 pass 2 read `descriptions` as it wrote them, so a
+    table described later saw a neighbour's pass-2 text: deterministic only
+    because iteration was serial and sorted, and the one loop the pool could
+    not reach. The snapshot changed every pass-2 prompt that had an
+    earlier-described neighbour; the description-judge floor in
+    tests/test_describe.py adjudicated the change (numbers there).
     """
     tables = doc["semantic_layer"]["tables"]
     rels = doc["semantic_layer"].get("relationships", [])
@@ -124,19 +126,37 @@ def describe_source(doc: dict, stats: dict, llm, no_samples: bool = False,
                 _apply_parsed(t, parsed, pass_n)
                 descriptions[t["name"]] = t["description"]
             continue
-        for t in tables:
-            neighbors = {n: descriptions.get(n, "")
-                         for n in sorted(neigh_map.get(t["name"], set()))
-                         if descriptions.get(n)}
-            if not neighbors and t.get("description"):
-                continue  # isolated table: pass 1 result is final
-            ev = _evidence(t, stats, neighbors, no_samples, context=context)
-            parsed = _parse(llm.complete(SYSTEM, ev, max_tokens=_budget(t)))
+        # Pass boundary: every prompt in this pass reads the previous pass's
+        # text, never a neighbour's result from this one. That is what makes
+        # the prompts a pure function of the pass input, and the pool safe.
+        jobs = _pass_jobs(tables, neigh_map, dict(descriptions), stats, no_samples, context)
+        results = _complete_many(llm, [ev for _, ev in jobs], [_budget(t) for t, _ in jobs],
+                                 max(1, llm_workers))
+        for (t, _ev), parsed in zip(jobs, results, strict=True):
             if not parsed:
                 continue
             _apply_parsed(t, parsed, pass_n)
             descriptions[t["name"]] = t["description"]
     return doc
+
+
+def _pass_jobs(tables: list[dict], neigh_map: dict, snapshot: dict[str, str], stats,
+               no_samples: bool, context) -> list[tuple[dict, str]]:
+    """(table, evidence) for every table that gets a later-pass call.
+
+    Neighbour text comes from `snapshot`, never from this pass's results, so
+    the prompts are a pure function of the pass input. A table with no
+    described neighbour keeps its pass-1 result.
+    """
+    jobs: list[tuple[dict, str]] = []
+    for t in tables:
+        neighbors = {n: snapshot[n]
+                     for n in sorted(neigh_map.get(t["name"], set()))
+                     if snapshot.get(n)}
+        if not neighbors and t.get("description"):
+            continue
+        jobs.append((t, _evidence(t, stats, neighbors, no_samples, context=context)))
+    return jobs
 
 
 def _budget(t: dict) -> int:

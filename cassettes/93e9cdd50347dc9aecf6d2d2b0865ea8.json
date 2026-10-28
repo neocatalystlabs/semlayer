@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "26fea8ed3e9d",
+ "response": "```json\n{\n  \"table_description\": \"Daily sales aggregate by store and date. Contains total sales amount and order count rolled up from transaction-level data.\",\n  \"ai_context\": \"Join to date_dim via agg_dt_key and store_dim via store_id for temporal and location context. Covers ~3 years of 40 stores. ord_cnt has only 3 distinct values\u2014investigate cardinality.\",\n  \"table_type\": \"aggregate\",\n  \"columns\": [\n    {\n      \"name\": \"agg_dt_key\",\n      \"description\": \"Foreign key to date_dim. Identifies the calendar date for each aggregated record.\"\n    },\n    {\n      \"name\": \"store_id\",\n      \"description\": \"Foreign key to store_dim. Identifies the retail store location.\"\n    },\n    {\n      \"name\": \"tot_sls_amt\",\n      \"description\": \"Total sales amount in currency for the store and date. Decimal precision to cents.\"\n    },\n    {\n      \"name\": \"ord_cnt\",\n      \"description\": \"Count of orders placed at the store on the date. Only 3 distinct values observed.\"\n    }\n  ]\n}\n```",
+ "usage": {
+  "in": 710,
+  "out": 285
+ }
+}

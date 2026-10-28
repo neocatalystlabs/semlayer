@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "4df9b8e6e218",
+ "response": "{\"action\":\"sql\",\"sql\":\"SELECT SUM(tot_amt) AS total_revenue FROM ord_hdr WHERE sts_cd <> 'X' AND ord_id IN (SELECT ol.ord_id FROM ord_ln ol WHERE ol.ord_ln_id IN (SELECT ord_ln_id FROM ord_rtn))\",\"reason\":\"\"}",
+ "usage": {
+  "in": 7496,
+  "out": 288
+ }
+}

@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "a2ec036e2008",
+ "response": "[\n {\"id\": 0, \"correct\": false, \"useful\": false, \"issue\": \"cmpgn_id called name; actually ID code\"},\n {\"id\": 1, \"correct\": false, \"useful\": false, \"issue\": \"cmpgn_nm described as end date\"},\n {\"id\": 2, \"correct\": false, \"useful\": false, \"issue\": \"describes customer SCD2, not job control\"},\n {\"id\": 3, \"correct\": false, \"useful\": false, \"issue\": \"actv_flg described as job name/PK\"},\n {\"id\": 4, \"correct\": false, \"useful\": false, \"issue\": \"job_nm described as run date\"},\n {\"id\": 5, \"correct\": false, \"useful\": false, \"issue\": \"last_run_dt described as active flag\"},\n {\"id\": 6, \"correct\": false, \"useful\": false, \"issue\": \"cust_mstr described as product dimension\"},\n {\"id\": 7, \"correct\": false, \"useful\": false, \"issue\": \"eff_start_dt described as city\"},\n {\"id\": 8, \"correct\": false, \"useful\": false, \"issue\": \"city_nm described as surrogate key\"},\n {\"id\": 9, \"correct\": false, \"useful\": false, \"issue\": \"cust_sk described as start date\"},\n {\"id\": 10, \"correct\": false, \"useful\": false, \"issue\": \"prod_ref described as address table\"},\n {\"id\": 11, \"correct\": false, \"useful\": false, \"issue\": \"prod_nm described as list price\"}\n]",
+ "usage": {
+  "in": 4074,
+  "out": 1253
+ }
+}
