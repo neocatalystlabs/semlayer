@@ -134,8 +134,10 @@ def _build_parser() -> argparse.ArgumentParser:
 def _load_doc(path: str) -> dict:
     import yaml
 
+    from semlayer.validate import load_yaml
+
     try:
-        doc = yaml.safe_load(Path(path).read_text())
+        doc = load_yaml(Path(path).read_text())
     except FileNotFoundError as e:
         raise SpecError(f"document not found: {path}",
                             hint="run `semlayer infer` first, or check the path") from e

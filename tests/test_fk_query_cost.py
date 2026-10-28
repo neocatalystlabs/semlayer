@@ -53,17 +53,17 @@ def test_fk_query_cost_per_child(fixture):
         doc, stats = profile_with_stats(src, llm=None, lineage=None)
 
         per_child: collections.Counter = collections.Counter()
-        real = C._inclusion
+        real = C._inclusion_batch
 
-        def counted(ex, sbt, ctn, ccn, ptn, pcn, _r=real):
-            per_child[(ctn, ccn)] += 1
-            return _r(ex, sbt, ctn, ccn, ptn, pcn)
+        def counted(ex, sbt, ctn, ccn, parents, _r=real):
+            per_child[(ctn, ccn)] += len(parents)
+            return _r(ex, sbt, ctn, ccn, parents)
 
-        C._inclusion = counted
+        C._inclusion_batch = counted
         try:
             link_source(src, doc, stats, llm=None, use_declared=False, lineage=None)
         finally:
-            C._inclusion = real
+            C._inclusion_batch = real
     finally:
         con.close()
 
@@ -102,18 +102,18 @@ def test_budget_is_spent_by_children_that_match_nothing(fixture):
         src = DuckDBSource(con)
         doc, stats = profile_with_stats(src, llm=None, lineage=None)
         tests: dict = collections.defaultdict(list)
-        real = C._inclusion
+        real = C._inclusion_batch
 
-        def counted(ex, sbt, ctn, ccn, ptn, pcn, _r=real):
-            r = _r(ex, sbt, ctn, ccn, ptn, pcn)
-            tests[(ctn, ccn)].append(r)
-            return r
+        def counted(ex, sbt, ctn, ccn, parents, _r=real):
+            rs = _r(ex, sbt, ctn, ccn, parents)
+            tests[(ctn, ccn)].extend(rs)
+            return rs
 
-        C._inclusion = counted
+        C._inclusion_batch = counted
         try:
             link_source(src, doc, stats, llm=None, use_declared=False, lineage=None)
         finally:
-            C._inclusion = real
+            C._inclusion_batch = real
     finally:
         con.close()
 

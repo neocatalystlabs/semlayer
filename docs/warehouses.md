@@ -12,6 +12,7 @@ Two kinds. **Synthetic** warehouses we generate: deterministic, seeded, rebuilt 
 |---|--:|--:|--:|--:|---|
 | `wide_conventional` | — | — | — | — | — *(no FK gate)* |
 | `wide_opaque` | — | — | — | — | — *(no FK gate)* |
+| `scale_N` | — | — | — | — | — *(no FK gate)* |
 | `collision_heavy` | 26 | 62 | 4,295 | 11 | 0.95 / 0.95 |
 | `eav` | 2 | 7 | 25,579 | 1 | — *(no FK gate)* |
 | `fan_trap` | 4 | 14 | 4,542 | 3 | 0.99 / 0.99 |
@@ -35,6 +36,12 @@ Blank floors are real gaps, not omissions: four fixtures carry gold but no CI-en
 The same 2,000-table warehouse with the convention removed: T_0075, IMPR_MSTR_1270, and the same entity called CUST_NO here and CUSTOMER_NUMBER there. Every disambiguation mechanism the engine has reads names, each was measured only on tidy dbt projects, and no fixture represented the population where they all go inert. The pair makes "what does the naming convention buy us" a controlled experiment: identical structure, identical key domains, names the only difference.
 
 - generator `fixtures/generators/wide.py`; seeded, so two builds are byte-identical.
+
+### `scale_N`
+
+N tables, N programmable (--tables), in an enterprise tier mix that is deliberately mostly noise: 8% core star schemas, 22% staging copies, 45% raw shards and change feeds, 25% scratch. Exists to walk the table-count ladder past the 2,000 the wide pair is pinned at and see which stage curves upward and what fails first. Every table's tier is written to a sidecar meta.json so a run can be scored per tier against the hypothesis that only 10-20% of an estate is worth modelling. Not built by fixtures/build.py; run the generator directly.
+
+- generator `fixtures/generators/scale.py`; seeded, so two builds are byte-identical.
 
 ### `collision_heavy`
 
