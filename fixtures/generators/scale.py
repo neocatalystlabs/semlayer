@@ -241,9 +241,13 @@ def build(con, n_tables: int, seed: int = SEED) -> dict:
 
     # Autocommit made every CREATE and INSERT its own transaction, each with
     # its own write-ahead-log entry and catalog version: 86 s for 3,000 tiny
-    # tables, superlinear, on one core, with the WAL held in memory. In one
-    # transaction per TXN_TABLES tables it is 14 s, and the CHECKPOINT at
-    # each commit keeps memory flat. Measured 2026-10-28 on 3,000 tiny tables.
+    # tables, superlinear, on one core. In one transaction per TXN_TABLES
+    # tables it is 14 s. The first version of this also ran CHECKPOINT at
+    # every commit; a checkpoint serialises the whole catalog, so that cost
+    # 8-22 s per 1,000 tables and grew with the file -- 65 of 109 s at 5,000
+    # tables, and no gain at all at 15,000 on Windows. DuckDB checkpoints on
+    # its own when the log passes checkpoint_threshold; it is raised here so
+    # that happens rarely, and main() checkpoints once at the end.
     created = 0
 
     def create(name: str, cols: list[str], rows: list[tuple]) -> None:
@@ -255,7 +259,6 @@ def build(con, n_tables: int, seed: int = SEED) -> dict:
         created += 1
         if created % TXN_TABLES == 0:
             con.execute("COMMIT")
-            con.execute("CHECKPOINT")
 
     etl_cols = ['"etl_batch_id" INTEGER', '"dw_inserted_at" TIMESTAMP',
                 '"src_system" VARCHAR', '"record_hash" VARCHAR']
@@ -371,6 +374,7 @@ def main(argv: list[str] | None = None) -> int:
     if out.exists():
         out.unlink()
     con = duckdb.connect()
+    con.execute("SET checkpoint_threshold = '2GB'")   # see create(): checkpoint once, at the end
     con.execute(f"ATTACH '{out}' AS scale_db (BLOCK_SIZE {args.block_size})")
     con.execute("USE scale_db")
     try:
