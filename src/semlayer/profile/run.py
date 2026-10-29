@@ -487,11 +487,14 @@ def _scale_warning(n_tables: int, n_columns: int) -> str | None:
     # to load". Measured 2026-10-28 on a 15,000-table synthetic warehouse: the
     # 42 MB layer parses in 14 s and every MCP tool answers in milliseconds
     # after that, so that clause was retired. The truncation clause stands:
-    # MAX_PARENTS caps the candidate list and the cap bites past ~2,900 tables.
+    # Then measured at 50,000 tables: MAX_PARENTS had dropped 2,952 of 7,952
+    # real parent keys. Named parents are no longer capped; what is bounded
+    # past this size is the statistics-only (unnamed) candidates per child.
     return (f"warehouse exceeds the tested scale: {', '.join(over)}. "
-            f"Foreign-key discovery caps its candidate-parent list, so some keys "
-            f"may go untested above this size. Narrow the run with --only or a "
-            f"schema filter, or see docs/scale.md for what has been measured past it.")
+            f"Foreign-key discovery bounds the speculative candidates it tests per "
+            f"column, so a key that nothing names may go untested above this size. "
+            f"Narrow the run with --only or a schema filter, or see docs/scale.md "
+            f"for what has been measured past it.")
 
 
 def _partitions_or_empty(source) -> dict:

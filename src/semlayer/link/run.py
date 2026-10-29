@@ -163,10 +163,15 @@ def _best_parent_per_child(
         # keeping: "the guard is safe once the layer rule is active" assumes
         # the layer rule DECIDES, and in messy_mart prod_ref and sku_xref are
         # both unprefixed, so the layer term ties and the guard acts alone.
-        score = (_same_layer(c), c.name_score, c.inclusion_ratio,
+        # Co-location breaks ties between parents that NAMES already propose.
+        # A parent with no name evidence at all (a statistics-only candidate
+        # from the unscored tail) does not get to beat a named one by sitting
+        # in the child's layer: int__person.person_source_value contains every
+        # int__drug_medications.patient_id, but patient_id names patients.
+        score = (c.name_score > 0, _same_layer(c), c.name_score, c.inclusion_ratio,
                  bool(lineage) and _is_pk(c))
-        prev_score = (_same_layer(prev), prev.name_score, prev.inclusion_ratio,
-                      bool(lineage) and _is_pk(prev))
+        prev_score = (prev.name_score > 0, _same_layer(prev), prev.name_score,
+                      prev.inclusion_ratio, bool(lineage) and _is_pk(prev))
         if score > prev_score:
             best[key] = c
             lineage_wins.discard(key)

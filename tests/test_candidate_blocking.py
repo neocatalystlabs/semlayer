@@ -1,11 +1,10 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""ParentIndex.ranked() must reproduce the brute-force sort exactly.
+"""ParentIndex.ranked() must reproduce the brute-force sort's positive part exactly.
 
-The index scores only parents that share something with the child by name
-and appends the rest in list order. That is the same order as
-`sorted(parents, key=name_similarity, reverse=True)` only if (a) every
-parent that scores above zero is inside the block and (b) the tail keeps
-its position order, which the stable sort guarantees. (a) is a claim about
+The index scores only parents that share something with the child by name.
+That matches the positive prefix of
+`sorted(parents, key=name_similarity, reverse=True)` only if every parent
+that scores above zero is inside the block. That is a claim about
 `name_similarity`'s branches, so it is checked here against the brute force
 on every built fixture and on a hand-picked set of the names that exercised
 those branches when they were written (PascalCase keys, TPC-DS alias
@@ -38,7 +37,9 @@ FIXTURES = ["messy_mart", "tpcds_clean", "collision_heavy", "fan_trap", "multi_t
 
 
 def _brute(parents, ccn, ctn):
-    return sorted(parents, key=lambda p: name_similarity(ccn, ctn, p[1], p[0]), reverse=True)
+    """The brute-force order's positive part: parents the index must score."""
+    return [p for p in sorted(parents, key=lambda p: name_similarity(ccn, ctn, p[1], p[0]),
+                              reverse=True) if name_similarity(ccn, ctn, p[1], p[0]) > 0]
 
 
 @pytest.mark.parametrize("fixture", FIXTURES)
@@ -67,8 +68,9 @@ def test_index_matches_brute_force_on_fixture(fixture):
 
 
 class _Col:
-    def __init__(self, sql_type):
+    def __init__(self, sql_type, n_distinct=1):
         self.sql_type = sql_type
+        self.n_distinct = n_distinct
 
 
 class _Table:
@@ -116,3 +118,24 @@ def test_index_matches_brute_force_on_branch_names():
             p for p in brute if _type_family(stats[p[0]].columns[p[1]].sql_type) == fam]
     # and the block really is a block: at least one child leaves most parents out
     assert min(len(index.block(ccn, ctn)) for ctn, ccn, _ in _CHILDREN) < len(parents) // 2
+
+
+def test_unscored_is_narrowest_fit_first_and_skips_the_too_narrow():
+    """The zero-score tail starts at the narrowest parent that can hold the child.
+
+    Reading it in full for every child was children x parents; parents too
+    narrow to contain the child's values are skipped by bisection, and the
+    real parent (whose key domain sits just above the child's) comes first.
+    """
+    parents = [("a", "k1", "INTEGER"), ("b", "k2", "INTEGER"), ("c", "k3", "INTEGER"),
+               ("d", "k4", "INTEGER"), ("e", "k5", "VARCHAR")]
+    widths = {"k1": 10, "k2": 500, "k3": 500, "k4": 50, "k5": 900}
+    stats = {tn: _Table({cn: ty}) for tn, cn, ty in parents}
+    for tn, cn, _ in parents:
+        stats[tn].columns[cn].n_distinct = widths[cn]
+    index = ParentIndex([(tn, cn) for tn, cn, _ in parents], stats)
+    order = [index.parents[i] for i in index.unscored("num", 40, set())]
+    assert order == [("d", "k4"), ("b", "k2"), ("c", "k3")]      # ties by position, k1 too narrow
+    assert [index.parents[i] for i in index.unscored("num", 40, {3})] == [("b", "k2"), ("c", "k3")]
+    assert [index.parents[i] for i in index.unscored("num", 1000, set())] == []
+    assert [index.parents[i] for i in index.unscored("str", 1, set())] == [("e", "k5")]

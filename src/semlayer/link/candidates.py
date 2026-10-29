@@ -14,6 +14,8 @@ from __future__ import annotations
 import logging
 import re
 import threading
+from bisect import bisect_left
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from functools import cache
@@ -41,8 +43,26 @@ MIN_INCLUSION = 0.95          # candidate threshold
 # sort on one core, 370 s with the index, 111 s once each child's tests also
 # went out as one statement. The cap now bounds an index, not a sort, and a
 # strict no-op on every current fixture, whose largest parent list is 177.
+#
+# 2026-10-28: the cap applies to the key-SHAPED (speculative) parents only.
+# NAMED parents -- unique columns the naming vocabulary already proposes --
+# are never truncated. A 50,000-table synthetic warehouse had 7,952 of them;
+# the cap kept the first 5,000 in table order, which dropped the staging
+# dimensions, and the 8,820 staging foreign keys were then asserted against
+# the core dimension holding the same key values (gold recall 0.385). With
+# the index the parent count no longer drives a per-child cost; the
+# zero-score tail, which did, is bounded separately (MAX_UNSCORED_SCAN).
 MAX_PARENTS = 5_000
 MAX_QUERIES_PER_CHILD = 40    # cap inclusion tests per child column
+# Parents with NO name evidence for a child (the zero-score tail of its
+# ranking) can only reach the review queue, never the output on their own.
+# They used to be walked in full for every child -- children x parents --
+# which was the whole of Link's superlinear term once the sort was gone (9x
+# the time for 3x the tables between 15,000 and 50,000). Now they are tried
+# from the narrowest key domain that can contain the child's values upward
+# -- a real parent's distinct count sits just above its child's -- and the
+# walk stops at this many examined.
+MAX_UNSCORED_SCAN = 10 * MAX_QUERIES_PER_CHILD
 MIN_PARENT_DISTINCT = 2       # a one-row table makes EVERY column unique
 MAX_CHILD_DISTINCT = 100_000  # above this a column is free text, not a key reference
 
@@ -342,19 +362,26 @@ class ParentIndex:
       >0    shared name token            -> parents keyed by every token of
                                             column and table
 
-    Anything outside the union scores zero, and `sorted(..., reverse=True)` is
-    stable, so the zero-scored parents keep their list order behind the scored
-    ones. `ranked()` builds that order directly: positives sorted by score then
-    position, then the rest by position -- restricted to the child's type
-    family, which `_testable` would drop anyway and which keeps the tail short.
-    tests/test_candidate_blocking.py checks the result against the brute-force
+    Anything outside the union scores zero. `scored()` builds the positive
+    part of that order directly: positives sorted by score then position,
+    restricted to the child's type family, which `_testable` would drop
+    anyway. tests/test_candidate_blocking.py checks it against the brute-force
     sort on every fixture.
+
+    The zero-scored rest is no longer walked in full. `unscored()` yields the
+    same-family parents whose distinct count can contain the child's, the
+    narrowest first (a real parent's key domain sits just above its child's:
+    claims.PATIENTID and patients.Id hold the same 1,171 values, while the
+    encounter and observation ids above them hold millions), position
+    breaking ties. Parents too narrow for the child are skipped by bisection,
+    not examined. The caller bounds how far it reads (MAX_UNSCORED_SCAN).
     """
 
     def __init__(self, parents: list[tuple[str, str]], stats_by_table) -> None:
         self.parents = parents
         self.family = [_type_family(stats_by_table[tn].columns[cn].sql_type)
                        for tn, cn in parents]
+        self.distinct = [stats_by_table[tn].columns[cn].n_distinct for tn, cn in parents]
         self.by_family: dict[str, list[int]] = {}
         self.by_exact: dict[str, list[int]] = {}
         self.by_tail6: dict[str, list[int]] = {}
@@ -371,6 +398,11 @@ class ParentIndex:
                 self.by_lasttok.setdefault(ptoks[-1], []).append(i)
             for t in _name_tokens(pcn, ptn) | _name_tokens(ptn, ptn):
                 self.by_tok.setdefault(t, []).append(i)
+        self.by_family_narrow: dict[str, list[int]] = {
+            fam: sorted(idx, key=lambda i: (self.distinct[i], i))
+            for fam, idx in self.by_family.items()}
+        self.by_family_widths: dict[str, list[int]] = {
+            fam: [self.distinct[i] for i in idx] for fam, idx in self.by_family_narrow.items()}
 
     def block(self, ccn: str, ctn: str) -> set[int]:
         """Indices of every parent that can score above zero for this child."""
@@ -386,49 +418,100 @@ class ParentIndex:
             out.update(self.by_tok.get(t, ()))
         return out
 
-    def ranked(self, ccn: str, ctn: str, family: str | None = None) -> list[tuple[str, str]]:
-        """Parents in name-similarity order, ties by position.
+    def scored(self, ccn: str, ctn: str, family: str | None = None) -> list[int]:
+        """Indices of the parents with name evidence, by similarity then position.
 
         With `family`, only parents of that type family.
         """
-        scored = []
+        out = []
         for i in self.block(ccn, ctn):
             if family is not None and self.family[i] != family:
                 continue
             ptn, pcn = self.parents[i]
             sim = name_similarity(ccn, ctn, pcn, ptn)
             if sim > 0:
-                scored.append((-sim, i))
-        scored.sort()
-        pos = {i for _, i in scored}
-        universe = (self.by_family.get(family, []) if family is not None
-                    else range(len(self.parents)))
-        return ([self.parents[i] for _, i in scored]
-                + [self.parents[i] for i in universe if i not in pos])
+                out.append((-sim, i))
+        out.sort()
+        return [i for _, i in out]
+
+    def unscored(self, family: str, min_distinct: int, skip: set[int]) -> Iterator[int]:
+        """Same-family parents outside `skip` that can contain `min_distinct` values.
+
+        Narrowest key domain first, position breaking ties; parents too
+        narrow for the child are never examined.
+        """
+        order = self.by_family_narrow.get(family, [])
+        start = bisect_left(self.by_family_widths.get(family, []), min_distinct)
+        for i in order[start:]:
+            if i not in skip:
+                yield i
+
+    def ranked(self, ccn: str, ctn: str, family: str | None = None) -> list[tuple[str, str]]:
+        """The parents with name evidence, as pairs: the brute-force order's positive part."""
+        return [self.parents[i] for i in self.scored(ccn, ctn, family)]
 
 
-def _testable(ranked, ctn: str, cstat, stats_by_table) -> list[tuple[str, str]]:
-    """Parents worth an inclusion query for this child, in the order to try.
+def _testable(index: ParentIndex, ccn: str, ctn: str, cstat, stats_by_table,
+              budget: int = MAX_QUERIES_PER_CHILD) -> list[tuple[str, str]]:
+    """Up to `budget` parents worth an inclusion query for this child, in the order to try.
 
     Filters that DISPROVE candidacy drop the pair; the range check that merely
     makes it unlikely demotes it to the tail, where it is tested only if the
     budget outlasts the pairs with no evidence against them. Partitioning
     rather than re-sorting keeps the name-similarity order inside each half.
+
+    Every parent with name evidence is considered. Parents with none come
+    from `index.unscored()` and are read only until the budget is full or
+    MAX_UNSCORED_SCAN of them have been examined: on their own they can only
+    reach the review queue, and reading them all was children x parents.
     """
-    head: list[tuple[str, str]] = []
-    tail: list[tuple[str, str]] = []
-    for ptn, pcn in ranked:
+    head: list[int] = []
+    tail: list[int] = []
+    family = _type_family(cstat.sql_type)
+
+    def consider(i: int) -> bool:
+        ptn, pcn = index.parents[i]
         if ptn == ctn:
-            continue  # same-table parents are the recursive/self-FK path, not this one
+            return False  # same-table parents are the recursive/self-FK path, not this one
         pstat = stats_by_table[ptn].columns[pcn]
-        if _type_family(cstat.sql_type) != _type_family(pstat.sql_type):
-            continue
+        if family != _type_family(pstat.sql_type):
+            return False
         if cstat.n_distinct > pstat.n_distinct:
-            continue  # child domain can't exceed parent
+            return False  # child domain can't exceed parent
         if range_prunable(cstat, pstat):
-            continue  # zero misses affordable and a range escape guarantees one
-        (tail if range_escapes(cstat, pstat) else head).append((ptn, pcn))
-    return head + tail
+            return False  # zero misses affordable and a range escape guarantees one
+        (tail if range_escapes(cstat, pstat) else head).append(i)
+        return True
+
+    scored = index.scored(ccn, ctn, family)
+    for i in scored:
+        consider(i)
+    # Parents with name evidence are never displaced: the unscored ones get
+    # only the room they leave, so nothing is truncated below.
+    room = budget - len(head) - len(tail)
+    examined = 0
+    picked: list[int] = []
+    for i in index.unscored(family, cstat.n_distinct, set(scored)):
+        if room <= 0 or examined >= MAX_UNSCORED_SCAN:
+            break
+        examined += 1
+        if consider(i):
+            picked.append(i)
+            room -= 1
+    # The unscored ones were READ narrowest-first but are EMITTED in position
+    # order, as the full walk emitted them: wherever the set is unchanged the
+    # plan, the candidate list and every LLM prompt built from it are
+    # byte-identical, so recorded cassettes still replay.
+    n_scored_head = len(head) - sum(1 for i in picked if i in head)
+    picked_set = set(picked)
+    head = head[:n_scored_head] + sorted(i for i in head if i in picked_set)
+    n_scored_tail = len(tail) - sum(1 for i in picked if i in tail)
+    tail = tail[:n_scored_tail] + sorted(i for i in tail if i in picked_set)
+    # The budget applies to the named parents too, as it always has: a child
+    # whose name scores hundreds of parents still gets `budget` tests. Dropping
+    # this slice once planned 1,485,245 statements on a 15,000-table warehouse
+    # where 528,060 was the figure.
+    return [index.parents[i] for i in (head + tail)[:budget]]
 
 
 def select_parents_and_children(stats_by_table: dict, doc: dict
@@ -456,15 +539,15 @@ def select_parents_and_children(stats_by_table: dict, doc: dict
 
     # parents: unique id-like columns, PLUS natural keys of SCD2 tables
     # (non-unique, few versions per key, table has validity columns)
-    # Named candidates FIRST, so MAX_PARENTS truncates the speculative tail
-    # rather than an obvious key. The cap bites only on wide warehouses, and
-    # dict order is not a defensible thing to drop a real key by.
+    # Named candidates are never truncated; MAX_PARENTS caps the speculative
+    # shaped list only. Dict order is not a defensible thing to drop a real
+    # key by, and at 50,000 tables it dropped every staging dimension.
     named = [(tn, cn) for (tn, cn), c in cols.items()
              if _named_parent(stats_by_table, _has_validity_cols, tn, cn, c)]
     seen = set(named)
     shaped = [(tn, cn) for (tn, cn) in cols
               if (tn, cn) not in seen and _shaped_parent(stats_by_table, tn, cn)]
-    parents = (named + shaped)[:MAX_PARENTS]
+    parents = named + shaped[:MAX_PARENTS]
     # children: fk/identifier roles, numeric dimensions, or ANY key/code-suffixed column
     children = [
         (tn, cn) for (tn, cn), c in cols.items()
@@ -509,10 +592,9 @@ def generate_candidates(ex, stats_by_table: dict, doc: dict,
         # test the most name-plausible parents FIRST so the query cap
         # never starves an obvious match (order_items.order_id -> orders).
         # Restricting to the child's type family drops nothing _testable
-        # would keep, and it is what keeps the zero-scored tail short.
-        ranked = index.ranked(ccn, ctn, family=_type_family(cstat.sql_type))
-        testable = _testable(ranked, ctn, cstat, stats_by_table)
-        plan.extend((ctn, ccn, ptn, pcn) for ptn, pcn in testable[:MAX_QUERIES_PER_CHILD])
+        # would keep; the zero-scored tail is bounded inside it.
+        testable = _testable(index, ccn, ctn, cstat, stats_by_table)
+        plan.extend((ctn, ccn, ptn, pcn) for ptn, pcn in testable)
 
     ratios = _inclusion_many(ex, stats_by_table, plan, query_workers)
     assert len(ratios) == len(plan)
