@@ -18,6 +18,21 @@ from pathlib import Path
 from semlayer.errors import SemlayerError, SpecError
 
 
+def _add_stitch_parser(sub) -> None:
+    p = sub.add_parser("stitch", help="Infer the seam between several layers and write a hub")
+    p.add_argument("members", nargs="+", help="member layer files (each inferred by its own team)")
+    p.add_argument("-o", "--out", required=True, help="the hub to write, e.g. acme.yaml")
+    p.add_argument("--name", default=None, help="the hub's name (default: the output file's stem)")
+    p.add_argument("--via", metavar="SOURCE", default=None,
+                   help="connection the inclusion tests run through, with YOUR grants: "
+                        "duckdb:<path> | postgresql://... | snowflake | bigquery. Default: "
+                        "snowflake or bigquery when every member records that warehouse; "
+                        "otherwise names-only proposals at low confidence.")
+    p.add_argument("--no-queries", action="store_true",
+                   help="Propose from names and distinct counts only; test nothing.")
+    p.add_argument("--query-workers", type=int, default=None, metavar="N")
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="semlayer", description="Semantic layer toolkit")
     parser.add_argument("-v", "--verbose", action="store_true",
@@ -103,6 +118,8 @@ def _build_parser() -> argparse.ArgumentParser:
     g.add_argument("--on", action="store_true", help="turn telemetry back on")
     g.add_argument("--show", action="store_true",
                    help="print the local spool, exactly as it would be sent")
+
+    _add_stitch_parser(sub)
 
     p = sub.add_parser("mcp", help="Serve a semantic layer over MCP (stdio)")
     p.add_argument("doc", help="semantic layer YAML path")
@@ -487,8 +504,48 @@ def _cmd_mcp(args: argparse.Namespace) -> int:
     return 0
 
 
+def _stitch_source(args: argparse.Namespace, member_docs: list[dict]):
+    """The executor for inclusion tests: --via, else the members' shared cloud warehouse."""
+    from semlayer.pipeline import default_query_workers, open_source_from_uri
+    if args.no_queries:
+        return None, None
+    uri = args.via
+    if uri is None:
+        kinds = {(d["semantic_layer"].get("warehouse") or "").split(":", 1)[0] for d in member_docs}
+        if len(kinds) == 1 and kinds <= {"snowflake", "bigquery"}:
+            uri = next(iter(kinds))
+    if uri is None:
+        print("no --via and the members do not share a cloud warehouse: proposing from names "
+              "only (nothing tested)")
+        return None, None
+    src = open_source_from_uri(uri)
+    workers = args.query_workers or default_query_workers(src)
+    return src, workers
+
+
+def _cmd_stitch(args: argparse.Namespace) -> int:
+    from semlayer.stitch import stitch
+    from semlayer.validate import validate_file
+
+    member_docs = [_load_doc(m) for m in args.members]
+    src, workers = _stitch_source(args, member_docs)
+    name = args.name or Path(args.out).stem
+    result = stitch(args.members, name, args.out, source=src, query_workers=workers or 1,
+                    via_label=args.via)
+    _save_doc(args.out, result.hub)
+    ok = validate_file(args.out).ok
+    print(f"wrote {args.out}: {len(result.hub['semantic_layer'].get('relationships', []))} seam "
+          f"edges ({result.accepted} accepted, {result.review} for review), "
+          f"{len(result.unresolved)} unresolved, valid={ok} ({result.mode})")
+    if result.unresolved:
+        for u in result.unresolved[:10]:
+            print(f"  unresolved: {u['table']}.{u['column']}: {u['note']}")
+    return 0 if ok else 1
+
+
 _HANDLERS = {
     "validate": _cmd_validate,
+    "stitch": _cmd_stitch,
     "init": _cmd_init,
     "infer": _cmd_infer,
     "review": _cmd_review,

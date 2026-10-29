@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### `semlayer stitch`: infer the seam between several layers
+
+`semlayer stitch finance.yaml sales.yaml platform.yaml -o acme.yaml --via
+snowflake` finds every key column in the members that points outside its
+own document, tests it against the other members' keys the way Link tests
+inside one layer (name-ranked candidates, one inclusion statement per
+child), through the connection the analyst supplies and so with the
+analyst's grants, and writes the hub. Name-corroborated parents are written
+at Link's confidence; statistics-only parents at 0.5, below the review
+threshold; keys that match nothing go in the hub's new `unresolved` list.
+Among equally-named parents a certified table wins. With no connection,
+edges are proposed from names and distinct counts at 0.3 and marked
+untested. Members are never modified. Statistics come from the member
+documents, not from re-profiling. docs/sets.md.
+
 ### Every command takes a hub; compiled SQL uses `source`
 
 `semlayer mcp`, `lint`, `review` and `compile_metric` work on a hub as they

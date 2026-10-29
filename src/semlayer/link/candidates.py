@@ -587,8 +587,15 @@ def last_timing() -> dict:
 
 
 def generate_candidates(ex, stats_by_table: dict, doc: dict,
-                        query_workers: int = 1) -> list[FKCandidate]:
+                        query_workers: int = 1,
+                        only_children: set[tuple[str, str]] | None = None,
+                        parent_ok=None) -> list[FKCandidate]:
     """stats_by_table: {table_name: TableStats}; doc: profile-stage document.
+
+    `only_children`: restrict the child columns tested to these (table,
+    column) pairs; `parent_ok(child_table, parent_table)`: a predicate that
+    keeps a parent for a child. Both default to everything; `stitch` uses
+    them to test only unresolved keys against other documents' parents.
 
     `query_workers`: how many inclusion queries are in flight at once. The
     set of queries is fixed before any of them runs -- the cap counts tests
@@ -599,6 +606,8 @@ def generate_candidates(ex, stats_by_table: dict, doc: dict,
     """
     t0 = time.perf_counter()
     parents, children = select_parents_and_children(stats_by_table, doc)
+    if only_children is not None:
+        children = [c for c in children if c in only_children]
     plan: list[tuple[str, str, str, str]] = []
     index = ParentIndex(parents, stats_by_table)
     t_index = time.perf_counter()
@@ -609,6 +618,8 @@ def generate_candidates(ex, stats_by_table: dict, doc: dict,
         # Restricting to the child's type family drops nothing _testable
         # would keep; the zero-scored tail is bounded inside it.
         testable = _testable(index, ccn, ctn, cstat, stats_by_table)
+        if parent_ok is not None:
+            testable = [(ptn, pcn) for ptn, pcn in testable if parent_ok(ctn, ptn)]
         plan.extend((ctn, ccn, ptn, pcn) for ptn, pcn in testable)
     t_plan = time.perf_counter()
 

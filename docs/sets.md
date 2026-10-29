@@ -78,6 +78,32 @@ the hub declares it and the join compiles:
 
 ## Inferring the seam
 
-Writing the seam by hand is rung one. `semlayer stitch`, which finds the
-parents of every unresolved key across members, tests inclusion through
-the analyst's own connection and writes the hub, is the next release.
+```bash
+semlayer stitch finance.yaml sales.yaml platform.yaml -o acme.yaml --via snowflake
+```
+
+`stitch` reads the members and finds every **unresolved reference**: a
+foreign-key column with no target, which is how a member records a key
+that points outside its own file. For each one it does what Link does
+inside a layer, name-ranked candidate parents and one inclusion statement
+per child, except that the parents come from the other members and the
+statements run through `--via`, the analyst's own connection and grants.
+It writes the hub and touches no member.
+
+- A parent with name evidence is written at Link's confidence, with the
+  inclusion ratio and name score as provenance.
+- A parent found by statistics alone is written at 0.5, below the review
+  threshold, so `semlayer review acme.yaml` shows it as a `seam_edge`
+  rather than anyone assuming it.
+- A key that found no parent in any member is listed under `unresolved`.
+- Among equally-named parents, a `certified` table wins: the platform
+  team's conformed dimension beats a staging copy of it.
+- `--via` defaults to `snowflake` or `bigquery` when every member records
+  that warehouse. With `--no-queries`, or when no connection can reach the
+  members, edges are proposed from names and distinct counts only, at 0.3,
+  marked as untested.
+
+Statistics come from the member documents (`cardinality`, roles, types);
+the inclusion tests are the only queries stitch issues. Re-running stitch
+after a member changes rewrites the hub; keeping reviewed seam edges across
+a rerun is the next piece.
