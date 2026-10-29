@@ -146,7 +146,9 @@ def infer_with_report(source, llm=None, options: InferOptions | None = None, *,
     part = doc.pop("_partition_audit", None)
     if part:
         report["partitions"] = part
-    doc.pop("_link_audit", None)
+    audit = doc.pop("_link_audit", None) or {}
+    if audit.get("timing"):
+        report["link"] = audit["timing"]
     sl = doc["semantic_layer"]
     report["counts"] = {
         "tables": len(sl["tables"]),

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Link reports where its time went
+
+`infer` writes a `link` block to the run report and logs one line at the end
+of candidate generation: parents and children considered, statements issued
+and tests inside them, and seconds spent building the parent index, planning
+each child's tests (Python, one core) and running the statements (the
+warehouse, under `--query-workers`). Added because Link doubled at 50,000
+synthetic tables with an identical statement count and nothing recorded
+which of the three had grown.
+
 ### Named foreign-key parents are never truncated; the zero-score tail is bounded
 
 At 50,000 tables (35,925 after folding) the candidate-parent cap of 5,000

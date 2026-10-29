@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import re
 import threading
+import time
 from bisect import bisect_left
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
@@ -584,9 +585,11 @@ def generate_candidates(ex, stats_by_table: dict, doc: dict,
     These queries run in the customer's warehouse and contend on their
     compute, which is why the default is small (see docs/scale.md).
     """
+    t0 = time.perf_counter()
     parents, children = select_parents_and_children(stats_by_table, doc)
     plan: list[tuple[str, str, str, str]] = []
     index = ParentIndex(parents, stats_by_table)
+    t_index = time.perf_counter()
     for ctn, ccn in children:
         cstat = stats_by_table[ctn].columns[ccn]
         # test the most name-plausible parents FIRST so the query cap
@@ -595,9 +598,25 @@ def generate_candidates(ex, stats_by_table: dict, doc: dict,
         # would keep; the zero-scored tail is bounded inside it.
         testable = _testable(index, ccn, ctn, cstat, stats_by_table)
         plan.extend((ctn, ccn, ptn, pcn) for ptn, pcn in testable)
+    t_plan = time.perf_counter()
 
     ratios = _inclusion_many(ex, stats_by_table, plan, query_workers)
     assert len(ratios) == len(plan)
+    t_query = time.perf_counter()
+    # Where Link's time goes, before any verdict: the index and the per-child
+    # planning are Python on one core; the statements run in the warehouse
+    # under `query_workers`. At 50,000 synthetic tables Link doubled with an
+    # identical statement count and nothing told us which of these had grown.
+    doc["_link_timing"] = {
+        "parents": len(parents), "children": len(children),
+        "statements": len(_group_plan(plan)), "tests": len(plan),
+        "index_s": round(t_index - t0, 1), "plan_s": round(t_plan - t_index, 1),
+        "query_s": round(t_query - t_plan, 1),
+    }
+    logger.info("link: %d parents, %d children, %d statements (%d tests): index %.1fs, "
+                "plan %.1fs, queries %.1fs at %d worker(s)", len(parents), len(children),
+                doc["_link_timing"]["statements"], len(plan), t_index - t0, t_plan - t_index,
+                t_query - t_plan, query_workers)
 
     out: list[FKCandidate] = []
     for (ctn, ccn, ptn, pcn), ratio in zip(plan, ratios, strict=True):
