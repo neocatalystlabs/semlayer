@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Sets: a hub document combines several teams' layers into one surface
+
+A hub is a layer with a `members` list naming other layer files; it may
+have no tables of its own. Members are ordinary layers that know nothing
+of the set, so finance, sales and platform each infer and own their own
+file and the same file can sit in several hubs. Resolving a set qualifies
+every member's tables, hierarchies and metrics as `<name>/<object>`
+(`finance/fct_gl`) and rewrites every reference the same way, after which
+the set is one ordinary document; `source` is untouched, since it is what
+SQL uses. The hub's own cross-member relationships are the seam.
+`semlayer validate hub.yaml` validates the resolved set and adds the set's
+own rules: member names match and are unique, no two members describe one
+`source` in the same warehouse, and a relationship across warehouses needs
+a declared `federation` engine. SPEC.md section 4; the reserved
+`document_set` and `part` fields are withdrawn, unused by any producer.
+Consumers over a set (mcp, compile, lint, review) and `stitch`, which
+infers the seam, follow.
+
 ### Scoping to a schema names the document and the file; documents record their warehouse (spec 0.5.0 → 0.6.0)
 
 `semlayer infer <source> --schema finance` profiles only that schema, names
