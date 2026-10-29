@@ -150,55 +150,21 @@ def _minimal(**extra):
     return {"semantic_layer": sl}
 
 
-def test_a_document_without_document_set_behaves_exactly_as_before():
-    """The whole point: nothing changes today for anyone."""
-    from semlayer.validate import validate_document
-
-    r = validate_document(_minimal())
-    assert r.ok, r.errors
-
-
-def test_the_reserved_fields_are_accepted_by_the_schema():
-    """The root is additionalProperties: false, so they must be DECLARED."""
-    from semlayer.validate import validate_document
-
+def test_the_withdrawn_set_fields_are_rejected():
+    """`document_set` and `part` were reserved and never emitted; sets are hubs now (SPEC §4)."""
     r = validate_document(_minimal(document_set="wh", part="sales"))
-    schema_errs = [e for e in r.errors if e.startswith("schema:")]
-    assert not schema_errs, schema_errs
+    assert not r.ok and any("document_set" in e for e in r.errors)
 
 
-def test_a_part_of_a_set_is_REFUSED_rather_than_accused_of_dangling_refs():
-    """SPEC §4: a consumer holding one part SHOULD refuse, not report false
-    dangling references for objects that live in a sibling document."""
-    from semlayer.validate import validate_document
-
-    r = validate_document(_minimal(document_set="wh", part="sales"))
-    assert not r.ok
-    assert any("document_set" in e and "one part of a set" in e for e in r.errors)
-    assert not any("dangling" in e.lower() for e in r.errors)
-
-
-def test_part_without_document_set_is_meaningless_but_harmless():
-    """`part` alone does not make a document partial."""
-    from semlayer.validate import validate_document
-
-    r = validate_document(_minimal(part="sales"))
-    assert r.ok, r.errors
-
-
-def test_spec_text_and_schema_agree_that_the_fields_are_reserved():
-    """Guard against the schema and the prose drifting apart."""
+def test_spec_text_and_schema_agree_on_sets():
+    """Guard against the schema and the prose drifting apart: sets are hubs with members."""
+    import json
     from pathlib import Path
 
     root = Path(__file__).resolve().parent.parent
     spec = (root / "spec" / "SPEC.md").read_text()
-    assert "document_set" in spec and "reserved" in spec.lower()
-    assert "within that set" in spec
-    import json
+    assert "**Sets.**" in spec and "`members`" in spec and "seam" in spec
     sch = json.loads((root / "spec" / "semantic-layer.schema.json").read_text())
     props = sch["properties"]["semantic_layer"]["properties"]
-    for f in ("document_set", "part"):
-        assert f in props, f
-        assert "RESERVED" in props[f]["description"]
-    assert "document_set" not in (
-        sch["properties"]["semantic_layer"].get("required") or [])
+    assert "members" in props and "federation" in props
+    assert "document_set" not in props and "part" not in props
