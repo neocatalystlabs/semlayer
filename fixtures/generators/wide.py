@@ -61,6 +61,17 @@ except ImportError:
 SEED = 20261016
 N_TABLES = int(os.environ.get("SEMLAYER_WIDE_TABLES", "2000"))
 
+
+def _n_tables() -> int:
+    """Read the size at BUILD time, not import time.
+
+    tests/test_probe.py sets SEMLAYER_WIDE_TABLES in a fixture and builds a
+    small warehouse; any test that imported this module earlier in the
+    session (scale.py imports it) would otherwise have pinned the size at
+    2,000 for everyone after it.
+    """
+    return int(os.environ.get("SEMLAYER_WIDE_TABLES", str(N_TABLES)))
+
 # The entities the warehouse is about. Each gets a published table, an
 # intermediate and a staging copy, plus facts that reference it.
 ENTITIES = [
@@ -166,7 +177,7 @@ def _plan(rng: random.Random, naming: Naming) -> list[dict]:
                            "name": naming.table(stage, ent)})
     # 2. facts referencing a handful of entities each, then pad to N_TABLES
     i = 0
-    while len(tables) < int(N_TABLES * 0.9):
+    while len(tables) < int(_n_tables() * 0.9):
         ents = rng.sample(ENTITIES, rng.randint(2, 5))
         stage = rng.choices(["published", "int", "stg_sales"], weights=[5, 3, 2])[0]
         proc = PROCESSES[i % len(PROCESSES)]
@@ -178,7 +189,7 @@ def _plan(rng: random.Random, naming: Naming) -> list[dict]:
                        "refs": ents})
         i += 1
     # 3. dead tables: referenced by nothing, queried by nobody
-    while len(tables) < N_TABLES:
+    while len(tables) < _n_tables():
         tables.append({"kind": "dead", "entity": f"scratch{len(tables)}",
                        "stage": "stg_sales",
                        "name": naming.table("stg_sales", f"scratch{len(tables)}")})
