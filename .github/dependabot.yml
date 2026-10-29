@@ -4,6 +4,12 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    ignore:
+      # mcp 2.x renamed FastMCP -> MCPServer and changed the tool API;
+      # src/semlayer/mcp_server.py is written against 1.x. Moving is a code
+      # change, not a version bump (dependabot #7 proposed exactly that).
+      - dependency-name: "mcp"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: "/"
     schedule:

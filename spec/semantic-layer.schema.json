@@ -4,12 +4,18 @@
   "title": "Semantic Layer",
   "description": "Open format for warehouse semantic layers with inference-native primitives: confidence, provenance, and lifecycle on every element. See SPEC.md for the normative consumer contract.",
   "type": "object",
-  "required": ["semantic_layer"],
+  "required": [
+    "semantic_layer"
+  ],
   "additionalProperties": false,
   "properties": {
     "semantic_layer": {
       "type": "object",
-      "required": ["spec_version", "name", "tables"],
+      "required": [
+        "spec_version",
+        "name",
+        "tables"
+      ],
       "additionalProperties": false,
       "properties": {
         "spec_version": {
@@ -17,22 +23,69 @@
           "pattern": "^\\d+\\.\\d+\\.\\d+$",
           "description": "Version of this spec the document conforms to (semver)."
         },
-        "name": {"type": "string", "minLength": 1},
-        "generated_by": {"$ref": "#/$defs/generated_by"},
-        "calendar": {"$ref": "#/$defs/calendar"},
-        "description": {"type": "string"},
-        "ai_context": {"type": "string"},
-        "tables": {"type": "array", "items": {"$ref": "#/$defs/table"}, "minItems": 1},
-        "relationships": {"type": "array", "items": {"$ref": "#/$defs/relationship"}},
-        "hierarchies": {"type": "array", "items": {"$ref": "#/$defs/hierarchy"}},
-        "aggregate_tables": {"type": "array", "items": {"$ref": "#/$defs/aggregate_table"}},
-        "metrics": {"type": "array", "items": {"$ref": "#/$defs/metric"}},
-        "repo_knowledge": {"$ref": "#/$defs/repo_knowledge"},
-        "coverage": {"$ref": "#/$defs/coverage"},
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The document's identity. One document alone may be called anything; when several are combined, this is the name other documents reference, so a producer scoping to one schema SHOULD name the document after it."
+        },
+        "warehouse": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Which warehouse this document describes, credential-free and portable (duckdb:<file>, postgres:<host>:<port>/<db>, snowflake:<database>, bigquery:<project>). Written by the producer. A consumer holding several documents compares their values to decide whether two tables can meet in one SQL statement (SPEC.md rule 8)."
+        },
+        "generated_by": {
+          "$ref": "#/$defs/generated_by"
+        },
+        "calendar": {
+          "$ref": "#/$defs/calendar"
+        },
+        "description": {
+          "type": "string"
+        },
+        "ai_context": {
+          "type": "string"
+        },
+        "tables": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/table"
+          },
+          "minItems": 1
+        },
+        "relationships": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/relationship"
+          }
+        },
+        "hierarchies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/hierarchy"
+          }
+        },
+        "aggregate_tables": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/aggregate_table"
+          }
+        },
+        "metrics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/metric"
+          }
+        },
+        "repo_knowledge": {
+          "$ref": "#/$defs/repo_knowledge"
+        },
+        "coverage": {
+          "$ref": "#/$defs/coverage"
+        },
         "document_set": {
           "type": "string",
           "minLength": 1,
-          "description": "RESERVED, optional. Identifies a set of documents that together describe one warehouse, for warehouses too large to carry in a single document. When present, references resolve across the whole set rather than this document alone (SPEC.md §4). Producers SHOULD NOT emit this yet; it exists so that sharding is an additive change rather than a breaking one."
+          "description": "RESERVED, optional. Identifies a set of documents that together describe one warehouse, for warehouses too large to carry in a single document. When present, references resolve across the whole set rather than this document alone (SPEC.md \u00a74). Producers SHOULD NOT emit this yet; it exists so that sharding is an additive change rather than a breaking one."
         },
         "part": {
           "type": "string",
@@ -51,445 +104,1040 @@
     },
     "provenance_entry": {
       "type": "object",
-      "required": ["signal"],
+      "required": [
+        "signal"
+      ],
       "additionalProperties": false,
       "properties": {
         "signal": {
-          "enum": ["statistic", "inclusion_dependency", "functional_dependency", "naming", "llm", "query_log", "catalog_prior", "etl_lineage", "view_ddl", "format_metadata", "docs", "human"]
+          "enum": [
+            "statistic",
+            "inclusion_dependency",
+            "functional_dependency",
+            "naming",
+            "llm",
+            "query_log",
+            "catalog_prior",
+            "etl_lineage",
+            "view_ddl",
+            "format_metadata",
+            "docs",
+            "human"
+          ]
         },
-        "detail": {"type": "string"}
+        "detail": {
+          "type": "string"
+        }
       }
     },
     "conflict_entry": {
       "type": "object",
-      "required": ["between"],
+      "required": [
+        "between"
+      ],
       "additionalProperties": false,
       "properties": {
         "between": {
           "type": "array",
-          "items": {"$ref": "#/$defs/provenance_entry/properties/signal"},
+          "items": {
+            "$ref": "#/$defs/provenance_entry/properties/signal"
+          },
           "minItems": 2
         },
-        "detail": {"type": "string"}
+        "detail": {
+          "type": "string"
+        }
       }
     },
     "lifecycle": {
-      "enum": ["inferred", "reviewed", "certified", "deprecated", "orphaned"],
+      "enum": [
+        "inferred",
+        "reviewed",
+        "certified",
+        "deprecated",
+        "orphaned"
+      ],
       "description": "Certification protects content from re-inference; existence is governed by the warehouse. Objects whose warehouse element disappeared transition to 'orphaned' and are unusable (SPEC.md)."
     },
     "deprecation": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "replacement": {"type": "string", "description": "Reference to the replacement object, e.g. 'table.column' or 'metric_name'."},
-        "reason": {"type": "string"}
+        "replacement": {
+          "type": "string",
+          "description": "Reference to the replacement object, e.g. 'table.column' or 'metric_name'."
+        },
+        "reason": {
+          "type": "string"
+        }
       }
     },
     "generated_by": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "engine": {"type": "string"},
-        "model": {"type": "string"},
-        "generated_at": {"type": "string", "format": "date-time"}
+        "engine": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "generated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
       }
     },
     "envelope": {
       "description": "Universal annotation fields available on every object.",
       "type": "object",
       "properties": {
-        "description": {"type": "string"},
-        "ai_context": {"type": "string"},
-        "synonyms": {"type": "array", "items": {"type": "string"}},
-        "confidence": {"$ref": "#/$defs/confidence"},
-        "provenance": {"type": "array", "items": {"$ref": "#/$defs/provenance_entry"}},
-        "conflicts": {"type": "array", "items": {"$ref": "#/$defs/conflict_entry"}},
-        "lifecycle": {"$ref": "#/$defs/lifecycle"},
-        "deprecation": {"$ref": "#/$defs/deprecation"},
-        "generated_by": {"$ref": "#/$defs/generated_by"}
+        "description": {
+          "type": "string"
+        },
+        "ai_context": {
+          "type": "string"
+        },
+        "synonyms": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "provenance": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/provenance_entry"
+          }
+        },
+        "conflicts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/conflict_entry"
+          }
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/lifecycle"
+        },
+        "deprecation": {
+          "$ref": "#/$defs/deprecation"
+        },
+        "generated_by": {
+          "$ref": "#/$defs/generated_by"
+        }
       }
     },
     "calendar": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "fiscal_year_start_month": {"type": "integer", "minimum": 1, "maximum": 12},
-        "week_start": {"enum": ["monday", "sunday"]},
-        "timezone": {"type": "string", "description": "IANA timezone all timestamps are stored in, e.g. 'UTC'."}
+        "fiscal_year_start_month": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
+        },
+        "week_start": {
+          "enum": [
+            "monday",
+            "sunday"
+          ]
+        },
+        "timezone": {
+          "type": "string",
+          "description": "IANA timezone all timestamps are stored in, e.g. 'UTC'."
+        }
       }
     },
     "dialect_sql": {
       "description": "SQL expression, either a single default-dialect string or a per-dialect map. Applies to EVERY SQL-bearing field.",
       "oneOf": [
-        {"type": "string"},
+        {
+          "type": "string"
+        },
         {
           "type": "object",
           "minProperties": 1,
-          "propertyNames": {"enum": ["ansi", "snowflake", "bigquery", "databricks", "postgres", "duckdb"]},
-          "additionalProperties": {"type": "string"}
+          "propertyNames": {
+            "enum": [
+              "ansi",
+              "snowflake",
+              "bigquery",
+              "databricks",
+              "postgres",
+              "duckdb"
+            ]
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
         }
       ]
     },
     "semantic_type": {
       "enum": [
-        "identifier", "monetary_value", "quantity", "rate", "percentage",
-        "timestamp_event", "timestamp_effective", "date", "duration",
-        "status_code", "enum", "flag", "free_text", "name", "url", "code",
-        "geo_country", "geo_region", "geo_city", "geo_postal", "geo_coordinates",
-        "pii_email", "pii_name", "pii_phone", "pii_address", "pii_national_id", "pii_other",
-        "json_object", "unknown"
+        "identifier",
+        "monetary_value",
+        "quantity",
+        "rate",
+        "percentage",
+        "timestamp_event",
+        "timestamp_effective",
+        "date",
+        "duration",
+        "status_code",
+        "enum",
+        "flag",
+        "free_text",
+        "name",
+        "url",
+        "code",
+        "geo_country",
+        "geo_region",
+        "geo_city",
+        "geo_postal",
+        "geo_coordinates",
+        "pii_email",
+        "pii_name",
+        "pii_phone",
+        "pii_address",
+        "pii_national_id",
+        "pii_other",
+        "json_object",
+        "unknown"
       ]
     },
     "entity_role": {
-      "enum": ["primary_key", "unique_key", "natural_key", "foreign_key", "dimension", "measure", "metadata"]
+      "enum": [
+        "primary_key",
+        "unique_key",
+        "natural_key",
+        "foreign_key",
+        "dimension",
+        "measure",
+        "metadata"
+      ]
     },
     "aggregation": {
-      "enum": ["sum", "avg", "min", "max", "count", "count_distinct", "count_distinct_approx", "median", "percentile"]
+      "enum": [
+        "sum",
+        "avg",
+        "min",
+        "max",
+        "count",
+        "count_distinct",
+        "count_distinct_approx",
+        "median",
+        "percentile"
+      ]
     },
     "enum_value": {
       "type": "object",
-      "required": ["value", "meaning", "decode_source"],
+      "required": [
+        "value",
+        "meaning",
+        "decode_source"
+      ],
       "additionalProperties": false,
       "properties": {
-        "value": {"type": ["string", "number", "boolean"]},
-        "meaning": {"type": "string"},
+        "value": {
+          "type": [
+            "string",
+            "number",
+            "boolean"
+          ]
+        },
+        "meaning": {
+          "type": "string"
+        },
         "decode_source": {
-          "enum": ["dictionary_join", "dbt_accepted_values", "docs", "catalog_prior", "human", "llm_guess"],
+          "enum": [
+            "dictionary_join",
+            "dbt_accepted_values",
+            "docs",
+            "catalog_prior",
+            "human",
+            "llm_guess"
+          ],
           "description": "Metric filters MUST NOT reference values whose only decode_source is llm_guess (SPEC.md)."
         }
       }
     },
     "semi_additive": {
       "type": "object",
-      "required": ["non_additive_dimension", "window_choice"],
+      "required": [
+        "non_additive_dimension",
+        "window_choice"
+      ],
       "additionalProperties": false,
       "properties": {
-        "non_additive_dimension": {"type": "string"},
-        "window_choice": {"enum": ["first", "last"]}
+        "non_additive_dimension": {
+          "type": "string"
+        },
+        "window_choice": {
+          "enum": [
+            "first",
+            "last"
+          ]
+        }
       }
     },
     "window_spec": {
       "type": "object",
-      "required": ["order", "range"],
+      "required": [
+        "order",
+        "range"
+      ],
       "additionalProperties": false,
       "properties": {
-        "order": {"type": "string", "description": "Ordering field reference."},
-        "range": {"type": "string", "description": "current | cumulative | 'trailing N unit' | 'leading N unit' | all"},
-        "semiadditive": {"enum": ["first", "last"]},
-        "offset": {"type": "string", "description": "Signed period offset for period-over-period, e.g. '-1 month'."}
+        "order": {
+          "type": "string",
+          "description": "Ordering field reference."
+        },
+        "range": {
+          "type": "string",
+          "description": "current | cumulative | 'trailing N unit' | 'leading N unit' | all"
+        },
+        "semiadditive": {
+          "enum": [
+            "first",
+            "last"
+          ]
+        },
+        "offset": {
+          "type": "string",
+          "description": "Signed period offset for period-over-period, e.g. '-1 month'."
+        }
       }
     },
     "fanout_safety": {
       "type": "object",
-      "required": ["strategy"],
+      "required": [
+        "strategy"
+      ],
       "additionalProperties": false,
       "properties": {
         "strategy": {
-          "enum": ["symmetric_aggregate", "distinct_key", "refuse"],
+          "enum": [
+            "symmetric_aggregate",
+            "distinct_key",
+            "refuse"
+          ],
           "description": "How compilation must behave when this measure is aggregated across a one-to-many relationship. Compilers MUST NOT silently sum across a fan-out (SPEC.md)."
         },
-        "symmetric_key": {"type": "string", "description": "Primary-key reference used for symmetric aggregation / distinct-key de-duplication."}
+        "symmetric_key": {
+          "type": "string",
+          "description": "Primary-key reference used for symmetric aggregation / distinct-key de-duplication."
+        }
       }
     },
     "aggregations_block": {
       "type": "object",
-      "required": ["allowed"],
+      "required": [
+        "allowed"
+      ],
       "additionalProperties": false,
       "properties": {
-        "allowed": {"type": "array", "items": {"$ref": "#/$defs/aggregation"}, "minItems": 1},
-        "default": {"$ref": "#/$defs/aggregation"},
-        "semi_additive": {"$ref": "#/$defs/semi_additive"},
-        "window": {"type": "array", "items": {"$ref": "#/$defs/window_spec"}},
-        "fanout_safety": {"$ref": "#/$defs/fanout_safety"}
+        "allowed": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/aggregation"
+          },
+          "minItems": 1
+        },
+        "default": {
+          "$ref": "#/$defs/aggregation"
+        },
+        "semi_additive": {
+          "$ref": "#/$defs/semi_additive"
+        },
+        "window": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/window_spec"
+          }
+        },
+        "fanout_safety": {
+          "$ref": "#/$defs/fanout_safety"
+        }
       }
     },
     "nested_path": {
       "type": "object",
-      "required": ["path"],
+      "required": [
+        "path"
+      ],
       "additionalProperties": false,
       "properties": {
-        "path": {"type": "string", "description": "Path into a semi-structured column, e.g. 'payload:customer.id'."},
-        "sql_type": {"type": "string"},
-        "semantic_type": {"$ref": "#/$defs/semantic_type"},
-        "description": {"type": "string"},
-        "confidence": {"$ref": "#/$defs/confidence"},
-        "provenance": {"type": "array", "items": {"$ref": "#/$defs/provenance_entry"}}
+        "path": {
+          "type": "string",
+          "description": "Path into a semi-structured column, e.g. 'payload:customer.id'."
+        },
+        "sql_type": {
+          "type": "string"
+        },
+        "semantic_type": {
+          "$ref": "#/$defs/semantic_type"
+        },
+        "description": {
+          "type": "string"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "provenance": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/provenance_entry"
+          }
+        }
       }
     },
     "column": {
-      "allOf": [{"$ref": "#/$defs/envelope"}],
+      "allOf": [
+        {
+          "$ref": "#/$defs/envelope"
+        }
+      ],
       "type": "object",
-      "required": ["name", "sql_type"],
+      "required": [
+        "name",
+        "sql_type"
+      ],
       "unevaluatedProperties": false,
       "properties": {
-        "name": {"type": "string", "minLength": 1},
-        "display_name": {"type": "string"},
-        "sql_type": {"type": "string"},
-        "semantic_type": {"$ref": "#/$defs/semantic_type"},
-        "entity_role": {"$ref": "#/$defs/entity_role"},
-        "cardinality": {"$ref": "#/$defs/cardinality"},
-        "enum_values": {"type": "array", "items": {"$ref": "#/$defs/enum_value"}},
-        "foreign_key": {
-          "type": "object",
-          "required": ["references"],
-          "additionalProperties": false,
-          "properties": {
-            "references": {"type": "string", "description": "'table.column' reference."},
-            "relationship": {"enum": ["one_to_one", "many_to_one", "one_to_many", "many_to_many"]}
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "sql_type": {
+          "type": "string"
+        },
+        "semantic_type": {
+          "$ref": "#/$defs/semantic_type"
+        },
+        "entity_role": {
+          "$ref": "#/$defs/entity_role"
+        },
+        "cardinality": {
+          "$ref": "#/$defs/cardinality"
+        },
+        "enum_values": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/enum_value"
           }
         },
-        "aggregations": {"$ref": "#/$defs/aggregations_block"},
-        "pii": {"type": "boolean"},
-        "canonical_entity": {"type": "string", "description": "Flat entity-identity tag unifying columns that identify the same real-world entity without a declared FK."},
-        "temporal": {"enum": ["scd2"], "description": "Marks a dimension attribute as SCD2-versioned: traversal requires point-in-time resolution (SPEC.md)."},
+        "foreign_key": {
+          "type": "object",
+          "required": [
+            "references"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "references": {
+              "type": "string",
+              "description": "'table.column' reference."
+            },
+            "relationship": {
+              "enum": [
+                "one_to_one",
+                "many_to_one",
+                "one_to_many",
+                "many_to_many"
+              ]
+            }
+          }
+        },
+        "aggregations": {
+          "$ref": "#/$defs/aggregations_block"
+        },
+        "pii": {
+          "type": "boolean"
+        },
+        "canonical_entity": {
+          "type": "string",
+          "description": "Flat entity-identity tag unifying columns that identify the same real-world entity without a declared FK."
+        },
+        "temporal": {
+          "enum": [
+            "scd2"
+          ],
+          "description": "Marks a dimension attribute as SCD2-versioned: traversal requires point-in-time resolution (SPEC.md)."
+        },
         "time_attribute": {
-          "enum": ["calendar_year", "calendar_quarter", "calendar_month", "fiscal_year", "fiscal_quarter", "fiscal_period"],
+          "enum": [
+            "calendar_year",
+            "calendar_quarter",
+            "calendar_month",
+            "fiscal_year",
+            "fiscal_quarter",
+            "fiscal_period"
+          ],
           "description": "Date-dimension attribute classification, VERIFIED against the dim's date column. fiscal_* columns are the customer's materialized fiscal calendar; compilers MUST disambiguate fiscal vs calendar time bucketing when both exist (SPEC 2.6)."
         },
-        "paths": {"type": "array", "items": {"$ref": "#/$defs/nested_path"}}
+        "paths": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nested_path"
+          }
+        }
       }
     },
     "common_query": {
-      "allOf": [{"$ref": "#/$defs/envelope"}],
+      "allOf": [
+        {
+          "$ref": "#/$defs/envelope"
+        }
+      ],
       "type": "object",
-      "required": ["question", "sql", "verified"],
+      "required": [
+        "question",
+        "sql",
+        "verified"
+      ],
       "unevaluatedProperties": false,
       "properties": {
-        "question": {"type": "string"},
-        "sql": {"$ref": "#/$defs/dialect_sql"},
-        "verified": {"type": "boolean", "description": "Unverified (mined) queries are advisory and outside the metric-safety contract (SPEC.md)."},
-        "verified_by": {"type": ["string", "null"]},
-        "verified_at": {"type": "string", "format": "date-time"},
-        "source": {"enum": ["query_log_mined", "human", "docs"]}
+        "question": {
+          "type": "string"
+        },
+        "sql": {
+          "$ref": "#/$defs/dialect_sql"
+        },
+        "verified": {
+          "type": "boolean",
+          "description": "Unverified (mined) queries are advisory and outside the metric-safety contract (SPEC.md)."
+        },
+        "verified_by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "verified_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "source": {
+          "enum": [
+            "query_log_mined",
+            "human",
+            "docs"
+          ]
+        }
       }
     },
     "cardinality": {
       "type": "object",
       "description": "What is known about this column's distinct count, and how. Carried so a consumer can judge whether a GROUP BY is sane, whether a join will fan out, and whether a filter is selective, WITHOUT issuing a query. lower_bound/upper_bound are the honest interval; `distinct` is a point estimate that always lies inside it. `method` says what produced it, and `exact` is never claimed for an estimate.",
-      "required": ["distinct", "lower_bound", "upper_bound", "method"],
+      "required": [
+        "distinct",
+        "lower_bound",
+        "upper_bound",
+        "method"
+      ],
       "additionalProperties": false,
       "properties": {
-        "distinct": {"type": "integer", "minimum": 0, "description": "Point estimate, always within the bounds."},
-        "lower_bound": {"type": "integer", "minimum": 0},
-        "upper_bound": {"type": "integer", "minimum": 0},
+        "distinct": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Point estimate, always within the bounds."
+        },
+        "lower_bound": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "upper_bound": {
+          "type": "integer",
+          "minimum": 0
+        },
         "method": {
-          "enum": ["exact", "hll_sketch", "engine_statistic", "bounds_only"],
+          "enum": [
+            "exact",
+            "hll_sketch",
+            "engine_statistic",
+            "bounds_only"
+          ],
           "description": "exact = a full COUNT(DISTINCT), or a partition merge whose bounds coincide. hll_sketch = a merged sketch, so approximate. engine_statistic = read from the engine's own gathered statistics, which may be stale. bounds_only = partitions were merged and nothing narrowed the interval."
         },
-        "null_count": {"type": "integer", "minimum": 0},
-        "partitions_covered": {"type": "integer", "minimum": 0, "description": "Partitions behind this figure, if the table is partitioned."}
+        "null_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "partitions_covered": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Partitions behind this figure, if the table is partitioned."
+        }
       }
     },
     "required_filter": {
       "type": "object",
-      "required": ["expr", "enforcement"],
+      "required": [
+        "expr",
+        "enforcement"
+      ],
       "additionalProperties": false,
       "properties": {
-        "expr": {"$ref": "#/$defs/dialect_sql"},
-        "reason": {"type": "string"},
+        "expr": {
+          "$ref": "#/$defs/dialect_sql"
+        },
+        "reason": {
+          "type": "string"
+        },
         "enforcement": {
-          "enum": ["required", "advisory"],
+          "enum": [
+            "required",
+            "advisory"
+          ],
           "description": "'required' = consumers must apply; 'advisory' = apply or caveat the answer (SPEC.md)."
         },
         "scope": {
-          "enum": ["all", "measures"],
+          "enum": [
+            "all",
+            "measures"
+          ],
           "description": "'all' (default) = every query over the table; 'measures' = SUM/AVG-style aggregations of amounts only (event COUNTS include all rows)."
         }
       }
     },
     "access_filter": {
       "type": "object",
-      "required": ["user_attribute", "expr"],
+      "required": [
+        "user_attribute",
+        "expr"
+      ],
       "additionalProperties": false,
       "properties": {
-        "user_attribute": {"type": "string"},
-        "expr": {"$ref": "#/$defs/dialect_sql"},
-        "reason": {"type": "string"}
+        "user_attribute": {
+          "type": "string"
+        },
+        "expr": {
+          "$ref": "#/$defs/dialect_sql"
+        },
+        "reason": {
+          "type": "string"
+        }
       }
     },
     "freshness": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "expected_cadence": {"type": "string", "description": "e.g. 'hourly', 'daily', 'weekly', 'static'"},
-        "typically_loaded_by": {"type": "string"},
-        "inferred_from": {"type": "string"}
+        "expected_cadence": {
+          "type": "string",
+          "description": "e.g. 'hourly', 'daily', 'weekly', 'static'"
+        },
+        "typically_loaded_by": {
+          "type": "string"
+        },
+        "inferred_from": {
+          "type": "string"
+        }
       },
-      "description": "Recorded expectation only — this format does not monitor freshness."
+      "description": "Recorded expectation only \u2014 this format does not monitor freshness."
     },
     "scd": {
       "type": "object",
-      "required": ["type"],
+      "required": [
+        "type"
+      ],
       "additionalProperties": false,
       "properties": {
-        "type": {"enum": [1, 2, 4, 6]},
-        "valid_from": {"type": "string"},
-        "valid_to": {"type": "string"},
-        "is_current_flag": {"type": "string"},
-        "natural_key": {"type": "array", "items": {"type": "string"}}
+        "type": {
+          "enum": [
+            1,
+            2,
+            4,
+            6
+          ]
+        },
+        "valid_from": {
+          "type": "string"
+        },
+        "valid_to": {
+          "type": "string"
+        },
+        "is_current_flag": {
+          "type": "string"
+        },
+        "natural_key": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       }
     },
     "table": {
-      "allOf": [{"$ref": "#/$defs/envelope"}],
+      "allOf": [
+        {
+          "$ref": "#/$defs/envelope"
+        }
+      ],
       "type": "object",
-      "required": ["name", "source", "columns"],
+      "required": [
+        "name",
+        "source",
+        "columns"
+      ],
       "unevaluatedProperties": false,
       "properties": {
-        "name": {"type": "string", "minLength": 1},
-        "display_name": {"type": "string"},
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "display_name": {
+          "type": "string"
+        },
         "table_type": {
-          "enum": ["fact", "dimension", "denormalized", "aggregate", "snapshot_scd2", "operational", "staging", "unknown"]
+          "enum": [
+            "fact",
+            "dimension",
+            "denormalized",
+            "aggregate",
+            "snapshot_scd2",
+            "operational",
+            "staging",
+            "unknown"
+          ]
         },
         "tier": {
           "type": "object",
-          "required": ["value"],
+          "required": [
+            "value"
+          ],
           "additionalProperties": false,
           "description": "Which part of the warehouse this table belongs to, inferred from its name and columns. Independent of table_type, which describes what a modelled table IS; tier says whether it is the business's view of the data at all.",
           "properties": {
-            "value": {"enum": ["core", "staging", "raw", "scratch", "unknown"]},
-            "confidence": {"$ref": "#/$defs/confidence"},
-            "provenance": {"type": "array", "items": {"$ref": "#/$defs/provenance_entry"}}
+            "value": {
+              "enum": [
+                "core",
+                "staging",
+                "raw",
+                "scratch",
+                "unknown"
+              ]
+            },
+            "confidence": {
+              "$ref": "#/$defs/confidence"
+            },
+            "provenance": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/provenance_entry"
+              }
+            }
           }
         },
         "modeling": {
-          "enum": ["full", "inventory_only"],
+          "enum": [
+            "full",
+            "inventory_only"
+          ],
           "description": "Whether the producer modelled this table for queries. 'inventory_only': the table is listed with its shape (name, columns, types, tier) and nothing more -- no relationships, descriptions, metrics or review items were inferred, and a consumer MUST NOT route a query to it (SPEC.md 2.13). Absent means 'full'."
         },
-        "grain": {"type": "string"},
-        "source": {"type": "string", "description": "Fully-qualified physical location, e.g. 'db.schema.table'."},
-        "freshness": {"$ref": "#/$defs/freshness"},
-        "primary_key": {"type": "array", "items": {"type": "string"}},
-        "scd": {"$ref": "#/$defs/scd"},
+        "grain": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "description": "Fully-qualified physical location, e.g. 'db.schema.table'."
+        },
+        "freshness": {
+          "$ref": "#/$defs/freshness"
+        },
+        "primary_key": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "scd": {
+          "$ref": "#/$defs/scd"
+        },
         "tenant_template": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "parameter": {"type": "string", "description": "Tenant parameter name, e.g. 'tenant_schema'."},
-            "instances": {"type": "integer", "minimum": 1}
+            "parameter": {
+              "type": "string",
+              "description": "Tenant parameter name, e.g. 'tenant_schema'."
+            },
+            "instances": {
+              "type": "integer",
+              "minimum": 1
+            }
           },
           "description": "Present when this table is an inferred template collapsing N identical tenant copies."
         },
-        "columns": {"type": "array", "items": {"$ref": "#/$defs/column"}, "minItems": 1},
+        "columns": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/column"
+          },
+          "minItems": 1
+        },
         "knowledge": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "common_queries": {"type": "array", "items": {"$ref": "#/$defs/common_query"}},
-            "required_filters": {"type": "array", "items": {"$ref": "#/$defs/required_filter"}},
-            "access_filters": {"type": "array", "items": {"$ref": "#/$defs/access_filter"}},
-            "usage_notes": {"type": "array", "items": {"type": "string"}}
+            "common_queries": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/common_query"
+              }
+            },
+            "required_filters": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/required_filter"
+              }
+            },
+            "access_filters": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/access_filter"
+              }
+            },
+            "usage_notes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
           }
         }
       }
     },
     "relationship": {
-      "allOf": [{"$ref": "#/$defs/envelope"}],
+      "allOf": [
+        {
+          "$ref": "#/$defs/envelope"
+        }
+      ],
       "type": "object",
-      "required": ["name", "from", "to", "cardinality"],
+      "required": [
+        "name",
+        "from",
+        "to",
+        "cardinality"
+      ],
       "unevaluatedProperties": false,
       "properties": {
-        "name": {"type": "string"},
-        "from": {"$ref": "#/$defs/table_columns_ref"},
-        "to": {"$ref": "#/$defs/table_columns_ref"},
-        "cardinality": {"enum": ["one_to_one", "many_to_one", "one_to_many", "many_to_many"]},
-        "join_type": {"enum": ["inner", "left", "right", "full"]},
+        "name": {
+          "type": "string"
+        },
+        "from": {
+          "$ref": "#/$defs/table_columns_ref"
+        },
+        "to": {
+          "$ref": "#/$defs/table_columns_ref"
+        },
+        "cardinality": {
+          "enum": [
+            "one_to_one",
+            "many_to_one",
+            "one_to_many",
+            "many_to_many"
+          ]
+        },
+        "join_type": {
+          "enum": [
+            "inner",
+            "left",
+            "right",
+            "full"
+          ]
+        },
         "fanout_risk": {
           "type": "boolean",
           "description": "True when traversing this relationship can multiply fact rows. Compilers MUST apply fanout_safety when aggregating across it."
         },
         "asof": {
           "type": "object",
-          "required": ["enabled"],
+          "required": [
+            "enabled"
+          ],
           "additionalProperties": false,
           "properties": {
-            "enabled": {"type": "boolean"},
-            "on": {"type": "string", "description": "Driving date expression, e.g. 'ord_hdr.order_date'."}
+            "enabled": {
+              "type": "boolean"
+            },
+            "on": {
+              "type": "string",
+              "description": "Driving date expression, e.g. 'ord_hdr.order_date'."
+            }
           }
         }
       }
     },
     "table_columns_ref": {
       "type": "object",
-      "required": ["table", "columns"],
+      "required": [
+        "table",
+        "columns"
+      ],
       "additionalProperties": false,
       "properties": {
-        "table": {"type": "string"},
-        "columns": {"type": "array", "items": {"type": "string"}, "minItems": 1}
+        "table": {
+          "type": "string"
+        },
+        "columns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        }
       }
     },
     "hierarchy": {
-      "allOf": [{"$ref": "#/$defs/envelope"}],
+      "allOf": [
+        {
+          "$ref": "#/$defs/envelope"
+        }
+      ],
       "type": "object",
-      "required": ["name", "kind"],
+      "required": [
+        "name",
+        "kind"
+      ],
       "unevaluatedProperties": false,
       "properties": {
-        "name": {"type": "string"},
-        "kind": {"enum": ["level", "time", "recursive"]},
-        "dimension_table": {"type": "string"},
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "level",
+            "time",
+            "recursive"
+          ]
+        },
+        "dimension_table": {
+          "type": "string"
+        },
         "levels": {
           "type": "array",
           "minItems": 1,
           "items": {
             "type": "object",
-            "required": ["name"],
+            "required": [
+              "name"
+            ],
             "additionalProperties": false,
             "properties": {
-              "name": {"type": "string"},
-              "column": {"type": "string"},
-              "grain_expr": {"$ref": "#/$defs/dialect_sql", "description": "For time hierarchies: expression producing this grain from the base column."}
+              "name": {
+                "type": "string"
+              },
+              "column": {
+                "type": "string"
+              },
+              "grain_expr": {
+                "$ref": "#/$defs/dialect_sql",
+                "description": "For time hierarchies: expression producing this grain from the base column."
+              }
             }
           },
           "description": "Ordered most-general to most-granular. The level vocabulary is closed: grains/dimensions may only reference declared levels or level_aliases."
         },
         "level_aliases": {
           "type": "object",
-          "additionalProperties": {"type": "string"},
+          "additionalProperties": {
+            "type": "string"
+          },
           "description": "Alias -> level name, e.g. {region: state}."
         },
-        "base_column": {"type": "string", "description": "For time hierarchies: the underlying date/timestamp column."},
+        "base_column": {
+          "type": "string",
+          "description": "For time hierarchies: the underlying date/timestamp column."
+        },
         "recursive": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "parent_column": {"type": "string"},
-            "child_column": {"type": "string"}
+            "parent_column": {
+              "type": "string"
+            },
+            "child_column": {
+              "type": "string"
+            }
           },
           "description": "For kind: recursive (org charts, BOM)."
         }
       }
     },
     "aggregate_table": {
-      "allOf": [{"$ref": "#/$defs/envelope"}],
+      "allOf": [
+        {
+          "$ref": "#/$defs/envelope"
+        }
+      ],
       "type": "object",
-      "required": ["table", "aggregates", "mapping_source"],
+      "required": [
+        "table",
+        "aggregates",
+        "mapping_source"
+      ],
       "unevaluatedProperties": false,
       "properties": {
-        "table": {"type": "string"},
-        "aggregates": {"type": "string", "description": "Base table this aggregates."},
-        "grain": {"type": "array", "items": {"type": "string"}},
+        "table": {
+          "type": "string"
+        },
+        "aggregates": {
+          "type": "string",
+          "description": "Base table this aggregates."
+        },
+        "grain": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "measure_mappings": {
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["source", "target"],
+            "required": [
+              "source",
+              "target"
+            ],
             "additionalProperties": false,
             "properties": {
-              "source": {"$ref": "#/$defs/dialect_sql"},
-              "target": {"type": "string"}
+              "source": {
+                "$ref": "#/$defs/dialect_sql"
+              },
+              "target": {
+                "type": "string"
+              }
             }
           }
         },
         "mapping_source": {
-          "enum": ["lineage", "heuristic"],
+          "enum": [
+            "lineage",
+            "heuristic"
+          ],
           "description": "'lineage' = extracted from ETL/dbt derivation (trustworthy). 'heuristic' = data-inferred; never auto-included."
         },
         "routing": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "rule": {"type": "string"},
+            "rule": {
+              "type": "string"
+            },
             "status": {
-              "enum": ["verified", "advisory"],
+              "enum": [
+                "verified",
+                "advisory"
+              ],
               "description": "Routing is 'verified' only when consistency was checked over the routed grain; otherwise advisory."
             }
           }
@@ -498,74 +1146,171 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "method": {"enum": ["deterministic_window", "per_group_reconciliation", "sampled", "none"]},
-            "last_verified": {"type": "string", "format": "date-time"},
-            "status": {"enum": ["consistent", "divergent", "unverified"]}
+            "method": {
+              "enum": [
+                "deterministic_window",
+                "per_group_reconciliation",
+                "sampled",
+                "none"
+              ]
+            },
+            "last_verified": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "status": {
+              "enum": [
+                "consistent",
+                "divergent",
+                "unverified"
+              ]
+            }
           }
         }
       }
     },
     "metric": {
-      "allOf": [{"$ref": "#/$defs/envelope"}],
+      "allOf": [
+        {
+          "$ref": "#/$defs/envelope"
+        }
+      ],
       "type": "object",
-      "required": ["name", "type"],
+      "required": [
+        "name",
+        "type"
+      ],
       "unevaluatedProperties": false,
       "properties": {
-        "name": {"type": "string", "minLength": 1},
-        "display_name": {"type": "string"},
-        "type": {"enum": ["simple", "ratio", "derived", "cumulative", "conversion"]},
-        "measure": {"type": "string", "description": "simple: 'table.column' measure reference."},
-        "agg": {"$ref": "#/$defs/aggregation"},
-        "numerator": {"type": "string"},
-        "denominator": {"type": "string"},
-        "expr": {"$ref": "#/$defs/dialect_sql", "description": "derived: expression over other metrics. Metrics MUST NOT reference unmodeled columns."},
-        "input_metrics": {"type": "array", "items": {"type": "string"}},
-        "window": {"$ref": "#/$defs/window_spec"},
-        "entity": {"type": "string"},
-        "base_metric": {"type": "string"},
-        "conversion_metric": {"type": "string"},
-        "filter": {"$ref": "#/$defs/dialect_sql"},
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "simple",
+            "ratio",
+            "derived",
+            "cumulative",
+            "conversion"
+          ]
+        },
+        "measure": {
+          "type": "string",
+          "description": "simple: 'table.column' measure reference."
+        },
+        "agg": {
+          "$ref": "#/$defs/aggregation"
+        },
+        "numerator": {
+          "type": "string"
+        },
+        "denominator": {
+          "type": "string"
+        },
+        "expr": {
+          "$ref": "#/$defs/dialect_sql",
+          "description": "derived: expression over other metrics. Metrics MUST NOT reference unmodeled columns."
+        },
+        "input_metrics": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "window": {
+          "$ref": "#/$defs/window_spec"
+        },
+        "entity": {
+          "type": "string"
+        },
+        "base_metric": {
+          "type": "string"
+        },
+        "conversion_metric": {
+          "type": "string"
+        },
+        "filter": {
+          "$ref": "#/$defs/dialect_sql"
+        },
         "dimensions": {
           "type": "array",
-          "items": {"type": "string"},
+          "items": {
+            "type": "string"
+          },
           "description": "Valid dimension references: 'table.column', 'hierarchy.level', or 'hierarchy.*'."
         },
-        "grain": {"type": "string"},
+        "grain": {
+          "type": "string"
+        },
         "agg_time_dimension": {
           "type": "string",
           "description": "'table.column' (or bare base-table column) date/timestamp used for time bucketing/windows. Compilers MUST refuse time-scoped requests on metrics lacking this rather than guess a date column."
         },
         "synonyms": {
           "type": "array",
-          "items": {"type": "string"},
+          "items": {
+            "type": "string"
+          },
           "description": "Alternate names for natural-language lookup (e.g. 'revenue', 'sales'). Hand- or docs-populated; consumers use for search only, never for identity."
         },
-        "fanout_safety": {"$ref": "#/$defs/fanout_safety"}
+        "fanout_safety": {
+          "$ref": "#/$defs/fanout_safety"
+        }
       }
     },
     "coverage": {
       "type": "object",
-      "required": ["tables_seen", "tables_modelled"],
+      "required": [
+        "tables_seen",
+        "tables_modelled"
+      ],
       "additionalProperties": false,
       "description": "What the producer looked at, versus what it modelled. Without this block a consumer cannot tell 'that table exists but is not modelled here' from 'that table does not exist'. A document omitting it makes no claim either way.",
       "properties": {
-        "tables_seen": {"type": "integer", "minimum": 0, "description": "Tables in this run's scope: what the producer enumerated from the warehouse catalogue, after any scope the caller asked for and before the producer's own skipping. `tables_seen - tables_modelled` SHOULD equal the length of `skipped`."},
-        "tables_modelled": {"type": "integer", "minimum": 0, "description": "Count of entries in `tables`. Never greater than `tables_seen`."},
+        "tables_seen": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Tables in this run's scope: what the producer enumerated from the warehouse catalogue, after any scope the caller asked for and before the producer's own skipping. `tables_seen - tables_modelled` SHOULD equal the length of `skipped`."
+        },
+        "tables_modelled": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of entries in `tables`. Never greater than `tables_seen`."
+        },
         "skipped": {
           "type": "array",
           "description": "Tables seen but not modelled. A consumer asked about one of these SHOULD answer that it exists and is not modelled, rather than that it is unknown.",
           "items": {
             "type": "object",
-            "required": ["name", "reason"],
+            "required": [
+              "name",
+              "reason"
+            ],
             "additionalProperties": false,
             "properties": {
-              "name": {"type": "string", "minLength": 1, "description": "Table name as the warehouse catalogue reports it."},
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Table name as the warehouse catalogue reports it."
+              },
               "reason": {
                 "type": "string",
-                "enum": ["duplicate", "filtered", "unreadable"],
+                "enum": [
+                  "duplicate",
+                  "filtered",
+                  "unreadable"
+                ],
                 "description": "`duplicate`: shares a column signature and a name stem with a table that WAS modelled, so its shape is already described there. `filtered`: excluded by scope arguments or a skip list. `unreadable`: enumerated but could not be profiled, e.g. permission denied."
               },
-              "same_shape_as": {"type": "string", "minLength": 1, "description": "For `duplicate` only: the modelled table whose column signature this one shares. A consumer MAY answer structural questions about this table from that one, but MUST NOT assume the rows agree."}
+              "same_shape_as": {
+                "type": "string",
+                "minLength": 1,
+                "description": "For `duplicate` only: the modelled table whose column signature this one shares. A consumer MAY answer structural questions about this table from that one, but MUST NOT assume the rows agree."
+              }
             }
           }
         }
@@ -578,22 +1323,42 @@
         "routing": {
           "type": "array",
           "items": {
-            "allOf": [{"$ref": "#/$defs/envelope"}],
+            "allOf": [
+              {
+                "$ref": "#/$defs/envelope"
+              }
+            ],
             "type": "object",
-            "required": ["intent"],
+            "required": [
+              "intent"
+            ],
             "unevaluatedProperties": false,
             "properties": {
-              "intent": {"type": "string"},
-              "use": {"type": "array", "items": {"type": "string"}},
+              "intent": {
+                "type": "string"
+              },
+              "use": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
               "avoid": {
                 "type": "array",
                 "items": {
                   "type": "object",
-                  "required": ["table", "reason"],
+                  "required": [
+                    "table",
+                    "reason"
+                  ],
                   "additionalProperties": false,
                   "properties": {
-                    "table": {"type": "string"},
-                    "reason": {"type": "string"}
+                    "table": {
+                      "type": "string"
+                    },
+                    "reason": {
+                      "type": "string"
+                    }
                   }
                 }
               }
@@ -604,19 +1369,37 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "notes": {"type": "array", "items": {"type": "string"}, "description": "Human-facing prose only; machine-consumed conventions belong in structured fields (calendar, etc.)."}
+            "notes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Human-facing prose only; machine-consumed conventions belong in structured fields (calendar, etc.)."
+            }
           }
         },
         "domains": {
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["name", "tables"],
+            "required": [
+              "name",
+              "tables"
+            ],
             "additionalProperties": false,
             "properties": {
-              "name": {"type": "string"},
-              "description": {"type": "string"},
-              "tables": {"type": "array", "items": {"type": "string"}}
+              "name": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "tables": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
             }
           }
         }

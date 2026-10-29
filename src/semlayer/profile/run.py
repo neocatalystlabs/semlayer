@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 from semlayer.errors import SemlayerError
 from semlayer.profile.stats import ColumnStats, TableStats, profile_table
 from semlayer.profile.typing_rules import ALWAYS_ESCALATE, classify
+from semlayer.source import warehouse_uri
 from semlayer.tier import infer_tier, is_informational
 
 if TYPE_CHECKING:
@@ -135,8 +136,15 @@ def profile_source(source, no_sample_values: bool = False, llm=None,
 
 def profile_with_stats(source, no_sample_values: bool = False, llm=None, context=None,  # noqa: PLR0913, PLR0917
                        only: set[str] | None = None, state=None, lineage=None,
-                       llm_workers: int = 1):
+                       llm_workers: int = 1, schema: set[str] | None = None,
+                       name: str | None = None):
     """Returns (document, stats_by_table) — Link consumes both.
+
+    `schema`: profile only tables in these schemas. The document's `name`
+    becomes the schema when there is one and `name` is not given: the
+    document is then the identity other documents reference when several
+    are combined (a set), so a team scoping to its own schema gets a
+    layer named after it without asking.
 
     `context` (v0.2): a semlayer.context.ContextBundle; relevant prose excerpts
     join the typing-escalation evidence as priors.
@@ -160,6 +168,8 @@ def profile_with_stats(source, no_sample_values: bool = False, llm=None, context
     if state is not None:
         tables_meta = _drop_partition_children(source, tables_meta, state)
     n_comments = 0
+    if schema:
+        tables_meta = _apply_schema(tables_meta, schema)
     if only is not None:
         tables_meta = _apply_only(tables_meta, only)
     # Duplicate copies are skipped unless the caller named tables explicitly:
@@ -217,10 +227,15 @@ def profile_with_stats(source, no_sample_values: bool = False, llm=None, context
     _escalate_all(llm, pending, no_sample_values, context, max(1, llm_workers))
     _log_shallow(shallow_total, len(out_tables))
     model = "none/heuristic" if llm is None else f"{llm.model}/escalation"
+    doc_name = name or (next(iter(schema)) if schema and len(schema) == 1 else "profiled")
     out: dict = {
         "semantic_layer": {
-            "spec_version": "0.5.0",
-            "name": "profiled",
+            "spec_version": "0.6.0",
+            "name": doc_name,
+            # Which warehouse this describes, credential-free and portable, so
+            # a consumer holding several documents can tell whether two tables
+            # can meet in one SQL statement (SPEC.md rule 8).
+            "warehouse": warehouse_uri(source),
             "generated_by": {"engine": ENGINE_VERSION, "model": model},
             "tables": out_tables,
         }
@@ -232,6 +247,23 @@ def profile_with_stats(source, no_sample_values: bool = False, llm=None, context
         # passed --state has no way to see whether it saved them anything.
         out["_partition_audit"] = {"profiled": profiled_total, "reused": reused_total}
     return out, stats_by_table
+
+
+def _apply_schema(tables_meta: list, schemas: set[str]) -> list:
+    """Narrow the run to these schemas, or say which do not exist.
+
+    Case-insensitive, like `_apply_only`, and for the same reason a miss is
+    an error rather than an empty result.
+    """
+    wanted = {s.lower() for s in schemas}
+    present = {t.schema.lower() for t in tables_meta}
+    missing = sorted(wanted - present)
+    if missing:
+        raise SemlayerError(
+            f"--schema named {len(missing)} schema(s) not in this warehouse: "
+            f"{', '.join(missing)}",
+            hint=f"schemas present: {', '.join(sorted(present)) or 'none'}")
+    return [t for t in tables_meta if t.schema.lower() in wanted]
 
 
 def _apply_only(tables_meta: list, only: set[str]) -> list:

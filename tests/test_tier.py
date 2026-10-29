@@ -173,7 +173,7 @@ def test_inventory_only_tables_are_listed_not_modelled(tmp_path):
         con.close()
     assert validate_document(doc).ok, validate_document(doc).errors
     sl = doc["semantic_layer"]
-    assert sl["spec_version"] == "0.5.0"
+    assert sl["spec_version"] == "0.6.0"
     by_name = {t["name"]: t for t in sl["tables"]}
     folded = {s["name"].rsplit(".", 1)[-1] for s in sl.get("coverage", {}).get("skipped", [])}
     # every generated table is either in the layer or recorded as a folded copy
