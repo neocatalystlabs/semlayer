@@ -34,6 +34,10 @@ class InferOptions:
     no_sample_egress: bool = False
     # Accepts any iterable of names; normalised to a frozenset in __post_init__.
     only: Iterable[str] | None = None
+    # Profile only these schemas; one schema also names the document.
+    schema: Iterable[str] | None = None
+    # The document's `name`, its identity when combined with other documents.
+    name: str | None = None
     use_declared: bool = True
     llm_workers: int = 1
     # None: decided by the source (`default_query_workers`). The library
@@ -44,6 +48,10 @@ class InferOptions:
     def __post_init__(self) -> None:
         if self.only is not None and not isinstance(self.only, frozenset):
             object.__setattr__(self, "only", frozenset(self.only))
+        if isinstance(self.schema, str):
+            object.__setattr__(self, "schema", frozenset([self.schema]))
+        elif self.schema is not None and not isinstance(self.schema, frozenset):
+            object.__setattr__(self, "schema", frozenset(self.schema))
         for name in ("llm_workers", "query_workers"):
             n = getattr(self, name)
             if name == "query_workers" and n is None:
@@ -56,6 +64,7 @@ class InferOptions:
         """The options as the run report records them (sets become sorted lists)."""
         d = asdict(self)
         d["only"] = sorted(self.only) if self.only is not None else None
+        d["schema"] = sorted(self.schema) if self.schema is not None else None
         return d
 
 
@@ -149,7 +158,8 @@ def infer_with_report(source, llm=None, options: InferOptions | None = None, *,
 
     doc, stats = _timed("profile", lambda: profile_with_stats(
         source, no_sample_values=no_sample_egress, llm=llm, context=context, only=only,
-        state=state, lineage=lineage, llm_workers=llm_workers))
+        state=state, lineage=lineage, llm_workers=llm_workers,
+        schema=set(opt.schema) if opt.schema else None, name=opt.name))
     if context is not None and context.dictionary:
         from semlayer.context import apply_dictionary
         apply_dictionary(doc, context.dictionary)

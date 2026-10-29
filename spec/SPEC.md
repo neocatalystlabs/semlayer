@@ -113,6 +113,7 @@ A table may carry `modeling: inventory_only`. It is in `tables` so that it can b
 5. A producer that enumerates more tables than it models SHOULD emit `coverage`. Skipping work is legitimate — profiling the four hundredth copy of a shape you already have is waste — but doing it silently makes the document indistinguishable from one describing a smaller warehouse.
 6. `confidence` MUST be calibration-tested by the producing engine; a document's confidence values are meaningless without a published calibration report. (semlayer's own report: [docs/calibration.md](../docs/calibration.md).)
 7. A producer that sets a table aside as `inventory_only` MUST still list it with its columns and a `tier` carrying the reason, and MUST err towards modelling: a table whose name declares no tier is modelled in full.
+8. `name` is the document's identity when documents are combined, and `warehouse` says which warehouse the document describes. A producer scoping a run to one schema SHOULD name the document after that schema, and SHOULD write `warehouse` as a credential-free, portable identifier (the same string on every machine pointing at the same warehouse: `duckdb:<file basename>`, `postgres:<host>:<port>/<database>`, `snowflake:<database>`, `bigquery:<project>`). A consumer holding several documents compares `warehouse` values to decide whether two tables can meet in one SQL statement; it MUST NOT emit a single statement joining tables from documents whose `warehouse` differs unless the user has declared an engine that federates them.
 
 ## 4. References
 

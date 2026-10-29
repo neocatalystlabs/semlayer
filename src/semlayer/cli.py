@@ -38,7 +38,17 @@ def _build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("infer", help="Infer a semantic layer from a warehouse")
     p.add_argument("source",
                    help="duckdb:<path> | postgresql://... | snowflake | bigquery | postgres")
-    p.add_argument("-o", "--out", default="semantic_layer.yaml")
+    p.add_argument("-o", "--out", default=None,
+                   help="Output path. Default: <schema>.yaml when --schema names one "
+                        "schema, else semantic_layer.yaml.")
+    p.add_argument("--schema", metavar="SCHEMAS", default=None,
+                   help="Profile only these schemas (comma-separated). One schema also "
+                        "names the document and the output file: a team scoping to its "
+                        "own schema gets finance.yaml with name: finance, the identity "
+                        "other teams' documents reference when the layers are combined.")
+    p.add_argument("--name", default=None,
+                   help="The document's name (default: the schema when --schema names one, "
+                        "else 'profiled').")
     p.add_argument("--no-llm", action="store_true", help="Deterministic dry-run (no LLM calls)")
     p.add_argument("--no-sample-egress", action="store_true",
                    help="Never include cell values in LLM prompts")
@@ -132,6 +142,19 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def default_out(out: str | None, schema: set[str] | None) -> str:
+    """The output path: as given, else <schema>.yaml for one schema, else semantic_layer.yaml.
+
+    The filename follows the document's identity so that three teams scoping
+    to three schemas do not end up with three files of the same name.
+    """
+    if out:
+        return out
+    if schema and len(schema) == 1:
+        return f"{next(iter(schema))}.yaml"
+    return "semantic_layer.yaml"
+
+
 def _load_doc(path: str) -> dict:
     import yaml
 
@@ -218,8 +241,12 @@ def _cmd_infer(args: argparse.Namespace) -> int:
     only = {x.strip() for x in args.only.split(",") if x.strip()} if args.only else None
     if only:
         print(f"profiling {len(only)} table(s) only: {', '.join(sorted(only))}")
-    options = InferOptions(no_sample_egress=args.no_sample_egress, only=only,
-                           use_declared=not args.no_declared_constraints,
+    schema = {x.strip() for x in args.schema.split(",") if x.strip()} if args.schema else None
+    if schema:
+        print(f"profiling schema(s): {', '.join(sorted(schema))}")
+    args.out = default_out(args.out, schema)
+    options = InferOptions(no_sample_egress=args.no_sample_egress, only=only, schema=schema,
+                           name=args.name, use_declared=not args.no_declared_constraints,
                            llm_workers=args.llm_workers, query_workers=args.query_workers)
     doc, report = infer_with_report(src, llm=llm, options=options, context=context,
                                     lineage=lineage, state=state)

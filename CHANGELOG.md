@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Scoping to a schema names the document and the file; documents record their warehouse (spec 0.5.0 → 0.6.0)
+
+`semlayer infer <source> --schema finance` profiles only that schema, names
+the document `finance` and writes `finance.yaml` unless `-o` says otherwise.
+`--name` overrides the document name. Every document now carries
+`warehouse`, a credential-free and portable identifier of the warehouse it
+was inferred from (`duckdb:<file basename>`, `postgres:<host>:<port>/<db>`,
+`snowflake:<database>`, `bigquery:<project>`). Both exist for the case
+where several teams' layers are combined: `name` is what other documents
+reference, and `warehouse` is how a consumer knows whether two tables can
+meet in one SQL statement (SPEC.md producer rule 8). A run with no scope is
+unchanged apart from the new field.
+
 ### Inventory-only tables are listed from the catalogue, not profiled
 
 The tier is decided from the table's name and column names, which the

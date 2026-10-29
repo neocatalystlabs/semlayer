@@ -50,6 +50,7 @@ def test_report_records_the_options():
     finally:
         con.close()
     assert report["options"] == {"no_sample_egress": False, "only": ["orders"],
+                                 "schema": None, "name": None,
                                  "use_declared": False, "llm_workers": 3, "query_workers": 1}
     json.dumps(report)        # the report must stay serialisable
 

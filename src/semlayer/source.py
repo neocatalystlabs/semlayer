@@ -217,6 +217,31 @@ def source_identity(source) -> str:
     return type(source).__name__
 
 
+def warehouse_uri(source) -> str:
+    """The warehouse a document was inferred from, as the document records it.
+
+    Credential-free and portable: consumers compare two documents' values to
+    decide whether their tables can meet in one SQL statement, so it must be
+    the same string on every machine that points at the same warehouse. A
+    DuckDB file is named by its basename, not its path, for that reason.
+    Distinct from `source_identity`, which keys state files and may be as
+    specific as it likes.
+    """
+    kind = type(source).__name__
+    if kind == "DuckDBSource":
+        import os
+        ident = source_identity(source).removeprefix("duckdb:")
+        if not ident or ident in (kind, "memory"):
+            return "duckdb:memory"
+        return "duckdb:" + os.path.basename(ident.split(";")[0])
+    if kind == "SnowflakeSource":
+        return f"snowflake:{getattr(source, 'database', '')}"
+    if kind == "BigQuerySource":
+        return f"bigquery:{getattr(source, 'project', '')}"
+    ident = source_identity(source)
+    return ident if ident != kind else kind.lower()
+
+
 @runtime_checkable
 class SketchProvider(Protocol):
     """Mergeable distinct-count sketches, so partitions can be combined.
