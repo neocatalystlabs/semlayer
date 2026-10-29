@@ -57,7 +57,9 @@ def naming_layer(table: str) -> str:
     prefer a published parent over the intermediate copy that holds the same
     key values.
     """
-    bare = table.rsplit(".", 1)[-1]
+    # schema.table from a source, or document/table inside a set: the stage
+    # prefix is on the table itself
+    bare = table.rsplit(".", 1)[-1].rsplit("/", 1)[-1]
     m = _STAGE_PREFIX.match(bare)
     return m.group(1).lower() if m else ""
 

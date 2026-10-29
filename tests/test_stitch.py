@@ -110,12 +110,21 @@ def test_names_only_mode_proposes_but_marks_untested(tmp_path):
     assert validate_file(tmp_path / "acme.yaml").ok
 
 
-def test_unresolved_references_are_key_roles_with_no_target():
-    sl = {"tables": [
-        {"name": "f/t", "columns": [{"name": "a", "entity_role": "foreign_key"},
-                                    {"name": "b", "entity_role": "foreign_key",
-                                     "foreign_key": {"references": "f/u.b"}},
-                                    {"name": "c", "entity_role": "dimension"}]},
-        {"name": "f/raw", "modeling": "inventory_only",
-         "columns": [{"name": "x", "entity_role": "foreign_key"}]}]}
-    assert unresolved_references(sl) == [("f/t", "a")]
+def test_unresolved_references_are_key_shaped_columns_with_no_target():
+    """Link's child criteria, minus resolved keys, ETL bookkeeping and plain attributes."""
+    def col(name, role, sql_type="INTEGER", distinct=40, **extra):
+        return {"name": name, "sql_type": sql_type, "entity_role": role,
+                "cardinality": {"distinct": distinct, "null_count": 0}, **extra}
+    sl = {"name": "f", "tables": [
+        {"name": "f/t", "source": "f.t", "primary_key": ["t_id"], "columns": [
+            col("t_id", "primary_key", distinct=300),
+            col("a_id", "foreign_key"),                                   # unresolved
+            col("b_id", "foreign_key", foreign_key={"references": "f/u.b_id"}),   # resolved
+            col("segment", "dimension", sql_type="VARCHAR", distinct=3),  # attribute, not a key
+            col("etl_batch_id", "foreign_key", distinct=50),              # ETL bookkeeping
+            col("status_cd", "dimension", sql_type="VARCHAR", distinct=4)]},   # key-NAMED: kept
+        {"name": "f/u", "source": "f.u", "primary_key": ["b_id"],
+         "columns": [col("b_id", "primary_key", distinct=60)]},
+        {"name": "f/raw", "source": "f.raw", "modeling": "inventory_only",
+         "columns": [col("x_id", "foreign_key")]}]}
+    assert unresolved_references(sl) == [("f/t", "a_id"), ("f/t", "status_cd")]

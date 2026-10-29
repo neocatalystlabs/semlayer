@@ -70,15 +70,33 @@ def _owner(table: str) -> str:
     return table.split(SEP, 1)[0]
 
 
-def unresolved_references(sl: dict) -> list[tuple[str, str]]:
-    """(table, column) pairs that point outside their document: a key role with no target."""
+def unresolved_references(sl: dict, stats: dict | None = None) -> list[tuple[str, str]]:
+    """(table, column) pairs that may point outside their document.
+
+    Every column Link would test as a child inside one layer -- key roles,
+    identifiers, key-named columns, low-cardinality numeric dimensions --
+    that ended up with no `foreign_key` target. Link only promotes a column
+    to `foreign_key` when it finds the parent, so a key whose parent lives
+    in another document keeps its profile role; looking only at the role
+    would miss exactly the references stitch exists for. ETL bookkeeping
+    columns (`etl_batch_id`, `record_hash`) are excluded: they are keys to
+    nothing in any document.
+    """
+    from semlayer.link.candidates import _KEYISH_RE
+    from semlayer.tier import ETL_METADATA_COLUMNS
+    stats = stats if stats is not None else stats_from_documents(sl)
+    _, children = select_parents_and_children(stats, {"semantic_layer": sl})
+    cols = {(t["name"], c["name"]): c for t in sl.get("tables", []) for c in t.get("columns", [])}
     out = []
-    for t in sl.get("tables", []):
-        if t.get("modeling") == "inventory_only":
+    for tn, cn in children:
+        c = cols[(tn, cn)]
+        if c.get("foreign_key") or cn.lower() in ETL_METADATA_COLUMNS:
             continue
-        for c in t.get("columns", []):
-            if c.get("entity_role") == "foreign_key" and not c.get("foreign_key"):
-                out.append((t["name"], c["name"]))
+        # a reference looks like a key: by role or by name. A low-cardinality
+        # attribute (`segment`, `status`) is a child Link tests on the chance
+        # of a lookup table, but listing it as "unresolved" would be noise.
+        if c.get("entity_role") in ("foreign_key", "identifier") or _KEYISH_RE.search(cn.lower()):
+            out.append((tn, cn))
     return out
 
 
@@ -240,7 +258,7 @@ def stitch(member_paths: list[str | Path], hub_name: str, out_path: str | Path,
     rs = resolve(hub, members)
     sl = rs.doc["semantic_layer"]
     stats = stats_from_documents(sl)
-    children = unresolved_references(sl)
+    children = unresolved_references(sl, stats)
     tables = {t["name"]: t for t in sl.get("tables", [])}
     result = StitchResult(hub=hub)
     if source is None:

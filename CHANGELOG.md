@@ -17,6 +17,27 @@ edges are proposed from names and distinct counts at 0.3 and marked
 untested. Members are never modified. Statistics come from the member
 documents, not from re-profiling. docs/sets.md.
 
+Two things the first multi-schema estate taught it. An unresolved reference
+is any column Link would test as a child that ended up with no target, not
+just a `foreign_key` role: Link only promotes a column to that role when it
+finds the parent, so a key whose parent lives in another document keeps its
+profile role. ETL bookkeeping columns and plain attributes are excluded, so
+`unresolved` lists keys, not `segment`. And the co-location tiebreak now
+reads a table's stage prefix through its `member/` name, so a staging fact
+in one schema still prefers the staging copy of its dimension in another,
+as it would inside one layer. On a 300-table, 7-schema synthetic estate the
+seam scores precision 1.0 and recall 1.0 against the 83 cross-schema gold
+keys.
+
+### The scale generator has a `--schemas` layout
+
+`fixtures/generators/scale.py --schemas` puts each domain's star schema in a
+schema of its own, the conformed dimensions in `platform`, every copy in the
+schema of what it copies, and a shadow `dim_<entity>` in some domains: a
+filtered copy of a platform dimension with two columns of its own. The
+sidecar names tables `schema.table` and records which gold keys cross
+schemas. The flat layout is byte-identical to before.
+
 ### Every command takes a hub; compiled SQL uses `source`
 
 `semlayer mcp`, `lint`, `review` and `compile_metric` work on a hub as they
