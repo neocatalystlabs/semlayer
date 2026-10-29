@@ -124,6 +124,13 @@ def test_budget_is_spent_by_children_that_match_nothing(fixture):
         con.close()
 
     total = sum(len(v) for v in tests.values())
+    # The timing block Link reports must count what was actually issued.
+    timing = C.last_timing()
+    # link_source issues a few inclusion tests of its own outside candidate
+    # generation (self-reference checks), so the harness sees slightly more.
+    assert 0 <= total - timing["tests"] <= 8, (total, timing["tests"])
+    assert 0 <= len(tests) - timing["statements"] <= 8
+    assert set(timing) >= {"parents", "children", "index_s", "plan_s", "query_s"}
     no_match = {k: v for k, v in tests.items() if not any(r >= C.MIN_INCLUSION for r in v)}
     after_first = 0
     for v in tests.values():

@@ -147,6 +147,9 @@ def infer_with_report(source, llm=None, options: InferOptions | None = None, *,
     if part:
         report["partitions"] = part
     doc.pop("_link_audit", None)
+    from semlayer.link.candidates import last_timing
+    if last_timing():
+        report["link"] = last_timing()
     sl = doc["semantic_layer"]
     report["counts"] = {
         "tables": len(sl["tables"]),

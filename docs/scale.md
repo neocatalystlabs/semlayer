@@ -212,12 +212,20 @@ displaced by unnamed ones. Planning the 15,000-table run fell from 115 s to
 37 s with an identical 528,060 statements.
 
 Link's wall time at 50,000 nevertheless rose, 1,444 s to 2,782 s, with the
-same statements per child, memory at 6.7 GB and about five cores busy. The
-statement count did not change; the parents inside the statements did,
-drawn from a pool six times larger that now includes every fact table's
-unique key, and the open question is whether those parents cost more rows
-per anti-join. It is recorded here as a measured regression at this one
-size, correct output, not yet explained.
+same statements per child. Link now reports where its time goes, and the
+split on a repeat run (2,759 s) is: parent index 23 s, per-child planning
+102 s, and 2,618 s running 44,328 statements carrying 1,746,993 tests at 8
+workers, 59 ms per statement and 1.5 ms per test. So the Python term is
+small and the time is in the warehouse. The statement count did not change;
+the parents inside the statements did. With the cap, every child's
+statistics-only tests fell on the same few thousand dimension tables that
+came first in table order, which the engine kept hot; with 19,625 parents
+in the pool they spread across four times as many tables, each anti-join
+touching a table the previous statement did not. The machine showed it as
+about five of twenty cores busy: the workers were waiting on reads, not
+computing. The fix is not fewer parents; it is more workers when the
+warehouse is an in-process file, and a shallower profile and fewer tests
+for children on inventory-only tables, both open.
 
 Tiers held at 50,000: 21,642 of 35,925 tables inventory-only, no core or
 staging table set aside, 37 scratch tables read as core (0.8% of scratch).
