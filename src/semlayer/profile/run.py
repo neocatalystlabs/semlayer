@@ -12,11 +12,15 @@ from __future__ import annotations
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from importlib.metadata import version
+from typing import TYPE_CHECKING
 
 from semlayer.errors import SemlayerError
-from semlayer.profile.stats import TableStats, profile_table
+from semlayer.profile.stats import ColumnStats, TableStats, profile_table
 from semlayer.profile.typing_rules import ALWAYS_ESCALATE, classify
 from semlayer.tier import infer_tier, is_informational
+
+if TYPE_CHECKING:
+    from semlayer.incremental import IncrementalResult
 
 logger = logging.getLogger(__name__)
 
@@ -177,22 +181,32 @@ def profile_with_stats(source, no_sample_values: bool = False, llm=None, context
     reused_total = 0
     profiled_total = 0
     pending: list[tuple[TableStats, dict]] = []   # escalation, after the scan
+    shallow_total = 0
     for t in sorted(tables_meta, key=lambda x: (x.schema, x.name)):
         parts = partitions.get((t.schema, t.name)) if partitions else None
         inc = None
-        if parts:
-            from semlayer.incremental import apply_cardinality, profile_partitioned
-            from semlayer.source import source_identity
-
-            inc = profile_partitioned(source, t, parts, state, source_identity(source))
-            ts = inc.stats
+        # The tier is decided from the catalogue alone -- name and column
+        # names -- so an inventory-only table (raw shard, scratch copy) is
+        # known before any query. It is listed with its columns and types and
+        # nothing else is inferred about it (SPEC.md 2.13), so the per-column
+        # statistics scan, Profile's whole cost, is not run for it. At 50,000
+        # synthetic tables 21,642 of 35,925 were inventory-only and Profile
+        # was the largest linear stage at 685 s.
+        tier = infer_tier(t.name, [c.name for c in t.columns])
+        if is_informational(tier) and not parts:
+            ts, doc, n = _list_inventory(t, tier, comments, lineage)
+            stats_by_table[t.name] = ts
+            out_tables.append(doc)
+            n_comments += n
+            shallow_total += 1
+            continue
+        ts, inc = _stats_for(source, t, parts, state)
+        stats_by_table[t.name] = ts
+        doc = _table_doc(ts, no_sample_values, tier)
+        if inc is not None:
+            from semlayer.incremental import apply_cardinality
             reused_total += len(inc.reused)
             profiled_total += len(inc.profiled)
-        else:
-            ts = profile_table(source, t)
-        stats_by_table[t.name] = ts
-        doc = _table_doc(ts, no_sample_values)
-        if inc is not None:
             # The merged bounds and the method that produced them, replacing the
             # "exact" a whole-table profile would have claimed.
             apply_cardinality(doc, inc)
@@ -201,6 +215,7 @@ def profile_with_stats(source, no_sample_values: bool = False, llm=None, context
         pending.append((ts, doc))
         out_tables.append(doc)
     _escalate_all(llm, pending, no_sample_values, context, max(1, llm_workers))
+    _log_shallow(shallow_total, len(out_tables))
     model = "none/heuristic" if llm is None else f"{llm.model}/escalation"
     out: dict = {
         "semantic_layer": {
@@ -562,7 +577,66 @@ def _cardinality(cs) -> dict:
             "null_count": cs.n_null}
 
 
-def _table_doc(ts: TableStats, no_sample_values: bool) -> dict:
+def _log_shallow(shallow: int, total: int) -> None:
+    if shallow:
+        logger.info("profile: %d of %d tables are inventory-only and were listed from the "
+                    "catalogue without a statistics scan", shallow, total)
+
+
+def _stats_for(source, t, parts, state) -> tuple[TableStats, IncrementalResult | None]:
+    """Whole-table statistics, or partition-wise ones with their incremental record."""
+    if not parts:
+        return profile_table(source, t), None
+    from semlayer.incremental import profile_partitioned
+    from semlayer.source import source_identity
+
+    inc = profile_partitioned(source, t, parts, state, source_identity(source))
+    return inc.stats, inc
+
+
+def _list_inventory(t, tier, comments: dict, lineage) -> tuple[TableStats, dict, int]:
+    """An inventory-only table's stats stub and document, with any catalogue prose."""
+    ts = _shallow_stats(t)
+    doc = _inventory_doc(ts, tier)
+    n = _apply_comments(doc, ts, comments) + _apply_dbt_docs(doc, ts, lineage)
+    return ts, doc, n
+
+
+def _shallow_stats(t) -> TableStats:
+    """A TableStats carrying only what the catalogue said: names and types.
+
+    Every count is zero and nothing is unique, so no rule downstream can
+    mistake it for a measured column. Nothing downstream reads it for an
+    inventory-only table anyway: Link, Describe, Enrich and review all work
+    on the modelled tables, and this is what makes that true for Profile too.
+    """
+    cols = {c.name: ColumnStats(name=c.name, sql_type=c.sql_type, row_count=0, n_null=0,
+                                n_distinct=0, is_unique=False) for c in t.columns}
+    return TableStats(table=t, row_count=0, columns=cols)
+
+
+def _inventory_doc(ts: TableStats, tier) -> dict:
+    """The table entry for an inventory-only table: its shape and its tier."""
+    cols = [{
+        "name": name, "sql_type": cs.sql_type,
+        "semantic_type": "unknown", "entity_role": "dimension", "confidence": 0.0,
+        "lifecycle": "inferred",
+        "provenance": [{"signal": "naming",
+                        "detail": "inventory-only tier: listed from the catalogue, not profiled"}],
+    } for name, cs in ts.columns.items()]
+    return {
+        "name": ts.table.name,
+        "source": ts.table.qualified,
+        "table_type": "unknown",
+        "tier": {"value": tier.tier, "confidence": tier.confidence,
+                 "provenance": tier.provenance()},
+        "modeling": "inventory_only",
+        "lifecycle": "inferred",
+        "columns": cols,
+    }
+
+
+def _table_doc(ts: TableStats, no_sample_values: bool, tier=None) -> dict:
     cols = []
     pk_candidates = []
     for name, cs in ts.columns.items():
@@ -588,7 +662,8 @@ def _table_doc(ts: TableStats, no_sample_values: bool) -> dict:
             pk_candidates.append((name, typ.confidence))
         cols.append(col)
 
-    tier = infer_tier(ts.table.name, list(ts.columns))
+    if tier is None:
+        tier = infer_tier(ts.table.name, list(ts.columns))
     doc: dict = {
         "name": ts.table.name,
         "source": ts.table.qualified,

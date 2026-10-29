@@ -48,10 +48,11 @@ def _build_parser() -> argparse.ArgumentParser:
                         "The output is identical at any value; only wall-clock "
                         "changes. Raise it if your API rate limit allows; 1 is "
                         "fully serial.")
-    p.add_argument("--query-workers", type=int, default=4, metavar="N",
-                   help="Concurrent foreign-key inclusion queries (default 4). These run "
-                        "in YOUR warehouse and use your compute; measured 3.3x at 4 and "
-                        "6.7x at 8 on BigQuery, flat after. Output is identical at any "
+    p.add_argument("--query-workers", type=int, default=None, metavar="N",
+                   help="Concurrent foreign-key inclusion queries. Default: 4 on a network "
+                        "warehouse (these run in YOUR warehouse and use your compute; "
+                        "measured 3.3x at 4 and 6.7x at 8 on BigQuery, flat after), every "
+                        "core on an in-process DuckDB file. Output is identical at any "
                         "value. 1 is fully serial.")
     p.add_argument("--state", metavar="PATH",
                    help="Partition-wise profiling with a state sidecar: "

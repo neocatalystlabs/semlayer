@@ -131,6 +131,17 @@ def test_built_fixtures_are_never_demoted(db):
     assert not flagged, flagged
 
 
+def _assert_listed_not_profiled(by_name: dict, inv: set) -> None:
+    """Inventory-only columns carry no cardinality (never scanned) and say so; modelled ones do."""
+    for n in inv:
+        for c in by_name[n]["columns"]:
+            assert "cardinality" not in c, (n, c["name"])
+            assert c["provenance"][0]["detail"].startswith("inventory-only tier"), (n, c["name"])
+    for n, tbl in by_name.items():
+        if n not in inv:
+            assert all("cardinality" in c for c in tbl["columns"]), n
+
+
 def test_inventory_only_tables_are_listed_not_modelled(tmp_path):
     """End to end on a small scale_N warehouse, no LLM.
 
@@ -186,6 +197,7 @@ def test_inventory_only_tables_are_listed_not_modelled(tmp_path):
     for m in sl.get("metrics", []):
         assert (m.get("measure") or m.get("numerator") or "").split(".")[0] not in inv, m
     items = collect(doc)
+    _assert_listed_not_profiled(by_name, inv)
     per_column_on_inv = [i for i in items if i.table in inv and i.kind != "inventory_only"]
     assert not per_column_on_inv, per_column_on_inv[:3]
     rollups = [i for i in items if i.kind == "inventory_only"]
