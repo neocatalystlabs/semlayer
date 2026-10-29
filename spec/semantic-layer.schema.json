@@ -340,6 +340,21 @@
         "table_type": {
           "enum": ["fact", "dimension", "denormalized", "aggregate", "snapshot_scd2", "operational", "staging", "unknown"]
         },
+        "tier": {
+          "type": "object",
+          "required": ["value"],
+          "additionalProperties": false,
+          "description": "Which part of the warehouse this table belongs to, inferred from its name and columns. Independent of table_type, which describes what a modelled table IS; tier says whether it is the business's view of the data at all.",
+          "properties": {
+            "value": {"enum": ["core", "staging", "raw", "scratch", "unknown"]},
+            "confidence": {"$ref": "#/$defs/confidence"},
+            "provenance": {"type": "array", "items": {"$ref": "#/$defs/provenance_entry"}}
+          }
+        },
+        "modeling": {
+          "enum": ["full", "inventory_only"],
+          "description": "Whether the producer modelled this table for queries. 'inventory_only': the table is listed with its shape (name, columns, types, tier) and nothing more -- no relationships, descriptions, metrics or review items were inferred, and a consumer MUST NOT route a query to it (SPEC.md 2.13). Absent means 'full'."
+        },
         "grain": {"type": "string"},
         "source": {"type": "string", "description": "Fully-qualified physical location, e.g. 'db.schema.table'."},
         "freshness": {"$ref": "#/$defs/freshness"},

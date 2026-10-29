@@ -75,6 +75,27 @@ class _CachingSource:
         return rows
 
 
+def _modelled_view(sl: dict) -> dict:
+    """`sl` with inventory-only tables hidden from every Enrich step.
+
+    The table dicts are the same objects, so per-table writes land in the
+    document; the layer-level keys Enrich adds (metrics, aggregate_tables,
+    domains, routing) are written to this view and copied back by
+    `_write_back`. An inventory-only table (semlayer.tier: raw and scratch)
+    therefore gets no metrics, no aggregate claims, no routing entry and no
+    freshness, grain, SCD or filter claims -- it is listed, not modelled.
+    """
+    view = dict(sl)
+    view["tables"] = [t for t in sl["tables"] if t.get("modeling") != "inventory_only"]
+    return view
+
+
+def _write_back(view: dict, sl: dict) -> None:
+    for k, v in view.items():
+        if k != "tables":
+            sl[k] = v
+
+
 def enrich_source(source, doc: dict, stats: dict) -> dict:
     """Run the deterministic enrich tier.
 
@@ -82,7 +103,7 @@ def enrich_source(source, doc: dict, stats: dict) -> dict:
     reconciliation, routing/domains, and snapshot filters.
     """
     source = _CachingSource(source)
-    sl = doc["semantic_layer"]
+    sl = _modelled_view(doc["semantic_layer"])
     _upgrade_enum_decodes(source, sl, stats)
     # after Link, because "no relationship was discovered for this column" is
     # what separates a natural key from a foreign key
@@ -106,6 +127,7 @@ def enrich_source(source, doc: dict, stats: dict) -> dict:
     _domains_and_routing(sl, aggs)
     _snapshot_filters(sl, stats)
     _infer_scd(sl)
+    _write_back(sl, doc["semantic_layer"])
     return doc
 
 

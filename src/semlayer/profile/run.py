@@ -16,6 +16,7 @@ from importlib.metadata import version
 from semlayer.errors import SemlayerError
 from semlayer.profile.stats import TableStats, profile_table
 from semlayer.profile.typing_rules import ALWAYS_ESCALATE, classify
+from semlayer.tier import infer_tier, is_informational
 
 logger = logging.getLogger(__name__)
 
@@ -203,7 +204,7 @@ def profile_with_stats(source, no_sample_values: bool = False, llm=None, context
     model = "none/heuristic" if llm is None else f"{llm.model}/escalation"
     out: dict = {
         "semantic_layer": {
-            "spec_version": "0.4.0",
+            "spec_version": "0.5.0",
             "name": "profiled",
             "generated_by": {"engine": ENGINE_VERSION, "model": model},
             "tables": out_tables,
@@ -324,7 +325,8 @@ def _escalate_all(llm, pending: list[tuple[TableStats, dict]], no_sample_values:
     """
     if llm is None:
         return
-    jobs = [j for j in (_escalation_job(ts, doc, context) for ts, doc in pending) if j]
+    jobs = [j for j in (_escalation_job(ts, doc, context) for ts, doc in pending
+                        if doc.get("modeling") != "inventory_only") if j]
 
     def one(job) -> dict[str, dict]:
         from semlayer.profile.llm_typing import escalate_table
@@ -485,11 +487,14 @@ def _scale_warning(n_tables: int, n_columns: int) -> str | None:
     # to load". Measured 2026-10-28 on a 15,000-table synthetic warehouse: the
     # 42 MB layer parses in 14 s and every MCP tool answers in milliseconds
     # after that, so that clause was retired. The truncation clause stands:
-    # MAX_PARENTS caps the candidate list and the cap bites past ~2,900 tables.
+    # Then measured at 50,000 tables: MAX_PARENTS had dropped 2,952 of 7,952
+    # real parent keys. Named parents are no longer capped; what is bounded
+    # past this size is the statistics-only (unnamed) candidates per child.
     return (f"warehouse exceeds the tested scale: {', '.join(over)}. "
-            f"Foreign-key discovery caps its candidate-parent list, so some keys "
-            f"may go untested above this size. Narrow the run with --only or a "
-            f"schema filter, or see docs/scale.md for what has been measured past it.")
+            f"Foreign-key discovery bounds the speculative candidates it tests per "
+            f"column, so a key that nothing names may go untested above this size. "
+            f"Narrow the run with --only or a schema filter, or see docs/scale.md "
+            f"for what has been measured past it.")
 
 
 def _partitions_or_empty(source) -> dict:
@@ -583,10 +588,18 @@ def _table_doc(ts: TableStats, no_sample_values: bool) -> dict:
             pk_candidates.append((name, typ.confidence))
         cols.append(col)
 
+    tier = infer_tier(ts.table.name, list(ts.columns))
     doc: dict = {
         "name": ts.table.name,
         "source": ts.table.qualified,
         "table_type": "unknown",   # Link-stage decision
+        "tier": {"value": tier.tier, "confidence": tier.confidence,
+                 "provenance": tier.provenance()},
+        # Raw and scratch tiers are listed with their shape and nothing more:
+        # no escalation, no foreign-key budget, no descriptions, no metrics, no
+        # review items. See semlayer.tier for why, and SPEC.md 2.13 for what a
+        # consumer does with one.
+        "modeling": "inventory_only" if is_informational(tier) else "full",
         "lifecycle": "inferred",
         "columns": cols,
     }

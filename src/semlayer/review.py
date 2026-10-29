@@ -60,7 +60,7 @@ class ReviewItem:
 def collect(doc: dict) -> list[ReviewItem]:
     """Scan the semantic layer for claims and conflicts awaiting human review."""
     items: list[ReviewItem] = []
-    for t in doc["semantic_layer"]["tables"]:
+    for t in _modelled(doc["semantic_layer"]):      # inventory-only: _inventory_items
         if t.get("lifecycle") == "inferred" and (t.get("confidence") or 1.0) < REVIEW_THRESHOLD:
             items.append(ReviewItem("low_confidence", t["name"], None,
                                     f"table_type={t.get('table_type')}", _prov(t)))
@@ -84,7 +84,34 @@ def collect(doc: dict) -> list[ReviewItem]:
                                             f"foreign key -> {m.group(1)}",
                                             f"inclusion {m.group(2)}, name score {m.group(3)}"))
     items += _metric_items(doc["semantic_layer"])
+    items += _inventory_items(doc["semantic_layer"])
     return items
+
+
+def _modelled(sl: dict) -> list[dict]:
+    return [t for t in sl["tables"] if t.get("modeling") != "inventory_only"]
+
+
+def _inventory_items(sl: dict) -> list[ReviewItem]:
+    """One line per tier for the tables set aside as inventory-only.
+
+    Not one per column: these tables were set aside on purpose
+    (semlayer.tier), and the question for a reviewer is "is this tier right",
+    not four thousand column types. On a 2,000-table estate the per-column
+    form was 76% of the queue.
+    """
+    by_tier: dict[str, list[str]] = {}
+    for t in sl["tables"]:
+        if t.get("modeling") == "inventory_only":
+            by_tier.setdefault((t.get("tier") or {}).get("value", "unknown"), []).append(t["name"])
+    return [
+        ReviewItem("inventory_only", names[0], None,
+                   f"{len(names)} tables in the {tier} tier are listed but not modelled "
+                   f"(no relationships, descriptions or metrics)",
+                   "e.g. " + ", ".join(names[:5]) + (" ..." if len(names) > 5 else ""),
+                   ref=f"tier.{tier}")
+        for tier, names in sorted(by_tier.items())
+    ]
 
 
 _RECONCILED_RE = re.compile(r"business rule from aggregate reconciliation: (.+)")

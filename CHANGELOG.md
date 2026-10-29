@@ -2,6 +2,80 @@
 
 ## Unreleased
 
+### Named foreign-key parents are never truncated; the zero-score tail is bounded
+
+At 50,000 tables (35,925 after folding) the candidate-parent cap of 5,000
+dropped 2,952 of the 7,952 columns that were genuinely parents. The list
+was in table order, so the ones dropped were the staging dimensions, and
+every one of the 8,820 staging foreign keys was then asserted against the
+core dimension holding the same key values: gold precision 0.378, recall
+0.385, where 15,000 tables had scored 0.956 and 1.00. The cap predates the
+parent index and existed to bound a per-child sort the index removed.
+
+Now the named parents, unique columns the naming vocabulary already
+proposes, are never cut; the cap applies only to the speculative key-shaped
+list. What still cost children times parents was the zero-score tail: for
+every child the engine walked every same-family parent with no name
+evidence at all, which was the whole of Link's superlinear term (9x the
+time for 3x the tables between 15,000 and 50,000). Those parents can only
+reach the review queue on their own, so they are now read from the
+narrowest key domain that can contain the child's values upward (a real
+parent's distinct count sits just above its child's) and the read stops
+when the child's budget is full or 400 have been examined. Parents with
+name evidence are all still tested and are never displaced by unnamed ones,
+in the ranking or in the co-location tiebreak.
+
+Rerun on the same 50,000-table warehouse: recall 1.00, precision 0.958,
+zero wrong parents; the 630 extras are dimension keys linked 1:1 to another
+copy of the same entity. Link's wall time there rose from 1,444 s to 2,782 s
+with the same statements per child, which docs/scale.md records as an open
+regression at that one size. Measured on dbt_synthea without a manifest:
+257 relationships where there were 256 (payer_transitions.SECONDARY_PAYER
+found stg_synthea__payers; none lost), floors unchanged, and
+claims.PATIENTID reaches the review queue against patients.Id for the first
+time, since the two share 1,171 values and no name token. The scale warning
+now says what is bounded: statistics-only candidates per column, not the
+parent list.
+
+### Every table gets a tier; raw and scratch tiers are listed, not modelled (spec 0.4.0 → 0.5.0)
+
+Most of a large warehouse is not the part anyone models against. On a
+15,000-table synthetic estate in a realistic mix (8% core star schemas,
+22% staging copies, 45% raw shards and change feeds, 25% scratch) the
+engine had no notion of that: it profiled, linked, reconciled and queued for
+review every raw shard and backup as if it were a business table. At 2,000
+tables 76% of the review queue sat on raw and scratch tables, every one of
+them received a full foreign-key budget, and the raw copies competed as
+join targets, so most statistical foreign keys pointed at a copy instead of
+the dimension.
+
+Two optional table fields. `tier` is one of core, staging, raw, scratch or
+unknown, with confidence and provenance, inferred from the name's prefix and
+suffix vocabulary in precedence order (scratch first; declared staging and
+core prefixes beat raw-looking suffixes; raw by prefix, suffix or date shard)
+and from ETL metadata columns (two or more). A name with no signal is core at
+0.5: unprefixed is canonical, and under-modelling a real table is the error
+the engine refuses. `modeling` is `full` or `inventory_only`; raw and scratch
+at confidence 0.8 or above are inventory-only. SPEC.md 2.13 says what a
+consumer does with one: it is in `tables` with its columns and types, nothing
+else was inferred about it, and no query may be routed to it.
+
+What inventory-only means in the engine: no typing escalation, no candidacy
+on either side of a foreign key, no declared edges, no table type, no
+composite-key probing, no hierarchies, no description, no metric, aggregate,
+freshness, grain, SCD or filter claim, and one review line per tier instead
+of one per column. Measured on the 2,000-table synthetic warehouse, no LLM:
+foreign-key precision 0.31 → 0.94 against the gold with recall 1.00, review
+queue 7,563 → 1,708 items, Link 220 s → 129 s. On every real fixture the
+tier is core or staging throughout, so nothing else changed: every floor
+and every cassette replay is as it was. Suffixes that fired on real tables
+when tried (`_snapshot`, `_hist`, `_log`, `_source`, `_test`, `source_`)
+are excluded with the reasons recorded in `semlayer/tier.py`.
+
+The 0.31 figure was measured against a gold the data contradicted (staging
+copies in the generator sampled a subset of keys); the generator is fixed
+and both figures above are on the corrected warehouse.
+
 ### Enrich caches identical queries; layers open with the C loader
 
 Aggregate reconciliation tries every rollup candidate against every fact

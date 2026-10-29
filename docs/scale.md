@@ -163,12 +163,17 @@ output, moved the line:
 | 5,000 | | + one statement per child | 43 s | 111 s | 35 s | 204 s | 1.0 GB |
 | 15,000 | ~87,000 | + one statement per child | 149 s | 257 s | 477 s | 929 s | 2.4 GB |
 | 15,000 | | + Enrich caches identical queries | 157 s | 225 s | 7 s | 443 s | 2.6 GB |
+| 15,000 | | + tiers (raw/scratch set aside) | 143 s | 159 s | 5 s | 307 s | 2.6 GB |
+| 50,000 | ~274,000 | + tiers (parent cap bites: recall 0.385) | 602 s | 1,444 s | 37 s | 2,240 s | 7.0 GB |
+| 50,000 | | + named parents never truncated (recall 1.00) | 630 s | 2,782 s | 38 s | 3,609 s | 6.7 GB |
 
-Totals include generating the synthetic warehouse (11 s, 33 s, 208 s), which
-is why the 15,000 row's stages sum to less than its total. Table counts are
+Totals include generating the synthetic warehouse (11 s, 33 s, 208 s) except
+in the last three rows, where generation ran separately (229 s at 15,000;
+3,230 s at 50,000, most of it one checkpoint of a 50,000-table catalog) and
+the last row reused the kept warehouse. Table counts are
 the generator's; the engine folds mechanical copies (same column signature
-and name stem) into one representative, so the layers hold 1,844, 4,008 and
-11,682 tables respectively.
+and name stem) into one representative, so the layers hold 1,844, 4,008,
+11,682 and 35,925 tables respectively.
 
 What the ladder found, in order. The per-child sort of candidate parents ran
 on one core before any query was issued and grew as children times parents.
@@ -181,6 +186,44 @@ All three are gone, each with byte-identical output. From 5,000 to 15,000
 tables the engine now takes 1.4x the time for 3x the tables. Peak memory is
 the one figure still climbing, roughly linearly in columns.
 
+**At 50,000 tables the candidate-parent cap bit, and it has been removed for
+named parents.** The engine kept at most 5,000 candidate parent columns; the
+cap predates the name index and existed to bound a per-child sort the index
+has since removed. The 50,000-table warehouse has 7,952 key columns that are
+genuinely parents, so 2,952 were never considered, and because the list was
+in table order the ones dropped were the staging copies. The failure was
+legible rather than random: every one of the 8,820 staging foreign keys the
+engine missed was asserted instead against the core dimension holding the
+same key values, so no key went undiscovered, but against the generator's
+gold (staging facts join staging dimensions) precision read 0.378 and recall
+0.385. Named parents, the unique columns the naming vocabulary already
+proposes, are now never truncated; the cap applies only to the speculative
+key-shaped list. Rerun on the same warehouse: 14,972 relationships against
+14,342 gold keys, recall 1.00, precision 0.958, zero wrong parents, and the
+630 extras are the same 1:1 dimension-copy class as the 201 at 15,000.
+
+The zero-score tail of each child's ranking, every same-family parent with
+no name evidence, used to be walked in full per child and was the whole of
+the Python term that grew as children times parents. It is now read from
+the narrowest parent that can contain the child's values upward and stops
+when the child's budget of 40 tests is full or 400 parents have been
+examined; parents with name evidence are all still tested and are never
+displaced by unnamed ones. Planning the 15,000-table run fell from 115 s to
+37 s with an identical 528,060 statements.
+
+Link's wall time at 50,000 nevertheless rose, 1,444 s to 2,782 s, with the
+same statements per child, memory at 6.7 GB and about five cores busy. The
+statement count did not change; the parents inside the statements did,
+drawn from a pool six times larger that now includes every fact table's
+unique key, and the open question is whether those parents cost more rows
+per anti-join. It is recorded here as a measured regression at this one
+size, correct output, not yet explained.
+
+Tiers held at 50,000: 21,642 of 35,925 tables inventory-only, no core or
+staging table set aside, 37 scratch tables read as core (0.8% of scratch).
+The 140 MB layer parses in 46 s and every MCP tool but search still answers
+in under 20 ms; search is 650 ms over 36,000 tables.
+
 **Using the result.** The 15,000-table layer is 42 MB. Through the MCP server
 on the same machine: the file parses once at startup in 14 s, the server
 builds in 1 s, and after that every tool answers in under a millisecond
@@ -188,9 +231,25 @@ builds in 1 s, and after that every tool answers in under a millisecond
 except semantic search at about 200 ms per call, which scans every table and
 column and would want an index past ~40,000 tables. The file was never meant
 to be read whole by a person or a model; agents reach it a table at a time.
-The usability limit that remains is the review queue: 7,563 low-confidence
-items at 2,000 tables, most of them raw and scratch copies the engine
-classified as business tables because it has no notion of a warehouse tier.
+
+**Tiers.** The usability limit that remained was the review queue: 7,563
+low-confidence items at 2,000 tables, 76% of them on raw and scratch copies
+the engine had classified as business tables because it had no notion of a
+warehouse tier. It has one now. Every table carries a `tier` (core, staging,
+raw, scratch or unknown) inferred from its name and ETL metadata columns,
+with confidence and provenance, and raw and scratch tables at 0.8 or above
+are `modeling: inventory_only`: listed with their shape, excluded from
+everything else (SPEC.md 2.13). On the same 2,000-table warehouse that took
+the review queue to 1,708 items, Link from 220 s to 129 s, and foreign-key
+precision against the gold from 0.31 to 0.94 with recall 1.00, because raw
+copies no longer compete as join targets. At 15,000 tables (11,698 after
+folding; 7,387 of them inventory-only) the engine asserted 4,562
+relationships against 4,361 gold keys: recall 1.00, precision 0.956, zero
+wrong parents; the 201 extras are dimension key columns linked 1:1 to
+another copy of the same entity. The review queue there is 11,845 items
+over the 4,311 modelled tables, plus two lines for the 7,387 set aside. On every real fixture the tier is
+core or staging throughout, so nothing there changed. A reviewer who
+disagrees with a tier changes it, and the next run models the table in full.
 
 Two honest limits remain. The ladder is an in-process DuckDB file, so the
 query term is CPU on one machine and does not predict a network warehouse,

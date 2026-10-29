@@ -48,6 +48,11 @@ except ImportError:
     from wide import ENTITIES, GRAINS, MEASURES, ORPHAN_COLS, PROCESSES
 
 SEED = 20261028
+TXN_TABLES = 1000       # tables per transaction while building; see create()
+# Bump when the generated DATA changes for the same (n_tables, seed), so a
+# runner that keeps warehouses knows to rebuild. 2: staging copies carry
+# the full key set (v1 sampled a subset and the gold was inconsistent).
+GENERATOR_VERSION = 2
 TIERS = (("core", 0.08), ("staging", 0.22), ("raw", 0.45), ("scratch", 0.25))
 
 DOMAINS = [
@@ -234,9 +239,26 @@ def build(con, n_tables: int, seed: int = SEED) -> dict:
                      rng.random() < 0.9, "2024-01-01 00:00:00") for k in keys]
         return cols, rows
 
+    # Autocommit made every CREATE and INSERT its own transaction, each with
+    # its own write-ahead-log entry and catalog version: 86 s for 3,000 tiny
+    # tables, superlinear, on one core. In one transaction per TXN_TABLES
+    # tables it is 14 s. The first version of this also ran CHECKPOINT at
+    # every commit; a checkpoint serialises the whole catalog, so that cost
+    # 8-22 s per 1,000 tables and grew with the file -- 65 of 109 s at 5,000
+    # tables, and no gain at all at 15,000 on Windows. DuckDB checkpoints on
+    # its own when the log passes checkpoint_threshold; it is raised here so
+    # that happens rarely, and main() checkpoints once at the end.
+    created = 0
+
     def create(name: str, cols: list[str], rows: list[tuple]) -> None:
+        nonlocal created
+        if created % TXN_TABLES == 0:
+            con.execute("BEGIN")
         con.execute(f'CREATE TABLE "{name}" ({", ".join(cols)})')
         insert_rows(con, f'"{name}"', rows)
+        created += 1
+        if created % TXN_TABLES == 0:
+            con.execute("COMMIT")
 
     etl_cols = ['"etl_batch_id" INTEGER', '"dw_inserted_at" TIMESTAMP',
                 '"src_system" VARCHAR', '"record_hash" VARCHAR']
@@ -302,8 +324,18 @@ def build(con, n_tables: int, seed: int = SEED) -> dict:
                         '"payload" VARCHAR', *etl_cols]
                 if kind == "cdc":
                     cols += ['"op" VARCHAR', '"changed_at" TIMESTAMP']
+                # A staging copy carries the entity's WHOLE key set, like
+                # wide.py's copies: that is what makes it indistinguishable
+                # from the dimension by inclusion and lets the gold name it as
+                # the same-stage parent. The first version sampled a subset,
+                # so the gold said "parent is the int__ copy" while the data
+                # said the copy lacked half the child's values, and the
+                # engine's data-correct choice scored as 361 wrong keys. Raw
+                # and scratch copies stay partial: shards and backups are.
+                subset = (keys if t["tier"] == "staging"
+                          else rng.sample(keys, rng.randint(len(keys) // 2, len(keys))))
                 rows = []
-                for k in rng.sample(keys, rng.randint(len(keys) // 2, len(keys))):
+                for k in subset:
                     row = [k, f"{ent}-{k}", f'{{"id":{k}}}', *etl_vals()]
                     if kind == "cdc":
                         row += [rng.choice(["I", "U", "D"]), "2025-02-01 00:00:00"]
@@ -316,8 +348,10 @@ def build(con, n_tables: int, seed: int = SEED) -> dict:
                     for r in range(rng.randint(5, 30))]
             create(name, cols, rows)
 
+    if created % TXN_TABLES:
+        con.execute("COMMIT")
     meta = {
-        "n_tables": len(tables), "seed": seed,
+        "n_tables": len(tables), "seed": seed, "generator_version": GENERATOR_VERSION,
         "tiers": {k: sum(1 for t in tables if t["tier"] == k) for k, _ in TIERS},
         "tables": {t["name"]: {"tier": t["tier"], "kind": t["kind"]} for t in tables},
         "gold_fks": gold,
@@ -340,6 +374,7 @@ def main(argv: list[str] | None = None) -> int:
     if out.exists():
         out.unlink()
     con = duckdb.connect()
+    con.execute("SET checkpoint_threshold = '2GB'")   # see create(): checkpoint once, at the end
     con.execute(f"ATTACH '{out}' AS scale_db (BLOCK_SIZE {args.block_size})")
     con.execute("USE scale_db")
     try:
