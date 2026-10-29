@@ -7,9 +7,11 @@ updates:
     ignore:
       # mcp 2.x renamed FastMCP -> MCPServer and changed the tool API;
       # src/semlayer/mcp_server.py is written against 1.x. Moving is a code
-      # change, not a version bump (dependabot #7 proposed exactly that).
+      # change, not a version bump. Dependabot proposed the range widening
+      # <2 -> <3 twice (#7, #56); a range change is not classified as a
+      # semver-major update, so the whole dependency is ignored and mcp is
+      # bumped by hand.
       - dependency-name: "mcp"
-        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
