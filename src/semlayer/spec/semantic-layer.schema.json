@@ -53,6 +53,10 @@
                 "type": "string",
                 "minLength": 1,
                 "description": "The member file, relative to the hub file or absolute."
+              },
+              "warehouse": {
+                "type": "string",
+                "description": "The member's own `warehouse`, copied here when the set is resolved so a consumer of the resolved document can tell which members share one. Not written by hand."
               }
             }
           }

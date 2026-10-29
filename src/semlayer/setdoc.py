@@ -207,6 +207,9 @@ def resolve(hub: dict, members: dict[str, dict]) -> ResolvedSet:
             problems.append(f"member '{mname}': name is not unique in the set")
         names.append(mname)
         warehouses[mname] = msl.get("warehouse")
+        if msl.get("warehouse"):
+            # consumers of the resolved document (compile, lint) read it here
+            next(e for e in osl["members"] if e["name"] == mname)["warehouse"] = msl["warehouse"]
         _append(osl, qualify(_body(msl), mname))
     for sec in _SECTIONS:
         if not osl.get(sec):

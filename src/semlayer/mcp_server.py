@@ -19,10 +19,19 @@ def list_domains(doc: dict) -> list[dict]:
     """List warehouse domains (table groupings), or a single 'all' domain if none defined."""
     sl = doc["semantic_layer"]
     domains = sl.get("repo_knowledge", {}).get("domains", [])
-    if not domains:
+    out = []
+    if sl.get("members"):
+        # a resolved set: each member document is a domain (the hub too, if it
+        # owns tables), ahead of any domains the members declared themselves
+        for n in [sl.get("name", ""), *(m["name"] for m in sl["members"])]:
+            count = sum(1 for t in sl.get("tables", []) if t["name"].startswith(f"{n}/"))
+            if count or n != sl.get("name", ""):
+                out.append({"name": n, "tables": count,
+                            "description": "hub" if n == sl.get("name", "") else "member document"})
+    if not domains and not out:
         return [{"name": "all", "tables": len(sl["tables"])}]
-    return [{"name": d["name"], "tables": len(d["tables"]),
-             "description": d.get("description", "")} for d in domains]
+    return out + [{"name": d["name"], "tables": len(d["tables"]),
+                   "description": d.get("description", "")} for d in domains]
 
 
 def list_tables(doc: dict, domain: str | None = None) -> list[dict]:
@@ -32,7 +41,10 @@ def list_tables(doc: dict, domain: str | None = None) -> list[dict]:
     if domain:
         d = next((d for d in sl.get("repo_knowledge", {}).get("domains", [])
                   if d["name"] == domain), None)
-        names = set(d["tables"]) if d else set()
+        if d is None and sl.get("members"):
+            names = {t["name"] for t in sl["tables"] if t["name"].startswith(f"{domain}/")}
+        else:
+            names = set(d["tables"]) if d else set()
     out = []
     for t in sl["tables"]:
         if names is not None and t["name"] not in names:

@@ -41,6 +41,7 @@ Everything lands with `confidence` ([calibrated, with the misses published](docs
 ## Cost & privacy
 
 - **~$0.70 per 100 tables** end-to-end on the cheap model tier, with your own API key ([measured cost model](docs/cost-model.md)). LLM calls are escalation-only; ~80% of columns resolve from statistics alone.
+- **Several teams, one surface**: each team infers its own schema into its own file; an analyst's hub lists them as `members` and holds the cross-document relationships, and every command takes the hub ([docs/sets.md](docs/sets.md)).
 - **Tiers**: every table carries a `tier` (core, staging, raw, scratch) inferred from its name and ETL columns; raw and scratch tables are `modeling: inventory_only` -- listed with their shape, never joined, described, metricised or queued for review column by column. On a 2,000-table synthetic estate that is 62% of tables set aside, the review queue cut 4.4x and foreign-key precision 0.31 → 0.94 ([measured](docs/scale.md)).
 - **`--no-llm`**: fully deterministic mode, zero API calls, still useful (0.780 typing / 0.834 role across 7 fixtures, against 0.809 / 0.838 with the model) — for orgs where LLM access needs procurement.
 - **`--no-sample-egress`**: no value read from a warehouse cell is sent to the LLM, at **no net accuracy cost** across our 7 fixtures (0.809 typing / 0.842 role, versus 0.809 / 0.838 with samples). Per warehouse it trades rather than being uniformly free — up to a point better or worse. Re-measured 2026-10-03; see [docs/cost-model.md](docs/cost-model.md).

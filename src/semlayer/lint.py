@@ -56,6 +56,14 @@ class _Layer:
         sl = doc["semantic_layer"]
         self.dialect = dialect
         self.tables: dict[str, dict] = {t["name"].lower(): t for t in sl["tables"]}
+        # SQL names a table by its `source` (schema.table) or, in the default
+        # schema, by the bare name; both resolve to the document's table key.
+        self.by_source: dict[str, str] = {}
+        for t in sl["tables"]:
+            if t.get("source"):
+                self.by_source[t["source"].lower()] = t["name"].lower()
+                self.by_source.setdefault(t["source"].rsplit(".", 1)[-1].lower(),
+                                          t["name"].lower())
         self.columns: dict[str, dict[str, dict]] = {
             n: {c["name"].lower(): c for c in t["columns"]} for n, t in self.tables.items()
         }
@@ -65,6 +73,13 @@ class _Layer:
             if r.get("fanout_risk"):
                 child, parent = r["from"]["table"].lower(), r["to"]["table"].lower()
                 self.children.setdefault(parent, set()).add(child)
+
+    def key_for(self, sql_table: str) -> str:
+        """The document table a SQL table reference names, else the reference itself."""
+        low = sql_table.lower()
+        if low in self.tables:
+            return low
+        return self.by_source.get(low) or self.by_source.get(low.rsplit(".", 1)[-1]) or low
 
     def is_measure(self, table: str, column: str) -> bool:
         c = self.columns.get(table, {}).get(column)
@@ -119,12 +134,18 @@ def _split_and(node: exp.Expression) -> list[exp.Expression]:
     return [node]
 
 
-def _physical(scope: Scope) -> dict[str, str]:
-    """Alias -> physical table for the real tables in this block (CTEs/subqueries excluded)."""
+def _physical(scope: Scope, layer: _Layer | None = None) -> dict[str, str]:
+    """Alias -> document table for the real tables in this block (CTEs/subqueries excluded).
+
+    A `schema.table` in the SQL resolves through the layer's `source` values,
+    so `finance.fct_gl` finds the set's `finance/fct_gl`; an unknown table
+    keeps its own spelling for the finding.
+    """
     out: dict[str, str] = {}
     for alias, src in scope.sources.items():
         if isinstance(src, exp.Table):
-            out[alias.lower()] = src.name.lower()
+            full = f"{src.db}.{src.name}" if src.db else src.name
+            out[alias.lower()] = layer.key_for(full) if layer else src.name.lower()
     return out
 
 
@@ -134,11 +155,11 @@ def _block_aggregates(scope: Scope) -> list[exp.AggFunc]:
             if a.find_ancestor(exp.Select) is scope.expression]
 
 
-def _outer_tables(scope: Scope) -> set[str]:
+def _outer_tables(scope: Scope, layer: _Layer | None = None) -> set[str]:
     tables: set[str] = set()
     p = scope.parent
     while p is not None:
-        tables |= set(_physical(p).values())
+        tables |= set(_physical(p, layer).values())
         p = p.parent
     return tables
 
@@ -151,7 +172,7 @@ class _Linter:
 
     # ---------------------------------------------------------- per block
     def block(self, scope: Scope) -> None:
-        phys = _physical(scope)
+        phys = _physical(scope, self.L)
         self._tables(phys)
         self._columns(scope, phys)
         self._required_filters(scope, phys)
@@ -220,7 +241,7 @@ class _Linter:
         here = {t for t in set(phys.values()) if t in self.L.columns}
         if not here:
             return  # block reads only CTEs / unknown tables; cannot validate
-        outer = [t for t in _outer_tables(scope) if name in self.L.columns.get(t, {})]
+        outer = [t for t in _outer_tables(scope, self.L) if name in self.L.columns.get(t, {})]
         if outer:
             self._add(Finding(
                 "correlated_reference", "error",

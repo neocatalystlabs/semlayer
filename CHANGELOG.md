@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Every command takes a hub; compiled SQL uses `source`
+
+`semlayer mcp`, `lint`, `review` and `compile_metric` work on a hub as they
+do on one file: the CLI resolves a hub and its members into one document
+on load. Compiled SQL now names tables by their `source` with an alias
+derived from the set name (`FROM finance.fct_gl AS finance_fct_gl`) wherever
+the bare name would not do, which also fixes a table in a non-default
+schema compiling to an unqualified name; a single-schema layer compiles
+byte-identically to before. A join path that crosses tables in different
+warehouses is refused with both named unless the hub declares a
+`federation` engine. The linter matches SQL table references by `source` as
+well as by name. MCP lists each member as a domain. Review of a hub shows
+the seam edges below the threshold and the hub's own claims, and members
+keep their own queues. docs/sets.md.
+
 ### Sets: a hub document combines several teams' layers into one surface
 
 A hub is a layer with a `members` list naming other layer files; it may

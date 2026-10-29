@@ -85,7 +85,33 @@ def collect(doc: dict) -> list[ReviewItem]:
                                             f"inclusion {m.group(2)}, name score {m.group(3)}"))
     items += _metric_items(doc["semantic_layer"])
     items += _inventory_items(doc["semantic_layer"])
+    items += _seam_items(doc["semantic_layer"])
     return items
+
+
+def _owner(table: str) -> str:
+    return table.split("/", 1)[0] if "/" in table else ""
+
+
+def _seam_items(sl: dict) -> list[ReviewItem]:
+    """Inferred relationships that cross documents in a set, below the review threshold."""
+    out = []
+    for r in sl.get("relationships", []) or []:
+        a, b = r["from"]["table"], r["to"]["table"]
+        if not a or _owner(a) == _owner(b) or not _owner(a):
+            continue
+        inferred = r.get("lifecycle", "inferred") == "inferred"
+        if inferred and (r.get("confidence") or 1.0) < REVIEW_THRESHOLD:
+            out.append(ReviewItem(
+                "seam_edge", a, ",".join(r["from"]["columns"]),
+                f"-> {b}.{','.join(r['to']['columns'])} ({r.get('cardinality')})",
+                f"confidence {r.get('confidence')}", ref=f"seam.{r.get('name', '')}"))
+    return out
+
+
+def for_hub(items: list[ReviewItem], hub_name: str) -> list[ReviewItem]:
+    """A hub's queue: its own tables and the seam. Members review their own files."""
+    return [i for i in items if i.kind == "seam_edge" or _owner(i.table) == hub_name]
 
 
 def _modelled(sl: dict) -> list[dict]:

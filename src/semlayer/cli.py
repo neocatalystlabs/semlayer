@@ -170,6 +170,11 @@ def _load_doc(path: str) -> dict:
     if not isinstance(doc, dict) or "semantic_layer" not in doc:
         raise SemlayerError(f"not a semantic layer document: {path}",
                             hint="expected a top-level `semantic_layer:` mapping")
+    from semlayer.setdoc import is_hub, load_set
+    if is_hub(doc):
+        # a hub and its members become one document; every command below
+        # then works on the set exactly as it does on one file
+        return load_set(path).doc
     return doc
 
 
@@ -281,10 +286,12 @@ def _cmd_infer(args: argparse.Namespace) -> int:
 
 
 def _cmd_review(args: argparse.Namespace) -> int:
-    from semlayer.review import apply, collect
+    from semlayer.review import apply, collect, for_hub
 
     doc = _load_doc(args.doc)
     items = collect(doc)
+    if doc["semantic_layer"].get("members"):
+        items = for_hub(items, doc["semantic_layer"]["name"])
     if not items:
         print("review queue empty")
         return 0
