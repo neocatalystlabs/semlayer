@@ -700,7 +700,6 @@ def link_source(source, doc: dict, stats_by_table: dict, llm=None, lineage=None,
 
     doc["_link_audit"] = {
         "n_candidates": len(candidates),
-        "timing": doc.pop("_link_timing", None),
         "accepted": [(c.key(), c.inclusion_ratio, c.name_score) for c, _ in accepted],
         "review": [(c.key(), c.inclusion_ratio, c.name_score) for c, _ in review],
         "killed": [(c.key(), (v or {}).get("reason")) for c, v in killed],

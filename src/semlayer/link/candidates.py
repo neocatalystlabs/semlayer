@@ -607,6 +607,8 @@ def generate_candidates(ex, stats_by_table: dict, doc: dict,
     # planning are Python on one core; the statements run in the warehouse
     # under `query_workers`. At 50,000 synthetic tables Link doubled with an
     # identical statement count and nothing told us which of these had grown.
+    # Not in `_link_audit`: that block is compared byte-for-byte across worker
+    # counts (tests/test_link_workers.py) and these are wall-clock seconds.
     doc["_link_timing"] = {
         "parents": len(parents), "children": len(children),
         "statements": len(_group_plan(plan)), "tests": len(plan),

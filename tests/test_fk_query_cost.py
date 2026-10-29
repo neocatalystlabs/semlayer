@@ -125,7 +125,7 @@ def test_budget_is_spent_by_children_that_match_nothing(fixture):
 
     total = sum(len(v) for v in tests.values())
     # The timing block Link reports must count what was actually issued.
-    timing = doc["_link_audit"]["timing"]
+    timing = doc["_link_timing"]
     # link_source issues a few inclusion tests of its own outside candidate
     # generation (self-reference checks), so the harness sees slightly more.
     assert 0 <= total - timing["tests"] <= 8, (total, timing["tests"])
