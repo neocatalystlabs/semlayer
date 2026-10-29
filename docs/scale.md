@@ -166,11 +166,12 @@ output, moved the line:
 | 15,000 | | + tiers (raw/scratch set aside) | 143 s | 159 s | 5 s | 307 s | 2.6 GB |
 | 50,000 | ~274,000 | + tiers (parent cap bites: recall 0.385) | 602 s | 1,444 s | 37 s | 2,240 s | 7.0 GB |
 | 50,000 | | + named parents never truncated (recall 1.00) | 630 s | 2,782 s | 38 s | 3,609 s | 6.7 GB |
+| 50,000 | | + inventory-only listed without a scan; 20 query workers | 235 s | 1,969 s | 37 s | 2,388 s | 6.0 GB |
 
 Totals include generating the synthetic warehouse (11 s, 33 s, 208 s) except
-in the last three rows, where generation ran separately (229 s at 15,000;
+in the last four rows, where generation ran separately (229 s at 15,000;
 3,230 s at 50,000, most of it one checkpoint of a 50,000-table catalog) and
-the last row reused the kept warehouse. Table counts are
+the last two reused the kept warehouse. Table counts are
 the generator's; the engine folds mechanical copies (same column signature
 and name stem) into one representative, so the layers hold 1,844, 4,008,
 11,682 and 35,925 tables respectively.
@@ -224,8 +225,17 @@ in the pool they spread across four times as many tables, each anti-join
 touching a table the previous statement did not. The machine showed it as
 about five of twenty cores busy: the workers were waiting on reads, not
 computing. The fix is not fewer parents; it is more workers when the
-warehouse is an in-process file, and a shallower profile and fewer tests
-for children on inventory-only tables, both open.
+warehouse is an in-process file, which is now the default there: with 20
+workers on the same machine the same 44,328 statements took 1,849 s.
+
+**Inventory-only tables are no longer profiled.** Their tier is decided
+from the name and the column names, which the catalogue already gives, so
+the per-column statistics scan, Profile's whole cost, is skipped for them
+and they are listed with columns and types, which is all SPEC.md 2.13
+promises. At 50,000 tables that is 21,642 of 35,925 tables: Profile fell
+from 685 s to 235 s, peak memory from 7.0 GB to 6.0 GB and the layer from
+140 MB to 122 MB, with the same 14,972 relationships and the same score.
+Engine wall time for the warehouse is 2,388 s, down from 3,646 s.
 
 Tiers held at 50,000: 21,642 of 35,925 tables inventory-only, no core or
 staging table set aside, 37 scratch tables read as core (0.8% of scratch).

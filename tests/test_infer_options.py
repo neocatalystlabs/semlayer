@@ -85,3 +85,20 @@ def test_unknown_keyword_is_still_a_type_error():
             infer(DuckDBSource(con), workres=2)
     finally:
         con.close()
+
+
+def test_query_workers_none_is_decided_by_the_source():
+    """None means "the source decides": every core for in-process DuckDB, 4 elsewhere."""
+    import os
+
+    import duckdb
+
+    from semlayer.pipeline import default_query_workers
+    from semlayer.source import DuckDBSource
+
+    assert InferOptions(query_workers=None).query_workers is None
+    assert default_query_workers(DuckDBSource(duckdb.connect())) == max(1, os.cpu_count() or 1)
+
+    class _Network:
+        pass
+    assert default_query_workers(_Network()) == 4

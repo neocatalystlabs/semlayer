@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### Inventory-only tables are listed from the catalogue, not profiled
+
+The tier is decided from the table's name and column names, which the
+catalogue already gives, so a raw shard or scratch copy is known to be
+inventory-only before any query runs. Profile now skips the per-column
+statistics scan for those tables and lists them with their columns and
+types, which is all SPEC.md 2.13 says a consumer gets for them. At 50,000
+synthetic tables 21,642 of 35,925 were inventory-only and Profile was the
+largest linear stage at 685 s; it is 235 s now, with peak memory 7.0 -> 6.0
+GB, the layer 140 -> 122 MB and the same relationships. Modelled tables
+are unchanged; on every real fixture every table is modelled, so nothing
+there changed.
+
+### `--query-workers` defaults to every core on an in-process DuckDB file
+
+The default stays 4 on a network warehouse, where the queries contend on
+the customer's compute. An in-process DuckDB file is this machine's own
+compute, and at 50,000 synthetic tables 8 workers on 20 cores left the
+cores idle and the workers waiting on reads; at 20 the same statements took
+1,849 s instead of 2,618 s. The run report records the value actually used.
+
 ### Link reports where its time went
 
 `infer` writes a `link` block to the run report and logs one line at the end

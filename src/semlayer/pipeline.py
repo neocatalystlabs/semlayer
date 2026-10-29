@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
@@ -35,13 +36,18 @@ class InferOptions:
     only: Iterable[str] | None = None
     use_declared: bool = True
     llm_workers: int = 1
-    query_workers: int = 1
+    # None: decided by the source (`default_query_workers`). The library
+    # default stays 1, serial, so a caller who sets nothing gets the published
+    # behaviour; the CLI passes None.
+    query_workers: int | None = 1
 
     def __post_init__(self) -> None:
         if self.only is not None and not isinstance(self.only, frozenset):
             object.__setattr__(self, "only", frozenset(self.only))
         for name in ("llm_workers", "query_workers"):
             n = getattr(self, name)
+            if name == "query_workers" and n is None:
+                continue
             if not isinstance(n, int) or isinstance(n, bool) or n < 1:
                 raise SemlayerError(f"{name} must be a whole number of at least 1, got {n!r}",
                                     hint="1 is fully serial")
@@ -54,6 +60,21 @@ class InferOptions:
 
 
 _SETTING_NAMES = frozenset(InferOptions.__dataclass_fields__)
+
+
+def default_query_workers(source) -> int:
+    """How many inclusion queries to run at once when the caller did not say.
+
+    An in-process DuckDB file is this machine's own compute, and at 50,000
+    synthetic tables 8 workers on a 20-core machine left the cores idle and
+    the workers waiting on reads, so there the default is every core. A
+    network warehouse is someone else's compute that the queries contend on,
+    so the default stays at the modest 4 that docs/scale.md measured.
+    """
+    from semlayer.source import DuckDBSource
+    if isinstance(source, DuckDBSource):
+        return max(1, os.cpu_count() or 1)
+    return 4
 
 
 def _resolve(options: InferOptions | None, settings: dict) -> InferOptions:
@@ -106,9 +127,11 @@ def infer_with_report(source, llm=None, options: InferOptions | None = None, *,
     opt = _resolve(options, settings)
     no_sample_egress = opt.no_sample_egress
     only = set(opt.only) if opt.only is not None else None
-    use_declared, llm_workers, query_workers = (
-        opt.use_declared, opt.llm_workers, opt.query_workers)
+    use_declared, llm_workers = opt.use_declared, opt.llm_workers
+    query_workers = (opt.query_workers if opt.query_workers is not None
+                     else default_query_workers(source))
     report: dict = {"stages": {}, "counts": {}, "options": opt.as_report()}
+    report["options"]["query_workers"] = query_workers   # the value actually used
     # Which privileges produced this layer. A minimal-grant claim is about the
     # role actually in effect, so the run must say what that was rather than
     # leaving it to whatever the account's DEFAULT_ROLE happened to be.
