@@ -255,20 +255,6 @@ def validate_document(doc: dict) -> ValidationResult:
         return result  # reference checks assume a structurally valid doc
 
     sl = doc["semantic_layer"]
-    if sl.get("document_set"):
-        # SPEC §4: a document declaring a `document_set` is one PART of a
-        # warehouse, so its references may point at objects held in sibling
-        # documents. We cannot resolve those from here, and reporting them as
-        # dangling would be a false positive -- the spec says such a consumer
-        # SHOULD refuse rather than accuse. Reserved and unemitted today, so
-        # this branch exists to keep the eventual split additive.
-        part = sl.get("part") or "<unnamed>"
-        result.errors.append(
-            f"document declares document_set={sl['document_set']!r} part={part!r}: "
-            f"references cannot be resolved from one part of a set, and this "
-            f"validator holds only this part")
-        return result
-
     tables = {t["name"]: t for t in sl.get("tables", [])}
     columns = {
         f"{tname}.{col['name']}": col
@@ -293,8 +279,29 @@ def validate_document(doc: dict) -> ValidationResult:
     return result
 
 
+def _validate_hub(path: str | Path) -> ValidationResult:
+    """Resolve the hub with its members and validate the set."""
+    from semlayer.setdoc import SetError, load_set, set_checks
+    try:
+        rs = load_set(path)
+    except SetError as e:
+        r = ValidationResult()
+        r.errors.append(f"set: {e}")
+        return r
+    result = validate_document(rs.doc)
+    result.errors.extend(set_checks(rs))
+    return result
+
+
 def validate_file(path: str | Path) -> ValidationResult:
-    """Load and validate a semantic layer document from a YAML file path."""
+    """Load and validate a document from a YAML file path; a hub is validated as a set.
+
+    A hub (a document with `members`) is resolved with its members into one
+    document first, so cross-member references are checked, then the set's
+    own rules are applied (names, shared sources, warehouses). A member on
+    its own validates as any document does: it knows nothing of the set.
+    """
+    from semlayer.setdoc import is_hub
     try:
         doc = load_document(path)
     except yaml.YAMLError as e:
@@ -311,4 +318,4 @@ def validate_file(path: str | Path) -> ValidationResult:
         return ValidationResult(errors=[f"cannot read: {path}"])
     if not isinstance(doc, dict):
         return ValidationResult(errors=["document is not a mapping"])
-    return validate_document(doc)
+    return _validate_hub(path) if is_hub(doc) else validate_document(doc)

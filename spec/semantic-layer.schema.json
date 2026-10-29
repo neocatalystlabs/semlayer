@@ -13,8 +13,7 @@
       "type": "object",
       "required": [
         "spec_version",
-        "name",
-        "tables"
+        "name"
       ],
       "additionalProperties": false,
       "properties": {
@@ -32,6 +31,50 @@
           "type": "string",
           "minLength": 1,
           "description": "Which warehouse this document describes, credential-free and portable (duckdb:<file>, postgres:<host>:<port>/<db>, snowflake:<database>, bigquery:<project>). Written by the producer. A consumer holding several documents compares their values to decide whether two tables can meet in one SQL statement (SPEC.md rule 8)."
+        },
+        "members": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Makes this document a HUB: the other documents it combines into one set. Only the hub declares the set; a member carries no mark of membership and may belong to several hubs. Within the set every table, hierarchy and metric is referenced as '<document name>/<name>', and the hub's own objects are referenced as '<hub name>/<name>'. A hub may have no tables of its own (SPEC.md section 4).",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "path"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Must equal the member document's own `name`."
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The member file, relative to the hub file or absolute."
+              }
+            }
+          }
+        },
+        "federation": {
+          "type": "object",
+          "required": [
+            "engine"
+          ],
+          "additionalProperties": false,
+          "description": "Declares that an engine can execute one statement across the members' warehouses. Without it a consumer MUST NOT compile a join between tables whose `warehouse` differs (SPEC.md rule 8).",
+          "properties": {
+            "engine": {
+              "type": "string",
+              "minLength": 1,
+              "description": "duckdb, trino, athena, ..."
+            },
+            "bridge": {
+              "type": "string",
+              "description": "Where the engine is reached, e.g. a DuckDB file with the members attached."
+            }
+          }
         },
         "generated_by": {
           "$ref": "#/$defs/generated_by"
@@ -81,18 +124,20 @@
         },
         "coverage": {
           "$ref": "#/$defs/coverage"
-        },
-        "document_set": {
-          "type": "string",
-          "minLength": 1,
-          "description": "RESERVED, optional. Identifies a set of documents that together describe one warehouse, for warehouses too large to carry in a single document. When present, references resolve across the whole set rather than this document alone (SPEC.md \u00a74). Producers SHOULD NOT emit this yet; it exists so that sharding is an additive change rather than a breaking one."
-        },
-        "part": {
-          "type": "string",
-          "minLength": 1,
-          "description": "RESERVED, optional. This document's name within its `document_set`, e.g. a schema or domain. Meaningless without `document_set`."
         }
-      }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "tables"
+          ]
+        },
+        {
+          "required": [
+            "members"
+          ]
+        }
+      ]
     }
   },
   "$defs": {
