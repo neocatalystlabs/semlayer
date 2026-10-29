@@ -28,6 +28,33 @@ _SQL_WORDS = {"and", "or", "not", "in", "like", "is", "null", "between",
               "true", "false", "case", "when", "then", "else", "end"}
 
 
+# Schemas an engine resolves without qualification. A table there is emitted
+# by its bare name, which is also what every document produced before
+# `warehouse` existed compiled to; anywhere else the table's `source` is
+# emitted, since `fct_gl` alone is not a table on Snowflake when it lives in
+# `finance`.
+_DEFAULT_SCHEMA = {"duckdb": "main", "postgres": "public"}
+
+
+def _alias(name: str) -> str:
+    """A SQL identifier for a document table name: `finance/fct_gl` -> `finance_fct_gl`."""
+    return re.sub(r"[^A-Za-z0-9_]", "_", name)
+
+
+def _default_schema(warehouse: str | None) -> str | None:
+    if not warehouse:
+        return None
+    return _DEFAULT_SCHEMA.get(warehouse.split(":", 1)[0])
+
+
+def _warehouses(sl: dict) -> dict[str, str | None]:
+    """Document name -> warehouse, for a resolved set; a lone document has one entry."""
+    out = {sl.get("name", ""): sl.get("warehouse")}
+    for m in sl.get("members") or []:
+        out[m["name"]] = m.get("warehouse")
+    return out
+
+
 class _Ctx:
     """Compile state: metric + document indexes + join paths + accumulated joins."""
 
@@ -36,6 +63,9 @@ class _Ctx:
         self.sl, self.metric, self.base, self.dialect = sl, metric, base, dialect
         self.scd = scd
         self.tables = {t["name"]: t for t in sl["tables"]}
+        self.default_schema = _default_schema(sl.get("warehouse"))
+        self.warehouses = _warehouses(sl)
+        self.federated = bool(sl.get("federation"))
         self.paths, self.ambiguous = _join_paths(sl, self.tables, base)
         self.reach = _reachable(self.tables, base, self.paths)
         self.legal = sorted(self.reach)
@@ -195,9 +225,51 @@ def _reachable(tables: dict, base: str, paths: dict) -> dict[str, str]:
     return legal
 
 
+def _warehouse_of(ctx: _Ctx, table: str) -> str | None:
+    """The warehouse a table lives in: its document's, by the `name/` prefix in a set."""
+    doc_name = table.split("/", 1)[0] if "/" in table else ctx.sl.get("name", "")
+    return ctx.warehouses.get(doc_name) or ctx.sl.get("warehouse")
+
+
+def _table_sql(ctx: _Ctx, table: str) -> str:
+    """How a table appears in FROM/JOIN: its `source`, aliased, unless the bare name suffices.
+
+    The bare name suffices when it is a plain identifier and the source is
+    in the engine's default schema (or no `warehouse` is recorded, which is
+    every document from before the field existed): that keeps the SQL of a
+    single-schema layer byte-identical. A table in another schema, or one
+    named `finance/fct_gl` inside a set, is emitted as `finance.fct_gl AS
+    finance_fct_gl`, and every qualifier in the statement uses the alias.
+    """
+    t = ctx.tables[table]
+    source = t.get("source") or table
+    alias = _alias(table)
+    schema, _, bare = source.rpartition(".")
+    plain = alias == table and bare == table
+    if plain and (not schema or schema == ctx.default_schema or ctx.default_schema is None):
+        return table
+    return f"{source} AS {alias}"
+
+
+def _rewrite_qualifiers(ctx: _Ctx, sql: str) -> str:
+    """`finance/fct_gl.amount` -> `finance_fct_gl.amount` for every table whose alias differs."""
+    for table in [ctx.base, *ctx.joins]:
+        alias = _alias(table)
+        if alias != table:
+            sql = re.sub(rf"(?<![A-Za-z0-9_/.]){re.escape(table)}\.", alias + ".", sql)
+    return sql
+
+
 def _require_join(ctx: _Ctx, owner: str) -> dict | None:
     if owner == ctx.base:
         return None
+    wa, wb = _warehouse_of(ctx, ctx.base), _warehouse_of(ctx, owner)
+    if wa and wb and wa != wb and not ctx.federated:
+        return _refuse(
+            f"'{ctx.base}' lives in {wa} and '{owner}' in {wb}; no single statement in this "
+            f"dialect can join them. Run the two per-warehouse queries and join on the key "
+            f"yourself, or declare a `federation` engine in the hub (SPEC.md rule 8)",
+            ctx.legal)
     if owner in ctx.ambiguous:
         return _refuse(
             f"'{owner}' is reachable from {ctx.base} via multiple equally-short "
@@ -444,20 +516,20 @@ def _emit(ctx: _Ctx, cols: list[str], time_expr: str | list | None,
     for qual in cols:
         select.append(f"{qual} AS {qual.split('.', 1)[1]}")
         group.append(qual)
-    select.append(f"{value_sql} AS {ctx.metric['name']}")
-    sql = f"SELECT {', '.join(select)}\nFROM {ctx.base}"
+    select.append(f"{value_sql} AS {_alias(ctx.metric['name'])}")
+    sql = f"SELECT {', '.join(select)}\nFROM {_table_sql(ctx, ctx.base)}"
     for dim, (parent, fcols, tcols) in ctx.joins.items():
         on = " AND ".join(f"{parent}.{f} = {dim}.{t}" for f, t in zip(fcols, tcols, strict=False))
         # the SCD predicate belongs in ON, not WHERE: in WHERE it would turn
         # the LEFT JOIN into an inner one and drop rows with no matching version
         if dim in ctx.scd_predicates:
             on += f" AND {ctx.scd_predicates[dim]}"
-        sql += f"\nLEFT JOIN {dim} ON {on}"
+        sql += f"\nLEFT JOIN {_table_sql(ctx, dim)} ON {on}"
     if where:
         sql += "\nWHERE " + " AND ".join(where)
     if group:
         sql += "\nGROUP BY " + ", ".join(group) + "\nORDER BY " + ", ".join(group)
-    return sql
+    return _rewrite_qualifiers(ctx, sql)
 
 
 def _refuse(reason: str, legal_group_by: list[str]) -> dict:
