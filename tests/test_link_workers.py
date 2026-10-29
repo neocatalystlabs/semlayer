@@ -68,10 +68,6 @@ def test_link_output_identical_at_any_worker_count(fixture):
             link_source(src, doc, stats, use_declared=False, query_workers=workers)
         finally:
             con.close()
-        # Wall-clock seconds are the one thing that legitimately differs with
-        # the worker count; the timing block is a report field, not output.
-        timing = doc.pop("_link_timing")
-        assert timing["statements"] > 0 and timing["query_s"] >= 0
         docs.append(json.dumps(doc, sort_keys=True))
     assert docs[0] == docs[1]
 

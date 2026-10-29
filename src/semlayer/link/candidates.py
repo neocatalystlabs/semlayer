@@ -574,6 +574,18 @@ def select_parents_and_children(stats_by_table: dict, doc: dict
     return parents, children
 
 
+_LAST_TIMING: dict = {}
+
+
+def last_timing() -> dict:
+    """Where the most recent `generate_candidates` in this process spent its time.
+
+    Counts and wall-clock seconds for the run report: parents, children,
+    statements, tests, index_s, plan_s, query_s. Empty before the first run.
+    """
+    return dict(_LAST_TIMING)
+
+
 def generate_candidates(ex, stats_by_table: dict, doc: dict,
                         query_workers: int = 1) -> list[FKCandidate]:
     """stats_by_table: {table_name: TableStats}; doc: profile-stage document.
@@ -607,17 +619,19 @@ def generate_candidates(ex, stats_by_table: dict, doc: dict,
     # planning are Python on one core; the statements run in the warehouse
     # under `query_workers`. At 50,000 synthetic tables Link doubled with an
     # identical statement count and nothing told us which of these had grown.
-    # Not in `_link_audit`: that block is compared byte-for-byte across worker
-    # counts (tests/test_link_workers.py) and these are wall-clock seconds.
-    doc["_link_timing"] = {
+    # Not on the document: anything there is validated against the spec and
+    # compared byte-for-byte across worker counts, and these are wall-clock
+    # seconds. The pipeline reads it with `last_timing()` right after Link.
+    _LAST_TIMING.clear()
+    _LAST_TIMING.update({
         "parents": len(parents), "children": len(children),
         "statements": len(_group_plan(plan)), "tests": len(plan),
         "index_s": round(t_index - t0, 1), "plan_s": round(t_plan - t_index, 1),
         "query_s": round(t_query - t_plan, 1),
-    }
+    })
     logger.info("link: %d parents, %d children, %d statements (%d tests): index %.1fs, "
                 "plan %.1fs, queries %.1fs at %d worker(s)", len(parents), len(children),
-                doc["_link_timing"]["statements"], len(plan), t_index - t0, t_plan - t_index,
+                _LAST_TIMING["statements"], len(plan), t_index - t0, t_plan - t_index,
                 t_query - t_plan, query_workers)
 
     out: list[FKCandidate] = []
