@@ -87,7 +87,13 @@ def test_fk_query_cost_per_child(fixture):
 
 NO_MATCH = {
     # fixture: (no-match children, their share of all tests, tests after first match)
-    "dbt_synthea": (343, 0.57, 0.41),
+    # 343 -> 341 on 2026-10-28, when the zero-score tail of each child's
+    # ranking started at the narrowest parent that can hold the child's values
+    # instead of walking every parent in table order: claims.PATIENTID found
+    # patients.Id (same 1,171 values, no shared name token) and
+    # device_exposure.unique_device_id and payer_plan_period.plan_source_value
+    # found an included parent for the first time. Shares did not move.
+    "dbt_synthea": (341, 0.57, 0.41),
 }
 
 

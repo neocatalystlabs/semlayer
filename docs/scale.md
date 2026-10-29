@@ -164,11 +164,13 @@ output, moved the line:
 | 15,000 | ~87,000 | + one statement per child | 149 s | 257 s | 477 s | 929 s | 2.4 GB |
 | 15,000 | | + Enrich caches identical queries | 157 s | 225 s | 7 s | 443 s | 2.6 GB |
 | 15,000 | | + tiers (raw/scratch set aside) | 143 s | 159 s | 5 s | 307 s | 2.6 GB |
-| 50,000 | ~274,000 | + tiers | 602 s | 1,444 s | 37 s | 2,240 s | 7.0 GB |
+| 50,000 | ~274,000 | + tiers (parent cap bites: recall 0.385) | 602 s | 1,444 s | 37 s | 2,240 s | 7.0 GB |
+| 50,000 | | + named parents never truncated (recall 1.00) | 630 s | 2,782 s | 38 s | 3,609 s | 6.7 GB |
 
 Totals include generating the synthetic warehouse (11 s, 33 s, 208 s) except
-in the last two rows, where generation ran separately (229 s at 15,000;
-3,230 s at 50,000, most of it one checkpoint of a 50,000-table catalog). Table counts are
+in the last three rows, where generation ran separately (229 s at 15,000;
+3,230 s at 50,000, most of it one checkpoint of a 50,000-table catalog) and
+the last row reused the kept warehouse. Table counts are
 the generator's; the engine folds mechanical copies (same column signature
 and name stem) into one representative, so the layers hold 1,844, 4,008,
 11,682 and 35,925 tables respectively.
@@ -184,23 +186,43 @@ All three are gone, each with byte-identical output. From 5,000 to 15,000
 tables the engine now takes 1.4x the time for 3x the tables. Peak memory is
 the one figure still climbing, roughly linearly in columns.
 
-**At 50,000 tables the candidate-parent cap bites, and it is the next thing
-to fix.** The engine kept at most 5,000 candidate parent columns; the cap
-predates the name index and existed to bound a per-child sort that the index
+**At 50,000 tables the candidate-parent cap bit, and it has been removed for
+named parents.** The engine kept at most 5,000 candidate parent columns; the
+cap predates the name index and existed to bound a per-child sort the index
 has since removed. The 50,000-table warehouse has 7,952 key columns that are
-genuinely parents, so 2,952 were never considered, and because the list is
-in table order the ones dropped were the staging copies. The result is
+genuinely parents, so 2,952 were never considered, and because the list was
+in table order the ones dropped were the staging copies. The failure was
 legible rather than random: every one of the 8,820 staging foreign keys the
 engine missed was asserted instead against the core dimension holding the
 same key values, so no key went undiscovered, but against the generator's
-gold (staging facts join staging dimensions) precision reads 0.378 and recall
-0.385. Link also went superlinear here, 9x the time for 3x the tables,
-because the zero-similarity tail of each child's ranking is still walked in
-full. Lifting the cap on its own would make that worse; the two go together.
-Tiers held: 21,642 of 35,925 tables inventory-only, no core or staging table
-set aside, 37 scratch tables read as core (0.8% of scratch). The 139 MB
-layer parses in 45 s and every MCP tool but search still answers in under
-20 ms; search is 650 ms over 36,000 tables.
+gold (staging facts join staging dimensions) precision read 0.378 and recall
+0.385. Named parents, the unique columns the naming vocabulary already
+proposes, are now never truncated; the cap applies only to the speculative
+key-shaped list. Rerun on the same warehouse: 14,972 relationships against
+14,342 gold keys, recall 1.00, precision 0.958, zero wrong parents, and the
+630 extras are the same 1:1 dimension-copy class as the 201 at 15,000.
+
+The zero-score tail of each child's ranking, every same-family parent with
+no name evidence, used to be walked in full per child and was the whole of
+the Python term that grew as children times parents. It is now read from
+the narrowest parent that can contain the child's values upward and stops
+when the child's budget of 40 tests is full or 400 parents have been
+examined; parents with name evidence are all still tested and are never
+displaced by unnamed ones. Planning the 15,000-table run fell from 115 s to
+37 s with an identical 528,060 statements.
+
+Link's wall time at 50,000 nevertheless rose, 1,444 s to 2,782 s, with the
+same statements per child, memory at 6.7 GB and about five cores busy. The
+statement count did not change; the parents inside the statements did,
+drawn from a pool six times larger that now includes every fact table's
+unique key, and the open question is whether those parents cost more rows
+per anti-join. It is recorded here as a measured regression at this one
+size, correct output, not yet explained.
+
+Tiers held at 50,000: 21,642 of 35,925 tables inventory-only, no core or
+staging table set aside, 37 scratch tables read as core (0.8% of scratch).
+The 140 MB layer parses in 46 s and every MCP tool but search still answers
+in under 20 ms; search is 650 ms over 36,000 tables.
 
 **Using the result.** The 15,000-table layer is 42 MB. Through the MCP server
 on the same machine: the file parses once at startup in 14 s, the server

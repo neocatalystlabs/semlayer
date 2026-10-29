@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+### Named foreign-key parents are never truncated; the zero-score tail is bounded
+
+At 50,000 tables (35,925 after folding) the candidate-parent cap of 5,000
+dropped 2,952 of the 7,952 columns that were genuinely parents. The list
+was in table order, so the ones dropped were the staging dimensions, and
+every one of the 8,820 staging foreign keys was then asserted against the
+core dimension holding the same key values: gold precision 0.378, recall
+0.385, where 15,000 tables had scored 0.956 and 1.00. The cap predates the
+parent index and existed to bound a per-child sort the index removed.
+
+Now the named parents, unique columns the naming vocabulary already
+proposes, are never cut; the cap applies only to the speculative key-shaped
+list. What still cost children times parents was the zero-score tail: for
+every child the engine walked every same-family parent with no name
+evidence at all, which was the whole of Link's superlinear term (9x the
+time for 3x the tables between 15,000 and 50,000). Those parents can only
+reach the review queue on their own, so they are now read from the
+narrowest key domain that can contain the child's values upward (a real
+parent's distinct count sits just above its child's) and the read stops
+when the child's budget is full or 400 have been examined. Parents with
+name evidence are all still tested and are never displaced by unnamed ones,
+in the ranking or in the co-location tiebreak.
+
+Rerun on the same 50,000-table warehouse: recall 1.00, precision 0.958,
+zero wrong parents; the 630 extras are dimension keys linked 1:1 to another
+copy of the same entity. Link's wall time there rose from 1,444 s to 2,782 s
+with the same statements per child, which docs/scale.md records as an open
+regression at that one size. Measured on dbt_synthea without a manifest:
+257 relationships where there were 256 (payer_transitions.SECONDARY_PAYER
+found stg_synthea__payers; none lost), floors unchanged, and
+claims.PATIENTID reaches the review queue against patients.Id for the first
+time, since the two share 1,171 values and no name token. The scale warning
+now says what is bounded: statistics-only candidates per column, not the
+parent list.
+
 ### Every table gets a tier; raw and scratch tiers are listed, not modelled (spec 0.4.0 → 0.5.0)
 
 Most of a large warehouse is not the part anyone models against. On a
