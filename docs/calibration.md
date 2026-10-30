@@ -504,10 +504,13 @@ over the 785 gold columns, strict grade, before and after all seven:
   table-type fallthrough instead of `operational` at 0.1. A table the graph
   can type keeps the graph's answer. Uncalibrated: no gold fixture has an
   `int__` table.
-- **Metrics on rollups**: Enrich now reconciles aggregates before proposing
-  metrics and proposes none on a rollup that reconciled to a fact (the fact's
-  metrics and the routing entry serve it). An unreconciled rollup still gets
-  its metrics, review-queued. `total_tax` no longer becomes `total_total_tax`.
+- **Metrics on rollups**: a rollup whose sums reconciled to a fact, per
+  group, has had its metric proven by data, so `semlayer review` no longer
+  asks "is this a metric?" about it; an unreconciled rollup is still asked.
+  The metrics themselves are kept on every rollup: a consumer may compile
+  against the rollup directly, with its time dimension resolved through the
+  date dimension (`tests/test_compile.py`), and a first cut that dropped them
+  broke exactly that. `total_tax` no longer becomes `total_total_tax`.
 - **Reason strings** stay as the engine writes them (`name rule -> name`);
   `semlayer review` renders them in words from a table in `review.py`. The
   strings are stable identifiers (`ALWAYS_ESCALATE` compares on one, the

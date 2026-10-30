@@ -111,6 +111,10 @@ the inclusion tests are the only queries stitch issues.
 
 ## Reviewing the seam, and refreshing it
 
+The hub's own queue is the seam. To answer the members' questions once
+across the set and write into their files, `semlayer review acme.yaml
+--members` ([review.md](review.md), "Hubs").
+
 `semlayer review acme.yaml` shows the hub's queue: seam edges below the
 threshold and `same_entity` pairs with no canonical copy. Accepting one
 marks it `reviewed`; rejecting one marks it `deprecated` and leaves it in

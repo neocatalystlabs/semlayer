@@ -72,7 +72,8 @@ def test_an_isolated_int_table_follows_its_staging_tier_not_operational():
     assert classify_table(t, fk_out=2, fk_in=0)[0] == "fact"
 
 
-def test_metric_names_do_not_say_total_twice_and_mapped_rollups_get_none():
+def test_metric_names_do_not_say_total_twice_and_reconciled_rollups_are_not_asked():
+    from semlayer import review
     from semlayer.enrich.run import _metric_candidates
     agg_cols = [{"name": "total_tax", "sql_type": "DECIMAL", "semantic_type": "monetary_value",
                  "entity_role": "measure", "aggregations": {"allowed": ["sum"], "default": "sum"}}]
@@ -81,16 +82,22 @@ def test_metric_names_do_not_say_total_twice_and_mapped_rollups_get_none():
          "columns": [{"name": "sale_id", "sql_type": "INTEGER", "semantic_type": "identifier",
                       "entity_role": "primary_key"},
                      {"name": "tax", "sql_type": "DECIMAL", "semantic_type": "monetary_value",
+                      "entity_role": "measure", "aggregations": {"allowed": ["sum"], "default": "sum"}},
+                     {"name": "tot_amt", "sql_type": "DECIMAL", "semantic_type": "monetary_value",
                       "entity_role": "measure", "aggregations": {"allowed": ["sum"], "default": "sum"}}]},
         {"name": "agg_sales_monthly", "table_type": "aggregate", "columns": agg_cols},
         {"name": "agg_sales_weekly", "table_type": "aggregate", "columns": list(agg_cols)},
     ]}
-    names = {m["name"] for m in _metric_candidates(sl, skip={"agg_sales_monthly"})}
+    metrics = _metric_candidates(sl)
+    names = {m["name"] for m in metrics}
     assert "total_tax" in names and "total_total_tax" not in names
     # only the full word is folded: `tot_amt` stays `total_tot_amt` (messy_mart's gold)
-    sl["tables"][0]["columns"].append({"name": "tot_amt", "sql_type": "DECIMAL",
-                                       "semantic_type": "monetary_value", "entity_role": "measure",
-                                       "aggregations": {"allowed": ["sum"], "default": "sum"}})
-    assert "total_tot_amt" in {m["name"] for m in _metric_candidates(sl)}
-    assert not any("monthly" in n for n in names), "a reconciled rollup proposes no metrics"
-    assert any("weekly" in n for n in names), "an unreconciled rollup still does, review-queued"
+    assert "total_tot_amt" in names
+    # both rollups keep their metrics (a consumer may compile against the rollup directly);
+    # only the one whose sums reconciled to the fact is spared the review question
+    sl["metrics"] = metrics
+    sl["aggregate_tables"] = [{"table": "agg_sales_monthly", "aggregates": "fct_sales",
+                               "lifecycle": "inferred"}]
+    asked = {i.table for i in review.collect({"semantic_layer": sl})
+             if i.kind == "metric_plausibility"}
+    assert asked == {"agg_sales_weekly"}

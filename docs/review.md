@@ -128,6 +128,30 @@ evidence the engine did not (a dbt description, a catalog tag, a stated
 convention, a query log). Where your only information is what the engine
 already saw, your yes is a coin flip dressed as a verdict; leave the note.
 
+## Hubs: one answer across the members
+
+A hub's own queue is its seam: the cross-member joins and same-entity pairs
+it inferred. Its members' questions belong to the members, and `semlayer
+review acme.yaml` leaves them alone. But the same question recurs in every
+member file. On the 5,000-table estate, 41 members asked 254 questions
+between them and only 11 were distinct: every team's `_name` columns, every
+team's `int__` tables.
+
+```bash
+semlayer review acme.yaml --members --list
+semlayer review acme.yaml --members --answer "q-4bb1485d=accept" --by raj
+```
+
+`--members` asks each question once across the whole set, with every object
+addressed as `member/table.column`, and writes a verdict into the member
+file that holds each object. The hub file gains nothing. It saves exactly
+the member files a verdict reached and prints each one, so you need write
+access to those files, and the result is the same as if each team had
+answered in its own file: each object carries its own dated, authored
+provenance line, and `--decisions --members` reads them all back with the
+member in every address. On the 5,000-table estate the listing takes 15
+seconds and one accept reached 753 columns in 41 files.
+
 ## Everything in one place
 
 | | people | agents |
@@ -137,3 +161,4 @@ already saw, your yes is a coin flip dressed as a verdict; leave the note.
 | cannot decide | skip, or `--note` | `--note "K=why" --agent --by NAME` |
 | read the record | `review --decisions` | `review --decisions --json` |
 | one item at a time | `review --flat` | |
+| a hub, once across its members | `review hub.yaml --members ...` | same, with `--json` |

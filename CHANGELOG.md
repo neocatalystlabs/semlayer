@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### `semlayer review hub.yaml --members`: one answer across the set
+
+A hub's members ask the same questions: on the 5,000-table estate 41
+members asked 254 between them and 11 were distinct. `--members` asks each
+once across the whole set, every object addressed `member/table.column`,
+and writes the verdict into the member file that holds each object,
+saving exactly the files it reached; `--decisions --members` reads them
+all back. The hub file gains nothing, and without the flag a hub's queue
+is still only its seam.
+
 ### Seven rule fixes from the 2,000-table review queue; multi-schema names
 
 The grouped queue showed that seven of the nine questions on the benchmark
@@ -9,8 +19,8 @@ estate were the engine's: ETL bookkeeping columns (`src_system`,
 `record_hash`, `payload`) typed unknown at 0.05 on 1,198 columns, `sk_*`
 surrogate keys typed as summed measures, `channel_name` typed as a code,
 isolated `int__` tables called operational, `total_tax` becoming the metric
-`total_total_tax`, and metrics proposed on rollups that already reconcile to
-a fact. All fixed; typing accuracy over the 785 gold columns 0.815 -> 0.822,
+`total_total_tax`, and review questions about metrics on rollups whose sums
+had already reconciled to a fact. All fixed; typing accuracy over the 785 gold columns 0.815 -> 0.822,
 role 0.811 -> 0.814, no fixture down; details and the uncalibrated constants
 in docs/calibration.md. docs/benchmark.md now says what it is: accurate as
 of release 0.6.0b1, re-measured at a release and not per engine change, and
