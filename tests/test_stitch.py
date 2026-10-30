@@ -31,8 +31,13 @@ from semlayer.validate import validate_file  # noqa: E402
 AGG = {"allowed": ["sum", "avg", "min", "max", "count"], "default": "sum"}
 
 
-def _members(tmp_path: Path) -> list[str]:
+def _members(tmp_path: Path, shadow: bool = False) -> list[str]:
     con = _warehouse(tmp_path / "acme.duckdb")
+    if shadow:
+        # finance keeps its own cost centres: 8 of platform's 12, plus a budget column
+        con.execute("create table finance.dim_cost_center as select cost_center_id, "
+                    "cost_center_name, cost_center_id * 1000.0 as budget "
+                    "from platform.dim_cost_center where cost_center_id < 8")
     con.execute("alter table sales.fct_orders add column sales_rep_id integer")
     # values no other member holds: a key stitch must list, not guess
     con.execute("update sales.fct_orders set sales_rep_id = 1000 + order_id % 9")
@@ -128,3 +133,69 @@ def test_unresolved_references_are_key_shaped_columns_with_no_target():
         {"name": "f/raw", "source": "f.raw", "modeling": "inventory_only",
          "columns": [col("x_id", "foreign_key")]}]}
     assert unresolved_references(sl) == [("f/t", "a_id"), ("f/t", "status_cd")]
+
+
+def test_a_members_copy_of_another_members_dimension_is_the_same_entity(tmp_path):
+    """finance/dim_cost_center is 8 of platform's 12 rows plus a budget column.
+
+    Not a fact and its dimension: the same entity. Stitch writes a one_to_one
+    `same_entity` edge from the copy to the canonical table (platform's is
+    certified AND holds every key), with the columns they share, the column
+    only finance has, and the measured overlap both ways. Nothing to review:
+    the canonical copy was decided.
+    """
+    from semlayer.review import collect, for_hub
+    from semlayer.setdoc import load_set, set_checks
+
+    members = _members(tmp_path, shadow=True)
+    con = duckdb.connect(str(tmp_path / "acme.duckdb"), read_only=True)
+    try:
+        result = stitch(members, "acme", tmp_path / "acme.yaml", source=DuckDBSource(con),
+                        query_workers=1)
+    finally:
+        con.close()
+    (tmp_path / "acme.yaml").write_text(yaml.safe_dump(result.hub, sort_keys=False))
+    assert result.copies == 1
+    same = [e for e in result.hub["semantic_layer"]["relationships"] if e.get("same_entity")]
+    assert len(same) == 1
+    e = same[0]
+    assert e["from"] == {"table": "finance/dim_cost_center", "columns": ["cost_center_id"]}
+    assert e["to"] == {"table": "platform/dim_cost_center", "columns": ["cost_center_id"]}
+    assert e["cardinality"] == "one_to_one" and e["canonical"] == "platform/dim_cost_center"
+    assert e["shared_columns"] == ["cost_center_id", "cost_center_name"]
+    assert e["extends_with"] == ["budget"]
+    assert e["key_overlap"] == {"from_in_to": 1.0, "to_in_from": 0.667}
+    assert e["confidence"] >= 0.7 and "certified" in e["provenance"][0]["detail"]
+    # the fact's own key still crosses to the canonical dimension, not the copy
+    seam = {(r["from"]["table"], r["to"]["table"]) for r in
+            result.hub["semantic_layer"]["relationships"] if not r.get("same_entity")}
+    assert ("finance/fct_gl", "platform/dim_cost_center") in seam
+    v = validate_file(tmp_path / "acme.yaml")
+    assert v.ok, v.errors
+    rs = load_set(tmp_path / "acme.yaml")
+    assert [i for i in for_hub(collect(rs.doc), "acme") if i.kind == "same_entity"] == []
+
+    # a canonical that is not an end, or a same_entity that is not one_to_one, is a set error
+    e["canonical"] = "sales/dim_customer"
+    e["cardinality"] = "many_to_one"
+    errors = set_checks(rs)
+    rs.doc["semantic_layer"]["relationships"] = result.hub["semantic_layer"]["relationships"]
+    errors = set_checks(rs)
+    assert any("neither of its ends" in x for x in errors)
+    assert any("must be one_to_one" in x for x in errors)
+
+
+def test_without_a_connection_a_copy_is_proposed_undecided_and_queued(tmp_path):
+    from semlayer.review import collect, for_hub
+    from semlayer.setdoc import load_set
+
+    members = _members(tmp_path, shadow=True)
+    result = stitch(members, "acme", tmp_path / "acme.yaml", source=None)
+    (tmp_path / "acme.yaml").write_text(yaml.safe_dump(result.hub, sort_keys=False))
+    same = [e for e in result.hub["semantic_layer"]["relationships"] if e.get("same_entity")]
+    assert len(same) == 1 and "canonical" not in same[0] and "key_overlap" not in same[0]
+    assert same[0]["confidence"] == 0.3 and "NOT tested" in same[0]["provenance"][0]["detail"]
+    assert validate_file(tmp_path / "acme.yaml").ok
+    items = [i for i in for_hub(collect(load_set(tmp_path / "acme.yaml").doc), "acme")
+             if i.kind == "same_entity"]
+    assert len(items) == 1 and "undecided" in items[0].claim

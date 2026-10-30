@@ -252,7 +252,9 @@ def set_checks(rs: ResolvedSet) -> list[str]:
 
     - a member's `name` must match the hub's entry, and names must be unique;
     - two members must not describe the same `source` in the same warehouse;
-    - a relationship between tables in different warehouses needs `federation`.
+    - a relationship between tables in different warehouses needs `federation`;
+    - a `same_entity` relationship is one_to_one and its `canonical`, if named,
+      is one of its two ends.
     """
     errors = list(rs.problems)
     sl = rs.doc["semantic_layer"]
@@ -273,4 +275,12 @@ def set_checks(rs: ResolvedSet) -> list[str]:
             errors.append(f"set: relationship {r['from']['table']} -> {r['to']['table']} spans "
                           f"warehouses {wa} and {wb}; no `federation` engine is declared, so no "
                           f"single statement can join them")
+        if r.get("same_entity"):
+            ends = (r["from"]["table"], r["to"]["table"])
+            if r.get("cardinality") != "one_to_one":
+                errors.append(f"set: same_entity relationship {r.get('name')} must be one_to_one, "
+                              f"not {r.get('cardinality')}")
+            if r.get("canonical") and r["canonical"] not in ends:
+                errors.append(f"set: relationship {r.get('name')} names canonical "
+                              f"{r['canonical']}, which is neither of its ends")
     return errors

@@ -11,6 +11,9 @@ Item kinds:
   verified routing (SPEC.md 2.7) -- data proves today's rows, a human knows
   whether the job still applies the rule
 - metric_plausibility: a metric proposed on a table that is not an active fact
+- seam_edge: a cross-document relationship in a hub below the threshold
+- same_entity: two members' tables found to hold one entity, with no
+  canonical copy decided (neither certified, same key set)
 
 Metric-tier items are queued by CLAIM KIND, never by a confidence threshold:
 metric confidences are rule constants, not measured rates (docs/metrics.md).
@@ -101,6 +104,17 @@ def _seam_items(sl: dict) -> list[ReviewItem]:
         if not a or _owner(a) == _owner(b) or not _owner(a):
             continue
         inferred = r.get("lifecycle", "inferred") == "inferred"
+        if r.get("same_entity"):
+            undecided = not r.get("canonical") or (r.get("confidence") or 1.0) < REVIEW_THRESHOLD
+            if inferred and undecided:
+                ov = r.get("key_overlap") or {}
+                out.append(ReviewItem(
+                    "same_entity", a, None,
+                    f"same entity as {b}; canonical: {r.get('canonical') or 'undecided'}",
+                    f"keys of {a} in {b}: {ov.get('from_in_to', '?')}, reverse "
+                    f"{ov.get('to_in_from', '?')}; confidence {r.get('confidence')}",
+                    ref=f"seam.{r.get('name', '')}"))
+            continue
         if inferred and (r.get("confidence") or 1.0) < REVIEW_THRESHOLD:
             out.append(ReviewItem(
                 "seam_edge", a, ",".join(r["from"]["columns"]),
@@ -111,7 +125,8 @@ def _seam_items(sl: dict) -> list[ReviewItem]:
 
 def for_hub(items: list[ReviewItem], hub_name: str) -> list[ReviewItem]:
     """A hub's queue: its own tables and the seam. Members review their own files."""
-    return [i for i in items if i.kind == "seam_edge" or _owner(i.table) == hub_name]
+    return [i for i in items
+            if i.kind in ("seam_edge", "same_entity") or _owner(i.table) == hub_name]
 
 
 def _modelled(sl: dict) -> list[dict]:

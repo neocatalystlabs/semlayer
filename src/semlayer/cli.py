@@ -54,16 +54,18 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("source",
                    help="duckdb:<path> | postgresql://... | snowflake | bigquery | postgres")
     p.add_argument("-o", "--out", default=None,
-                   help="Output path. Default: <schema>.yaml when --schema names one "
-                        "schema, else semantic_layer.yaml.")
+                   help="Output path. Default: <name>.yaml, where the name is --name, else the "
+                        "schema(s) given to --schema, else the warehouse (database, project "
+                        "or file stem).")
     p.add_argument("--schema", metavar="SCHEMAS", default=None,
                    help="Profile only these schemas (comma-separated). One schema also "
                         "names the document and the output file: a team scoping to its "
                         "own schema gets finance.yaml with name: finance, the identity "
                         "other teams' documents reference when the layers are combined.")
     p.add_argument("--name", default=None,
-                   help="The document's name (default: the schema when --schema names one, "
-                        "else 'profiled').")
+                   help="The document's name (default: the schema(s) given to --schema, "
+                        "joined with _ when several, else the warehouse: database, project "
+                        "or file stem). The output file is <name>.yaml unless -o is given.")
     p.add_argument("--no-llm", action="store_true", help="Deterministic dry-run (no LLM calls)")
     p.add_argument("--no-sample-egress", action="store_true",
                    help="Never include cell values in LLM prompts")
@@ -159,17 +161,15 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def default_out(out: str | None, schema: set[str] | None) -> str:
-    """The output path: as given, else <schema>.yaml for one schema, else semantic_layer.yaml.
+def default_out(out: str | None, name: str) -> str:
+    """The output path: as given, else `<name>.yaml`.
 
-    The filename follows the document's identity so that three teams scoping
-    to three schemas do not end up with three files of the same name.
+    The filename follows the document's identity (`semlayer.source.document_name`)
+    so that three teams scoping to three schemas do not end up with three
+    files of the same name, and a whole-warehouse run is named for the
+    warehouse rather than a generic word.
     """
-    if out:
-        return out
-    if schema and len(schema) == 1:
-        return f"{next(iter(schema))}.yaml"
-    return "semantic_layer.yaml"
+    return out or f"{name}.yaml"
 
 
 def _load_doc(path: str) -> dict:
@@ -234,6 +234,7 @@ def _cmd_infer(args: argparse.Namespace) -> int:
 
     from semlayer.pipeline import InferOptions, infer_with_report, open_source_from_uri
     from semlayer.review import collect
+    from semlayer.source import document_name
     from semlayer.validate import validate_document
 
     llm = None
@@ -266,9 +267,10 @@ def _cmd_infer(args: argparse.Namespace) -> int:
     schema = {x.strip() for x in args.schema.split(",") if x.strip()} if args.schema else None
     if schema:
         print(f"profiling schema(s): {', '.join(sorted(schema))}")
-    args.out = default_out(args.out, schema)
+    name = document_name(args.name, schema, src)
+    args.out = default_out(args.out, name)
     options = InferOptions(no_sample_egress=args.no_sample_egress, only=only, schema=schema,
-                           name=args.name, use_declared=not args.no_declared_constraints,
+                           name=name, use_declared=not args.no_declared_constraints,
                            llm_workers=args.llm_workers, query_workers=args.query_workers)
     doc, report = infer_with_report(src, llm=llm, options=options, context=context,
                                     lineage=lineage, state=state)
@@ -536,7 +538,8 @@ def _cmd_stitch(args: argparse.Namespace) -> int:
     _save_doc(args.out, result.hub)
     ok = validate_file(args.out).ok
     print(f"wrote {args.out}: {len(result.hub['semantic_layer'].get('relationships', []))} seam "
-          f"edges ({result.accepted} accepted, {result.review} for review), "
+          f"edges ({result.accepted} accepted, {result.review} for review, "
+          f"{result.copies} same-entity copies), "
           f"{len(result.unresolved)} unresolved, valid={ok} ({result.mode})")
     if result.unresolved:
         for u in result.unresolved[:10]:

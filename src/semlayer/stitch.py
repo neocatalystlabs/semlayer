@@ -26,6 +26,18 @@ What it asserts and what it does not:
 Statistics come from the member documents themselves (`cardinality`, roles,
 types), not from re-profiling: the members were profiled by their owners,
 and the only queries stitch issues are the inclusion tests.
+
+**Copies.** Finance keeps its own `dim_customer`: the platform rows for its
+own customers plus two columns of its own. Two tables in different members
+whose single-column keys share a name and whose key values are contained
+one in the other are the SAME ENTITY, not a fact and its dimension. Stitch
+writes those as a `one_to_one` relationship with `same_entity: true`, the
+columns both carry (`shared_columns`), the columns only the copy has
+(`extends_with`), the measured `key_overlap` in both directions, and
+`canonical`: the table the organisation stands behind, a certified copy
+first, else the one whose keys contain the other's. When neither rule
+decides, the edge is written below the review threshold without
+`canonical`, and the analyst chooses.
 """
 
 from __future__ import annotations
@@ -35,9 +47,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from semlayer import __version__
+from semlayer.lineage import same_naming_layer
 from semlayer.link.candidates import (
+    MAX_QUERIES_PER_CHILD,
+    MIN_INCLUSION,
     FKCandidate,
     ParentIndex,
+    _inclusion_many,
+    _type_family,
     generate_candidates,
     name_similarity,
     select_parents_and_children,
@@ -52,6 +69,7 @@ logger = logging.getLogger(__name__)
 
 NAMES_ONLY_CONFIDENCE = 0.3
 REVIEW_CONFIDENCE = 0.5          # a tested parent without name evidence: below the review line
+COPY_CONFIDENCE = 0.85           # same entity, canonical decided by certification or containment
 
 
 @dataclass
@@ -64,6 +82,7 @@ class StitchResult:
     review: int = 0
     unresolved: list[dict] = field(default_factory=list)
     mode: str = "inclusion"      # or "names_only"
+    copies: int = 0              # same_entity edges written
 
 
 def _owner(table: str) -> str:
@@ -246,6 +265,204 @@ def _tested_edges(source, rs: ResolvedSet, stats: dict, children: list[tuple[str
     return edges
 
 
+def _single_keys(sl: dict, stats: dict) -> dict[str, str]:
+    """Table -> its entity key, for every modelled table that has a single one.
+
+    The primary key when it is one column. For an SCD2 table the primary key
+    is the natural key plus the validity start (`ticket_id, valid_from`), and
+    the entity key is the natural key: a copy of the dimension holds tickets,
+    not ticket versions.
+    """
+    out: dict[str, str] = {}
+    for t in sl.get("tables", []):
+        if t["name"] not in stats:
+            continue
+        pk = list(t.get("primary_key") or [c["name"] for c in t.get("columns", [])
+                                           if c.get("entity_role") == "primary_key"])
+        scd = t.get("scd") or {}
+        if scd.get("type") == 2 and len(pk) == 2:
+            pk = [c for c in pk if c not in (scd.get("valid_from"), scd.get("valid_to"))]
+        if len(pk) == 1 and pk[0] in stats[t["name"]].columns:
+            out[t["name"]] = pk[0]
+    return out
+
+
+# Key names that name no entity: a surrogate every fact in a warehouse may
+# carry under the same name. Two tables sharing `event_id` are not thereby
+# the same entity; on a 5,000-table estate 460 facts had one, and pairing
+# them gave 97,835 candidates, all wrong.
+GENERIC_KEYS = frozenset({
+    "id", "pk", "sk", "key", "row_id", "rowid", "record_id", "event_id", "seq", "sequence",
+    "surrogate_key", "hash_key", "uuid", "guid",
+})
+
+
+def copy_pairs(sl: dict, stats: dict) -> list[tuple[str, str, str, str, float]]:
+    """(table_a, key_a, table_b, key_b, name_score) for key columns that could be one entity.
+
+    Two tables in different members, each with a single-column key of the
+    same type family that names an entity (not `id` or `event_id`), whose key
+    columns share a name or score as Link's name test would. Each unordered
+    pair once; the test decides direction. A table keeps at most
+    MAX_QUERIES_PER_CHILD partners per other member, best-named first, so
+    the work is bounded the way Link's is.
+    """
+    keys = {t: k for t, k in _single_keys(sl, stats).items() if k.lower() not in GENERIC_KEYS}
+    items = sorted(keys.items())
+
+    def score_of(ta: str, ka: str, tb: str, kb: str) -> float:
+        score = max(name_similarity(ka, ta, kb, tb), name_similarity(kb, tb, ka, ta))
+        return max(score, AUTO_NAME_THRESHOLD) if ka.lower() == kb.lower() else score
+
+    scored: dict[tuple[str, str], list[tuple[float, str]]] = {}
+    for i, (ta, ka) in enumerate(items):
+        fa = _type_family(stats[ta].columns[ka].sql_type)
+        for tb, kb in items[i + 1:]:
+            if _owner(ta) == _owner(tb) or _type_family(stats[tb].columns[kb].sql_type) != fa:
+                continue
+            score = score_of(ta, ka, tb, kb)
+            if score >= AUTO_NAME_THRESHOLD:
+                scored.setdefault((ta, _owner(tb)), []).append((score, tb))
+                scored.setdefault((tb, _owner(ta)), []).append((score, ta))
+    kept: set[tuple[str, str]] = set()
+    for (t, _), lst in scored.items():
+        lst.sort(key=lambda x: (-x[0], x[1]))
+        for _, other in lst[:MAX_QUERIES_PER_CHILD]:
+            kept.add((min(t, other), max(t, other)))
+    return [(ta, keys[ta], tb, keys[tb], score_of(ta, keys[ta], tb, keys[tb]))
+            for ta, tb in sorted(kept)]
+
+
+def _overlaps(source, stats: dict, pairs: list[tuple[str, str, str, str, float]],
+              query_workers: int) -> dict[tuple[str, str], float]:
+    """Inclusion ratio of each table's key in its partner's, both directions.
+
+    One statement per table with all its partners, run through Link's own
+    fan-out (`_inclusion_many`), which gives each worker thread its own
+    executor: a connection shared across threads interleaves result rows.
+    """
+    by_table: dict[tuple[str, str], list[tuple[str, str]]] = {}
+    for ta, ka, tb, kb, _ in pairs:
+        by_table.setdefault((ta, ka), []).append((tb, kb))
+        by_table.setdefault((tb, kb), []).append((ta, ka))
+    plan = [(ctn, ccn, ptn, pcn) for (ctn, ccn), partners in by_table.items()
+            for ptn, pcn in partners]
+    ratios = _inclusion_many(source, stats, plan, query_workers)
+    return {(ctn, ptn): r for (ctn, _, ptn, _), r in zip(plan, ratios, strict=True)}
+
+
+def _canonical(ta: str, tb: str, a_in_b: float, b_in_a: float, tables: dict) -> str | None:
+    """Which of two copies is the system of record: a certified one, else the key superset."""
+    cert = [t for t in (ta, tb) if (tables.get(t) or {}).get("lifecycle") == "certified"]
+    if len(cert) == 1:
+        return cert[0]
+    if a_in_b >= MIN_INCLUSION and b_in_a < MIN_INCLUSION:
+        return tb
+    if b_in_a >= MIN_INCLUSION and a_in_b < MIN_INCLUSION:
+        return ta
+    return None
+
+
+def _copy_edge(pair: tuple[str, str, str, str], tables: dict, overlap: dict | None,
+               confidence: float, provenance: list[dict], canonical: str | None) -> dict:
+    """The edge for (copy, canonical table, copy key, canonical key)."""
+    copy, canon, kcopy, kcanon = pair
+    cols_copy = [c["name"] for c in tables[copy].get("columns", [])]
+    cols_canon = {c["name"].lower() for c in tables[canon].get("columns", [])}
+    edge = {
+        "name": f"{copy}_same_entity_as_{canon}".replace(SEP, "_"),
+        "from": {"table": copy, "columns": [kcopy]},
+        "to": {"table": canon, "columns": [kcanon]},
+        "cardinality": "one_to_one", "join_type": "left", "fanout_risk": False,
+        "same_entity": True,
+        "shared_columns": [c for c in cols_copy if c.lower() in cols_canon],
+        "extends_with": [c for c in cols_copy if c.lower() not in cols_canon],
+        "lifecycle": "inferred", "confidence": round(confidence, 2),
+        "provenance": provenance,
+    }
+    if canonical:
+        edge["canonical"] = canonical
+    if overlap:
+        edge["key_overlap"] = overlap
+    return edge
+
+
+def _bare(table: str) -> str:
+    return table.rsplit(SEP, 1)[-1].lower()
+
+
+def _best_partner(edges: list[dict]) -> list[dict]:
+    """One same_entity edge per copy per other member.
+
+    Best-named first; among equal names a partner in the same naming layer
+    (a published `dim_ticket` for a published `dim_ticket`, not the
+    `int__ticket` that holds the same keys), then the one whose bare name
+    matches, then the fuller one.
+    """
+    by: dict[tuple[str, str], dict] = {}
+    for e in edges:
+        a, b = e["from"]["table"], e["to"]["table"]
+        k = (a, _owner(b))
+        ov = e.get("key_overlap") or {}
+        rank = (e.get("canonical") is not None, e["_score"], same_naming_layer(a, b),
+                _bare(a) == _bare(b), ov.get("to_in_from", 0.0))
+        if k not in by or rank > by[k]["_rank"]:
+            e["_rank"] = rank
+            by[k] = e
+    out = []
+    for e in by.values():
+        e.pop("_rank", None), e.pop("_score", None)
+        out.append(e)
+    return out
+
+
+def copy_edges(source, sl: dict, stats: dict, tables: dict, query_workers: int) -> list[dict]:
+    """same_entity edges between members, tested through `source` (names only when None)."""
+    pairs = copy_pairs(sl, stats)
+    if not pairs:
+        return []
+    edges: list[dict] = []
+    if source is None:
+        for ta, ka, tb, kb, score in pairs:
+            da, db = stats[ta].columns[ka].n_distinct, stats[tb].columns[kb].n_distinct
+            pair = (ta, tb, ka, kb) if da <= db else (tb, ta, kb, ka)
+            e = _copy_edge(pair, tables, None, NAMES_ONLY_CONFIDENCE, [
+                {"signal": "naming", "detail": f"same key name, {da} and {db} distinct values; "
+                                              f"NOT tested: no connection could reach both "
+                                              f"documents' warehouses"}], None)
+            e["_score"] = score
+            edges.append(e)
+        return _best_partner(edges)
+    ratios = _overlaps(source, stats, pairs, query_workers)
+    for ta, ka, tb, kb, score in pairs:
+        a_in_b, b_in_a = ratios.get((ta, tb), 0.0), ratios.get((tb, ta), 0.0)
+        if max(a_in_b, b_in_a) < MIN_INCLUSION:
+            continue
+        canon = _canonical(ta, tb, a_in_b, b_in_a, tables)
+        if canon == ta:
+            copy, canon_t, kc, kn, c_in_n, n_in_c = tb, ta, kb, ka, b_in_a, a_in_b
+        else:
+            copy, canon_t, kc, kn, c_in_n, n_in_c = ta, tb, ka, kb, a_in_b, b_in_a
+        overlap = {"from_in_to": round(c_in_n, 3), "to_in_from": round(n_in_c, 3)}
+        detail = (f"{copy} keys in {canon_t}: {overlap['from_in_to']}; the reverse "
+                  f"{overlap['to_in_from']}; name score {score}")
+        if canon is None:
+            e = _copy_edge((copy, canon_t, kc, kn), tables, overlap, REVIEW_CONFIDENCE, [
+                {"signal": "inclusion_dependency",
+                 "detail": detail + ": the same keys and neither is certified, so no "
+                                    "canonical copy is named; review"}], None)
+        else:
+            why = ("certified" if (tables.get(canon_t) or {}).get("lifecycle") == "certified"
+                   else "holds every key of the other")
+            e = _copy_edge((copy, canon_t, kc, kn), tables, overlap, COPY_CONFIDENCE, [
+                {"signal": "inclusion_dependency",
+                 "detail": detail + f"; canonical {canon_t} ({why})"}], canon_t)
+        e["_score"] = score
+        edges.append(e)
+    return _best_partner(edges)
+
+
+
 def stitch(member_paths: list[str | Path], hub_name: str, out_path: str | Path,
            source=None, query_workers: int = 4, via_label: str | None = None) -> StitchResult:
     """Build the hub for these members; `source` is the executor for inclusion tests (or None)."""
@@ -267,6 +484,9 @@ def stitch(member_paths: list[str | Path], hub_name: str, out_path: str | Path,
     else:
         edges = _tested_edges(source, rs, stats, children, tables, query_workers, result)
     found = {(e["from"]["table"], e["from"]["columns"][0]) for e in edges}
+    same = copy_edges(source, sl, stats, tables, query_workers)
+    result.copies = len(same)
+    edges = edges + same
     result.unresolved = [
         {"table": ctn, "column": ccn,
          "note": f"no parent in any other member "
@@ -278,6 +498,7 @@ def stitch(member_paths: list[str | Path], hub_name: str, out_path: str | Path,
         hub["semantic_layer"]["unresolved"] = result.unresolved
     via = f" via {via_label}" if via_label else ""
     logger.info("stitch: %d unresolved references, %d tested, %d accepted, %d for review, "
-                "%d unresolved (%s%s)", len(children), result.tested, result.accepted,
-                result.review, len(result.unresolved), result.mode, via)
+                "%d unresolved, %d same-entity copies (%s%s)", len(children), result.tested,
+                result.accepted, result.review, len(result.unresolved), result.copies,
+                result.mode, via)
     return result

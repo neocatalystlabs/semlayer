@@ -59,7 +59,7 @@ def test_name_overrides_and_two_schemas_do_not_pick_one(tmp_path):
         named, _ = profile_with_stats(DuckDBSource(con), schema={"sales"}, name="revenue")
     finally:
         con.close()
-    assert doc["semantic_layer"]["name"] == "profiled"
+    assert doc["semantic_layer"]["name"] == "finance_sales"      # both schemas, joined
     assert len(doc["semantic_layer"]["tables"]) == 3
     assert named["semantic_layer"]["name"] == "revenue"
     assert [t["name"] for t in named["semantic_layer"]["tables"]] == ["dim_customer", "fct_orders"]
@@ -87,11 +87,21 @@ def test_options_carry_schema_and_name_into_the_report(tmp_path):
     assert InferOptions(schema=["a", "b"]).schema == frozenset({"a", "b"})
 
 
-def test_output_file_follows_the_schema():
-    assert default_out(None, {"finance"}) == "finance.yaml"
-    assert default_out(None, {"finance", "sales"}) == "semantic_layer.yaml"
-    assert default_out(None, None) == "semantic_layer.yaml"
-    assert default_out("layer.yaml", {"finance"}) == "layer.yaml"
+def test_output_file_follows_the_document_name(tmp_path):
+    from semlayer.source import document_name
+    con = _two_schemas(tmp_path / "acme.duckdb")
+    try:
+        src = DuckDBSource(con)
+        assert document_name(None, {"finance"}, src) == "finance"
+        assert document_name(None, {"finance", "sales"}, src) == "finance_sales"
+        assert document_name(None, None, src) == "acme"            # the warehouse, not a generic word
+        assert document_name("revenue", {"finance"}, src) == "revenue"
+    finally:
+        con.close()
+    assert document_name(None, None, DuckDBSource(duckdb.connect())) == "semantic_layer"
+    assert default_out(None, "finance") == "finance.yaml"
+    assert default_out(None, "acme") == "acme.yaml"
+    assert default_out("layer.yaml", "finance") == "layer.yaml"
 
 
 def test_warehouse_uri_is_credential_free_and_portable():

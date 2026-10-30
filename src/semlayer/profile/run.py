@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 from semlayer.errors import SemlayerError
 from semlayer.profile.stats import ColumnStats, TableStats, profile_table
 from semlayer.profile.typing_rules import ALWAYS_ESCALATE, classify
-from semlayer.source import warehouse_uri
+from semlayer.source import document_name, warehouse_uri
 from semlayer.tier import infer_tier, is_informational
 
 if TYPE_CHECKING:
@@ -227,7 +227,7 @@ def profile_with_stats(source, no_sample_values: bool = False, llm=None, context
     _escalate_all(llm, pending, no_sample_values, context, max(1, llm_workers))
     _log_shallow(shallow_total, len(out_tables))
     model = "none/heuristic" if llm is None else f"{llm.model}/escalation"
-    doc_name = name or (next(iter(schema)) if schema and len(schema) == 1 else "profiled")
+    doc_name = document_name(name, schema, source)
     out: dict = {
         "semantic_layer": {
             "spec_version": "0.6.0",
@@ -540,8 +540,10 @@ def _scale_warning(n_tables: int, n_columns: int) -> str | None:
     return (f"warehouse exceeds the tested scale: {', '.join(over)}. "
             f"Foreign-key discovery bounds the speculative candidates it tests per "
             f"column, so a key that nothing names may go untested above this size. "
-            f"Narrow the run with --only or a schema filter, or see docs/scale.md "
-            f"for what has been measured past it.")
+            f"Past it, run one schema at a time (--schema, one file per team) and "
+            f"combine the files with `semlayer stitch`: that route is measured to "
+            f"50,000 tables in docs/scale.md, which also records what the single-file "
+            f"run does past this size.")
 
 
 def _partitions_or_empty(source) -> dict:
