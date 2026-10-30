@@ -179,7 +179,8 @@ def build(args: argparse.Namespace, src, lineage, probe, est) -> int:
     report["estimate"] = est
     report["wall_clock_s"] = round(wall, 1)
 
-    out = Path(args.out)
+    from semlayer.source import document_name
+    out = Path(args.out or f"{document_name(None, None, src)}.yaml")
     if args.into:
         from semlayer.merge import merge_layer, render_report
         base = yaml.safe_load(Path(args.into).read_text())
@@ -224,7 +225,8 @@ def main(argv: list[str] | None = None) -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("source",
                     help="duckdb:<path> | postgresql://... | snowflake | bigquery | postgres")
-    ap.add_argument("-o", "--out", default="semantic_layer.yaml")
+    ap.add_argument("-o", "--out", default=None,
+                    help="output file; default <document name>.yaml, the warehouse's name")
     ap.add_argument("--into", metavar="PATH", help="merge into this existing layer instead")
     ap.add_argument("--manifest", metavar="PATH", help="dbt target/manifest.json")
     ap.add_argument("--context", action="append", metavar="PATH",

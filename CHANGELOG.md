@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### The maintainer loop, replayed as a test
+
+`tests/test_maintain_replay.py` runs one drift event end to end on
+messy_mart with a human verdict already in place: drop a column, add a
+column, create a table; detect (3 events), changeset (17 competency
+questions flagged, the revenue column orphaned), targeted re-inference of
+the two tables named, merge (4 elements touched, 10 kept, the verdict
+untouched, the orphan still present), and the new table in the queue.
+This is the replay the maintainer design called for before any runner is built.
+docs/maintain.md states the loop and what is not built. The assisted-build
+example no longer defaults its output to `semantic_layer.yaml`.
+
 ### `set`: a reviewer can say what is true
 
 Beside accept and reject, `set:<value>` replaces the engine's claim with
