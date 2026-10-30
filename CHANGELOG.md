@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### `semlayer maintain`: the loop as one command, dry run by default
+
+`maintain layer.yaml <source>` detects drift, builds the changeset, names
+the tables it would re-infer and whether it would call the LLM, and stops
+with exit 1 when there is work (0 when nothing changed). `--apply`
+re-infers only those tables, merges them with reviewed and certified
+content protected, saves, and reports the merge and the review queue
+delta. It makes the same choices `infer` makes: the LLM when a key is set,
+`--no-llm`, workers, manifest. `--json` is one record for an agent or a
+CI log. Fixed on the way: the drift baseline now leaves orphaned COLUMNS
+out as well as orphaned tables, so a drop is reported once; before, a
+maintained layer reported the same dropped column on every run.
+docs/maintain.md.
+
 ### The maintainer loop, replayed as a test
 
 `tests/test_maintain_replay.py` runs one drift event end to end on

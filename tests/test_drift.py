@@ -66,7 +66,7 @@ def test_column_drop_orphans_and_breaks_cqs(world):
 
 
 def test_table_drop_orphans_whole_table(world):
-    con, src, doc, suite = world
+    con, src, doc, _suite = world
     before = drift.snapshot(src)
     con.execute("DROP TABLE cust_addr")
     events = drift.diff_snapshots(before, drift.snapshot(src))
@@ -137,3 +137,13 @@ def test_changeset_renders(world):
     cs.broken_cqs = drift.cq_regression(con, suite, events, doc)
     md = drift.render_changeset(cs)
     assert "column_dropped" in md and "Orphaned" in md and "BROKEN COMPETENCY" in md
+
+
+def test_an_orphaned_column_is_not_reported_dropped_again(world):
+    """The baseline leaves orphaned columns out, so a maintained layer goes quiet."""
+    con, src, doc, _ = world
+    con.execute("ALTER TABLE ord_hdr DROP COLUMN tot_amt")
+    events = drift.diff_snapshots(drift.baseline(doc), drift.snapshot(src))
+    assert [e.kind for e in events] == ["column_dropped"]
+    drift.apply_drift(doc, events)
+    assert drift.diff_snapshots(drift.baseline(doc), drift.snapshot(src)) == []

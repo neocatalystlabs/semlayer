@@ -113,6 +113,7 @@ def _build_parser() -> argparse.ArgumentParser:
                         "`orphaned`, never deleted. Tables outside --only are untouched.")
 
     _add_review_parser(sub)
+    _add_maintain_parser(sub)
 
     p = sub.add_parser("telemetry",
                        help="Show or change anonymous usage telemetry")
@@ -183,6 +184,74 @@ def _warn_if_overwriting_verdicts(args: argparse.Namespace) -> None:
     if n_verdicts:
         print(f"warning: {args.out} holds {n_verdicts} recorded verdict(s) and -o will "
               f"overwrite them; use --into {args.out} to keep them", file=sys.stderr)
+
+
+def _add_maintain_parser(sub) -> None:
+    p = sub.add_parser("maintain",
+                       help="Keep a layer true: detect drift, plan the re-inference, "
+                            "and with --apply do it (dry run by default)")
+    p.add_argument("doc", help="semantic layer YAML path")
+    p.add_argument("source",
+                   help="duckdb:<path> | postgresql://... | snowflake | bigquery | postgres")
+    p.add_argument("--apply", action="store_true",
+                   help="Re-infer the tables the changeset names and merge them into DOC")
+    p.add_argument("--cqs", help="CQ suite YAML to regression-check (DuckDB sources)")
+    p.add_argument("--json", action="store_true", help="one machine-readable record")
+    p.add_argument("--no-llm", action="store_true",
+                   help="Re-infer without the LLM (same meaning as on infer; the default, "
+                        "like infer's, is the LLM when ANTHROPIC_API_KEY is set)")
+    p.add_argument("--llm-workers", type=int, default=4, metavar="N")
+    p.add_argument("--query-workers", type=int, default=None, metavar="N")
+    p.add_argument("--manifest", help="dbt manifest.json, as on infer")
+    p.add_argument("--no-declared-constraints", action="store_true")
+
+
+def _cmd_maintain(args: argparse.Namespace) -> int:
+    import json
+    import os
+
+    from semlayer import maintain
+    from semlayer.pipeline import open_source_from_uri
+
+    doc = _load_doc(args.doc)
+    src = open_source_from_uri(args.source)
+    with_llm = not args.no_llm and bool(os.environ.get("ANTHROPIC_API_KEY"))
+    suite = con = None
+    if args.cqs and args.source.startswith("duckdb:"):
+        import duckdb
+        import yaml
+
+        from semlayer.pipeline import _duckdb_args
+        suite = yaml.safe_load(Path(args.cqs).read_text())["cq_suite"]["questions"]
+        con = duckdb.connect(*_duckdb_args(args.source.split(":", 1)[1]))
+    try:
+        r = maintain.plan(doc, src, suite, con, with_llm=with_llm)
+    finally:
+        if con is not None:
+            con.close()
+    if not r.empty and args.apply:
+        llm = None
+        if with_llm:
+            from semlayer.llm.provider import AnthropicProvider
+            llm = AnthropicProvider()
+        lineage = None
+        if args.manifest:
+            from semlayer.lineage import load_dbt_manifest
+            lineage = load_dbt_manifest(args.manifest)
+        maintain.apply(doc, src, r, llm, lineage=lineage,
+                       options_kw={"use_declared": not args.no_declared_constraints,
+                                   "llm_workers": args.llm_workers,
+                                   "query_workers": args.query_workers})
+        _save_doc(args.doc, doc)
+    if args.json:
+        print(json.dumps(r.as_dict(), indent=1))
+    else:
+        print(maintain.render(r, args.doc, args.source))
+    if r.empty:
+        return 0
+    if r.applied:
+        return 0 if r.valid else 1
+    return 1  # drift found, nothing written: the CI-hook answer
 
 
 def _add_review_parser(sub) -> None:
@@ -719,10 +788,7 @@ def _cmd_drift(args: argparse.Namespace) -> int:
     src = open_source_from_uri(args.source)
     # the modeled tables ARE the structural baseline: drift is defined
     # relative to what the document claims, not a stored snapshot
-    old = {t["name"]: {c["name"]: c["sql_type"] for c in t["columns"]}
-           for t in doc["semantic_layer"]["tables"]
-           if t.get("lifecycle") not in ("orphaned",)}
-    events = drift_mod.diff_snapshots(old, drift_mod.snapshot(src))
+    events = drift_mod.diff_snapshots(drift_mod.baseline(doc), drift_mod.snapshot(src))
     events += drift_mod.semantic_drift(src, doc)
     if not events:
         print("no drift detected")
@@ -914,6 +980,7 @@ _HANDLERS = {
     "stitch": _cmd_stitch,
     "init": _cmd_init,
     "infer": _cmd_infer,
+    "maintain": _cmd_maintain,
     "review": _cmd_review,
     "probe": _cmd_probe,
     "drift": _cmd_drift,

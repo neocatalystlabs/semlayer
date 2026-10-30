@@ -12,6 +12,48 @@ true. Every step of it is a shipped primitive:
 | merge | part of `--into` | reviewed and certified content is kept; a disagreement is a recorded conflict; a dropped column is orphaned, never deleted |
 | ask | `semlayer review layer.yaml` | the new table's columns join the queue; the human's earlier verdicts are still there |
 
+## One command: `semlayer maintain`
+
+```bash
+semlayer maintain layer.yaml snowflake --cqs cqs.yaml          # dry run: detect and plan
+semlayer maintain layer.yaml snowflake --cqs cqs.yaml --apply  # re-infer and merge
+semlayer maintain layer.yaml snowflake --json                  # one record for an agent
+```
+
+```
+maintain: 3 change(s) in duckdb:mart.duckdb against mart.yaml
+  table_added      loyalty_pts
+  column_dropped   ord_hdr.tot_amt
+  column_added     ord_hdr.gift_flg
+changeset: 3 element(s) orphaned, never deleted; 2 demoted; 17 competency question(s) flagged
+plan: re-infer 2 table(s) without an LLM: loyalty_pts, ord_hdr; merge into mart.yaml keeping reviewed and certified content
+dry run: nothing written. Add --apply to do it.
+```
+
+**Dry run is the default.** The command detects, builds the changeset, names
+the tables it would re-infer and whether it would call the LLM, and stops.
+Exit 0 when nothing changed, exit 1 when there is work, so a cron or CI job
+can tell the two apart. A team can run it nightly for a week and read the
+plans before letting it write.
+
+**`--apply`** re-infers only the tables the changeset names, merges them into
+the layer with reviewed and certified content protected, saves, prints the
+merge report, and says how many questions joined the review queue. A second
+run then finds nothing: the baseline a maintained layer is compared against
+leaves orphaned columns out, so a drop is reported once.
+
+**It makes the same choices `infer` makes.** The LLM is used when
+`ANTHROPIC_API_KEY` is set and `--no-llm` turns it off; `--llm-workers`,
+`--query-workers`, `--manifest` and `--no-declared-constraints` mean what
+they mean on `infer`. A layer is maintained by the engine that built it; a
+maintainer that quietly used a different one would drift the layer for
+reasons no diff could show.
+
+**`--json`** carries everything in one record: the events, the changeset
+(`orphaned`, `needs_inference`, `affected`, `broken_cqs`, `demoted`), the
+plan, whether it applied, the merge report, and the review queue before and
+after.
+
 ## The replay
 
 The maintainer design recorded that this loop had been run once, by hand,
@@ -35,10 +77,10 @@ inference recording, and the targeted re-inference is deterministic.
 
 ## What is not built
 
-The loop above is run by a person typing three commands. There is no runner
-that chains them, no schedule or change-feed trigger (the Snowflake DDL feed
-exists in the connector and is wired to nothing), no pull request, no policy
-deciding what merges without a human and what escalates, and no measurement
-of whether the layer decays over many events. Those are the maintainer's
-remaining pieces, in that order. The policy itself is not part of this
-repository.
+`maintain` is the runner, and a person or a job still has to start it. There
+is no schedule or change-feed trigger (the Snowflake DDL feed exists in the
+connector and is wired to nothing), no pull request, no policy deciding what
+merges without a human and what escalates (`--apply` is that decision, taken
+by whoever types it), and no measurement of whether the layer decays over
+many events. Those are the maintainer's remaining pieces, in that order. The
+policy itself is not part of this repository.
