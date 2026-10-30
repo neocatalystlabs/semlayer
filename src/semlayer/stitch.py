@@ -83,6 +83,9 @@ class StitchResult:
     unresolved: list[dict] = field(default_factory=list)
     mode: str = "inclusion"      # or "names_only"
     copies: int = 0              # same_entity edges written
+    kept: int = 0                # --refresh: reviewed/certified/deprecated edges carried over
+    orphaned: int = 0            # --refresh: kept edges whose end no longer exists
+    superseded: int = 0          # --refresh: fresh inferences a kept edge already answers
 
 
 def _owner(table: str) -> str:
@@ -501,4 +504,109 @@ def stitch(member_paths: list[str | Path], hub_name: str, out_path: str | Path,
                 "%d unresolved, %d same-entity copies (%s%s)", len(children), result.tested,
                 result.accepted, result.review, len(result.unresolved), result.copies,
                 result.mode, via)
+    return result
+
+
+# Lifecycles a refresh carries over untouched. `reviewed` and `certified` are
+# the analyst's word; `deprecated` is their "no" (review's reject), kept so
+# the same inference does not come back; `orphaned` stays until deleted.
+KEPT_LIFECYCLES = frozenset({"reviewed", "certified", "deprecated", "orphaned"})
+
+
+def _ends(r: dict) -> tuple[tuple[str, str], tuple[str, str]]:
+    return ((r["from"]["table"], r["from"]["columns"][0]),
+            (r["to"]["table"], r["to"]["columns"][0]))
+
+
+def merge_hub(old: dict, fresh: dict, tables: dict, result: StitchResult) -> dict:
+    """The refreshed hub: the old hub's own content, kept edges, then fresh inferences.
+
+    - an old edge whose lifecycle is reviewed, certified, deprecated or
+      orphaned is kept as it is; if either end no longer exists in the
+      members it becomes `orphaned`, and an orphan whose ends are back stays
+      orphaned until a person says otherwise;
+    - an old `inferred` edge is dropped: the fresh run speaks for inference;
+    - a fresh edge is dropped when a kept edge already answers it: the same
+      two ends (whatever the verdict was), or the same child column under a
+      reviewed or certified edge (the analyst named that key's parent). A
+      deprecated edge blocks only itself, so a different parent may still be
+      proposed for the key;
+    - `unresolved` is the fresh list, minus keys a kept active edge covers,
+      plus keys whose only fresh parent was the one the analyst rejected.
+    """
+    osl, fsl = old["semantic_layer"], fresh["semantic_layer"]
+    kept: list[dict] = []
+    for r in osl.get("relationships", []) or []:
+        if r.get("lifecycle", "inferred") not in KEPT_LIFECYCLES:
+            continue
+        (ft, fc), (tt, tc) = _ends(r)
+        missing = [f"{t}.{c}" for t, c in ((ft, fc), (tt, tc))
+                   if t not in tables or c not in {x["name"] for x in tables[t].get("columns", [])}]
+        if missing and r.get("lifecycle") != "orphaned":
+            r = dict(r)
+            r["lifecycle"] = "orphaned"
+            r.setdefault("provenance", []).append(
+                {"signal": "statistic", "detail": f"refresh: {', '.join(missing)} no longer "
+                                                  f"exists in its member document"})
+            result.orphaned += 1
+        kept.append(r)
+    result.kept = len(kept)
+    by_ends = {frozenset(_ends(r)): r for r in kept}
+    active_child = {_ends(r)[0] for r in kept
+                    if r.get("lifecycle") in ("reviewed", "certified") and not r.get("same_entity")}
+    out_edges = list(kept)
+    rejected_only: set[tuple[str, str]] = set()
+    for r in fsl.get("relationships", []) or []:
+        child = _ends(r)[0]
+        hit = by_ends.get(frozenset(_ends(r)))
+        copy = bool(r.get("same_entity"))
+        if hit is not None or (child in active_child and not copy):
+            result.superseded += 1
+            if hit is not None and hit.get("lifecycle") == "deprecated" and not copy:
+                rejected_only.add(child)
+            continue
+        out_edges.append(r)
+    covered = {_ends(r)[0] for r in out_edges
+               if r.get("lifecycle") not in ("deprecated", "orphaned") and not r.get("same_entity")}
+    unresolved = [u for u in fsl.get("unresolved", []) or []
+                  if (u["table"], u["column"]) not in covered]
+    listed = {(u["table"], u["column"]) for u in unresolved}
+    for t, c in sorted(rejected_only - covered - listed):
+        unresolved.append({"table": t, "column": c,
+                           "note": "the only parent found was rejected in review"})
+    merged = {"semantic_layer": dict(osl)}
+    msl = merged["semantic_layer"]
+    msl["generated_by"] = fsl.get("generated_by", msl.get("generated_by"))
+    msl["members"] = fsl["members"]
+    msl.pop("relationships", None)
+    msl.pop("unresolved", None)
+    if out_edges:
+        msl["relationships"] = out_edges
+    if unresolved:
+        msl["unresolved"] = unresolved
+    result.hub = merged
+    result.unresolved = unresolved
+    return merged
+
+
+def refresh(hub_path: str | Path, source=None, query_workers: int = 4,
+            via_label: str | None = None) -> StitchResult:
+    """Re-infer a hub's seam from the members it lists, under `merge_hub`'s rule."""
+    hub_path = Path(hub_path)
+    old = load_yaml(hub_path.read_text())
+    osl = old["semantic_layer"]
+    if not osl.get("members"):
+        raise ValueError(f"{hub_path} is not a hub: it lists no members")
+    member_paths: list[str | Path] = [(hub_path.resolve().parent / m["path"]).resolve()
+                                      for m in osl["members"]]
+    result = stitch(member_paths, osl["name"], hub_path, source=source,
+                    query_workers=query_workers, via_label=via_label)
+    members, _ = _load_members(member_paths, osl["name"], hub_path.resolve().parent)
+    rs = resolve({"semantic_layer": {k: v for k, v in osl.items()
+                                      if k not in ("relationships", "unresolved")}}, members)
+    tables = {t["name"]: t for t in rs.doc["semantic_layer"].get("tables", [])}
+    merge_hub(old, result.hub, tables, result)
+    logger.info("refresh: %d edges kept (%d orphaned), %d fresh inferences superseded, "
+                "%d unresolved", result.kept, result.orphaned, result.superseded,
+                len(result.unresolved))
     return result

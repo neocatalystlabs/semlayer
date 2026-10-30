@@ -199,3 +199,86 @@ def test_without_a_connection_a_copy_is_proposed_undecided_and_queued(tmp_path):
     items = [i for i in for_hub(collect(load_set(tmp_path / "acme.yaml").doc), "acme")
              if i.kind == "same_entity"]
     assert len(items) == 1 and "undecided" in items[0].claim
+
+
+def test_refresh_keeps_verdicts_replaces_inferences_and_orphans_lost_ends(tmp_path):
+    """The analyst's word survives a refresh; inference is redone; a lost end is orphaned.
+
+    After the first stitch the analyst rejects fct_gl.customer_id -> sales
+    (deprecated) and accepts both cost-centre edges (reviewed). Then the
+    members move: sales drops cost_center_id from fct_orders, finance adds a
+    region_id. Refresh must keep the rejection and not re-propose it, keep
+    the accepted finance edge as reviewed, orphan the accepted sales edge,
+    and find the new region key. The hub file stays a hub.
+    """
+    from semlayer.review import ReviewItem, apply_to_hub
+    from semlayer.setdoc import load_set
+    from semlayer.stitch import refresh
+
+    members = _members(tmp_path)
+    con = duckdb.connect(str(tmp_path / "acme.duckdb"), read_only=True)
+    try:
+        result = stitch(members, "acme", tmp_path / "acme.yaml", source=DuckDBSource(con),
+                        query_workers=1)
+    finally:
+        con.close()
+    hub = result.hub
+    rels = {(r["from"]["table"], r["from"]["columns"][0]): r for r in hub["semantic_layer"]["relationships"]}
+    def item(key):
+        return ReviewItem("seam_edge", key[0], key[1], "", "", ref=f"seam.{rels[key]['name']}")
+    assert apply_to_hub(hub, item(("finance/fct_gl", "customer_id")), "reject")
+    assert apply_to_hub(hub, item(("finance/fct_gl", "cost_center_id")), "accept")
+    assert apply_to_hub(hub, item(("sales/fct_orders", "cost_center_id")), "accept")
+    # a member's own claim is not the hub's to settle
+    assert not apply_to_hub(hub, ReviewItem("low_confidence", "sales/dim_customer", "segment",
+                                            "", ""), "accept")
+    (tmp_path / "acme.yaml").write_text(yaml.safe_dump(hub, sort_keys=False))
+
+    # the members move
+    sales = yaml.safe_load((tmp_path / "sales.yaml").read_text())
+    for t in sales["semantic_layer"]["tables"]:
+        if t["name"] == "fct_orders":
+            t["columns"] = [c for c in t["columns"] if c["name"] != "cost_center_id"]
+    (tmp_path / "sales.yaml").write_text(yaml.safe_dump(sales, sort_keys=False))
+    con = duckdb.connect(str(tmp_path / "acme.duckdb"))
+    con.execute("alter table finance.fct_gl add column region_id integer")
+    con.execute("update finance.fct_gl set region_id = 1 + gl_line_id % 3")
+    con.close()
+    finance = yaml.safe_load((tmp_path / "finance.yaml").read_text())
+    for t in finance["semantic_layer"]["tables"]:
+        if t["name"] == "fct_gl":
+            t["columns"].append({"name": "region_id", "sql_type": "INTEGER",
+                                 "entity_role": "foreign_key",
+                                 "cardinality": {"distinct": 3, "lower_bound": 3, "upper_bound": 3,
+                                                 "method": "exact", "null_count": 0}})
+    (tmp_path / "finance.yaml").write_text(yaml.safe_dump(finance, sort_keys=False))
+
+    con = duckdb.connect(str(tmp_path / "acme.duckdb"), read_only=True)
+    try:
+        res = refresh(tmp_path / "acme.yaml", source=DuckDBSource(con), query_workers=1)
+    finally:
+        con.close()
+    (tmp_path / "acme.yaml").write_text(yaml.safe_dump(res.hub, sort_keys=False))
+    sl = res.hub["semantic_layer"]
+    assert sl["members"] and "tables" not in sl                     # still a hub, not the estate
+    by = {}
+    for r in sl["relationships"]:
+        by.setdefault((r["from"]["table"], r["from"]["columns"][0]), []).append(r)
+    rejected = by[("finance/fct_gl", "customer_id")]
+    assert len(rejected) == 1 and rejected[0]["lifecycle"] == "deprecated"      # kept, not re-proposed
+    assert by[("finance/fct_gl", "cost_center_id")][0]["lifecycle"] == "reviewed"
+    lost = by[("sales/fct_orders", "cost_center_id")][0]
+    assert lost["lifecycle"] == "orphaned" and "refresh" in lost["provenance"][-1]["detail"]
+    new = by[("finance/fct_gl", "region_id")][0]
+    assert new["to"]["table"] == "platform/dim_region" and new["lifecycle"] == "inferred"
+    assert res.kept == 3 and res.orphaned == 1 and res.superseded >= 1
+    assert ("finance/fct_gl", "customer_id") in {(u["table"], u["column"]) for u in sl["unresolved"]}
+    v = validate_file(tmp_path / "acme.yaml")
+    assert v.ok, v.errors
+    # a rejected edge is not a join path
+    doc = load_set(tmp_path / "acme.yaml").doc
+    doc["semantic_layer"].setdefault("metrics", []).append(
+        {"name": "finance/gl_amount", "type": "simple", "measure": "finance/fct_gl.amount",
+         "agg": "sum"})
+    out = compile_metric(doc, "finance/gl_amount", group_by=["sales/dim_customer.segment"])
+    assert "sql" not in out or not out["sql"]

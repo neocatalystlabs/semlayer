@@ -20,9 +20,13 @@ from semlayer.errors import SemlayerError, SpecError
 
 def _add_stitch_parser(sub) -> None:
     p = sub.add_parser("stitch", help="Infer the seam between several layers and write a hub")
-    p.add_argument("members", nargs="+", help="member layer files (each inferred by its own team)")
-    p.add_argument("-o", "--out", required=True, help="the hub to write, e.g. acme.yaml")
+    p.add_argument("members", nargs="*", help="member layer files (each inferred by its own team)")
+    p.add_argument("-o", "--out", default=None, help="the hub to write, e.g. acme.yaml")
     p.add_argument("--name", default=None, help="the hub's name (default: the output file's stem)")
+    p.add_argument("--refresh", metavar="HUB", default=None,
+                   help="Re-infer an existing hub's seam from the members it lists. Edges you "
+                        "reviewed, certified or rejected are kept; inferred ones are replaced; "
+                        "an edge whose end disappeared becomes orphaned.")
     p.add_argument("--via", metavar="SOURCE", default=None,
                    help="connection the inclusion tests run through, with YOUR grants: "
                         "duckdb:<path> | postgresql://... | snowflake | bigquery. Default: "
@@ -305,11 +309,16 @@ def _cmd_infer(args: argparse.Namespace) -> int:
 
 
 def _cmd_review(args: argparse.Namespace) -> int:
-    from semlayer.review import apply, collect, for_hub
+    from semlayer.review import apply, apply_to_hub, collect, for_hub
+    from semlayer.validate import load_yaml
 
     doc = _load_doc(args.doc)
+    # a hub is reviewed through the resolved set but SAVED as itself: the
+    # resolved document holds every member's tables, and writing it back
+    # would turn the hub file into a copy of the whole estate
+    hub = load_yaml(Path(args.doc).read_text()) if doc["semantic_layer"].get("members") else None
     items = collect(doc)
-    if doc["semantic_layer"].get("members"):
+    if hub is not None:
         items = for_hub(items, doc["semantic_layer"]["name"])
     if not items:
         print("review queue empty")
@@ -320,12 +329,16 @@ def _cmd_review(args: argparse.Namespace) -> int:
         if args.list:
             continue
         ans = input("    accept/reject/skip [a/r/s]? ").strip().lower()
-        if ans in ("a", "accept"):
-            apply(doc, it, "accept")
-        elif ans in ("r", "reject"):
-            apply(doc, it, "reject")
+        verdict = {"a": "accept", "accept": "accept", "r": "reject", "reject": "reject"}.get(ans)
+        if verdict is None:
+            continue
+        if hub is not None:
+            if not apply_to_hub(hub, it, verdict):
+                print("    (belongs to a member: review that file)")
+        else:
+            apply(doc, it, verdict)
     if not args.list:
-        _save_doc(args.doc, doc)
+        _save_doc(args.doc, hub if hub is not None else doc)
         print(f"saved {args.doc}")
     return 0
 
@@ -527,20 +540,36 @@ def _stitch_source(args: argparse.Namespace, member_docs: list[dict]):
 
 
 def _cmd_stitch(args: argparse.Namespace) -> int:
-    from semlayer.stitch import stitch
-    from semlayer.validate import validate_file
+    from semlayer.stitch import refresh, stitch
+    from semlayer.validate import load_yaml, validate_file
 
-    member_docs = [_load_doc(m) for m in args.members]
-    src, workers = _stitch_source(args, member_docs)
-    name = args.name or Path(args.out).stem
-    result = stitch(args.members, name, args.out, source=src, query_workers=workers or 1,
-                    via_label=args.via)
+    if args.refresh:
+        if args.members or args.name:
+            raise SemlayerError("--refresh takes the hub alone: its members and name are in it")
+        hub_sl = load_yaml(Path(args.refresh).read_text())["semantic_layer"]
+        if not hub_sl.get("members"):
+            raise SemlayerError(f"{args.refresh} is not a hub: it lists no members")
+        base = Path(args.refresh).resolve().parent
+        member_docs = [_load_doc(str(base / m["path"])) for m in hub_sl["members"]]
+        src, workers = _stitch_source(args, member_docs)
+        result = refresh(args.refresh, source=src, query_workers=workers or 1, via_label=args.via)
+        args.out = args.out or args.refresh
+    else:
+        if not args.members or not args.out:
+            raise SemlayerError("stitch needs member files and -o, or --refresh HUB")
+        member_docs = [_load_doc(m) for m in args.members]
+        src, workers = _stitch_source(args, member_docs)
+        name = args.name or Path(args.out).stem
+        result = stitch(args.members, name, args.out, source=src, query_workers=workers or 1,
+                        via_label=args.via)
     _save_doc(args.out, result.hub)
     ok = validate_file(args.out).ok
+    kept = (f"{result.kept} kept from before ({result.orphaned} orphaned), "
+            f"{result.superseded} fresh superseded, " if args.refresh else "")
     print(f"wrote {args.out}: {len(result.hub['semantic_layer'].get('relationships', []))} seam "
           f"edges ({result.accepted} accepted, {result.review} for review, "
-          f"{result.copies} same-entity copies), "
-          f"{len(result.unresolved)} unresolved, valid={ok} ({result.mode})")
+          f"{result.copies} same-entity copies, {kept}"
+          f"{len(result.unresolved)} unresolved), valid={ok} ({result.mode})")
     if result.unresolved:
         for u in result.unresolved[:10]:
             print(f"  unresolved: {u['table']}.{u['column']}: {u['note']}")

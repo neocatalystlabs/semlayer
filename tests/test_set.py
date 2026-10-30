@@ -231,3 +231,23 @@ def test_every_fixture_layer_survives_qualification(fixture):
     after = validate_document(doc)
     assert after.ok, after.errors[:5]
     assert all(t["name"].startswith(f"{fixture}/") for t in doc["semantic_layer"]["tables"])
+
+
+def test_a_hub_cannot_yet_be_a_member_and_names_carry_no_slash(tmp_path):
+    """Two doors held open for hubs of hubs: a hub member is refused, not silently
+    empty, and `/` never appears in a document name."""
+    from semlayer.setdoc import resolve
+    leaf = {"semantic_layer": {"spec_version": "0.6.0", "name": "finance", "tables": []}}
+    inner = {"semantic_layer": {"spec_version": "0.6.0", "name": "emea",
+                                "members": [{"name": "finance", "path": "finance.yaml"}]}}
+    top = {"semantic_layer": {"spec_version": "0.6.0", "name": "acme",
+                              "members": [{"name": "emea", "path": "emea.yaml"}]}}
+    rs = resolve(top, {"emea": inner})
+    assert any("cannot yet be a member" in p for p in rs.problems)
+    slashed = {"semantic_layer": {"spec_version": "0.6.0", "name": "emea/finance", "tables": []}}
+    top2 = {"semantic_layer": {"spec_version": "0.6.0", "name": "acme",
+                               "members": [{"name": "emea/finance", "path": "x.yaml"}]}}
+    rs = resolve(top2, {"emea/finance": slashed})
+    assert any("must not contain '/'" in p for p in rs.problems)
+    assert not resolve(top, {"emea": leaf | {"semantic_layer": {**leaf["semantic_layer"],
+                                                                 "name": "emea"}}}).problems

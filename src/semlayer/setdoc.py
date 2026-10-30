@@ -205,6 +205,19 @@ def resolve(hub: dict, members: dict[str, dict]) -> ResolvedSet:
                             f"'{msl.get('name')}'; the hub's name is used")
         if mname == hub_name or mname in names:
             problems.append(f"member '{mname}': name is not unique in the set")
+        if SEP in mname or SEP in hub_name:
+            # `/` is the reference separator. A name holding one would make
+            # `a/b/c` ambiguous today and foreclose nested hubs (a hub as a
+            # member, referenced as `emea/finance/fct_gl`) later.
+            problems.append(f"member '{mname}': a document name must not contain '{SEP}'")
+        if msl.get("members"):
+            # Deliberately refused rather than silently empty: a hub member
+            # has no tables of its own and its members are not opened, so a
+            # top hub stitched over hubs would find no keys and say nothing.
+            # Hubs of hubs are a future design (nested names); until then the
+            # analyst lists the teams' files directly.
+            problems.append(f"member '{mname}' is itself a hub; a hub cannot yet be a member "
+                            f"of another hub -- list its members directly instead")
         names.append(mname)
         warehouses[mname] = msl.get("warehouse")
         if msl.get("warehouse"):

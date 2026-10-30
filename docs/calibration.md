@@ -1226,6 +1226,8 @@ past that. It warns and never refuses: a user who knows their warehouse may be
 right to proceed, and what we must not do is hand them a silently truncated
 layer and let them believe it is complete.
 
+**Retired 2026-10-30.** The warning and both constants are gone. The line was drawn when the candidate-parent cap truncated silently; named parents are no longer capped, and the ladder in `docs/scale.md` is measured to 50,000 tables as one file and per schema. What stands is the honest distinction, now stated in the docs instead of a warning: 50,000 on a synthetic estate, about 2,000 on the largest real warehouse so far.
+
 COLUMNS is the better primary signal -- three of the four limits scale with
 columns and only wall-clock scales with tables -- and both are reported.
 

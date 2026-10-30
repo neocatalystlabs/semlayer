@@ -873,32 +873,15 @@ def test_a_failing_uniqueness_check_degrades_rather_than_aborting():
     assert res.bounds["k"] == DistinctBounds(5, 10), "bounds left as merged"
 
 
-# --- the scale line -------------------------------------------------------
+# --- the run report -------------------------------------------------------
 
-def test_scale_warning_fires_only_past_the_tested_line():
-    """A warning, never a refusal: a user who knows their warehouse may be
-    right to proceed. What we must not do is hand them a silently-truncated
-    layer and let them believe it is complete."""
-    from semlayer.profile.run import SCALE_COLUMNS, SCALE_TABLES, _scale_warning
-
-    assert _scale_warning(SCALE_TABLES, SCALE_COLUMNS) is None, "at the line is fine"
-    assert _scale_warning(10, 10) is None
-    over_t = _scale_warning(SCALE_TABLES + 1, 10)
-    over_c = _scale_warning(10, SCALE_COLUMNS + 1)
-    assert over_t and "tables" in over_t and "--schema" in over_t and "stitch" in over_t
-    assert over_c and "columns" in over_c
-    both = _scale_warning(SCALE_TABLES * 3, SCALE_COLUMNS * 3)
-    assert "tables" in both and "columns" in both
-
-
-def test_the_scale_warning_never_enters_the_document(part_src, tmp_path):
-    """It lives in the run report. The document root is additionalProperties:
-    false, so writing it into the doc broke spec conformance for 11 tests."""
+def test_the_run_report_carries_counts_and_nothing_private_enters_the_document(part_src, tmp_path):
+    """Counts live in the run report. The document root is additionalProperties:
+    false, so writing run facts into the doc broke spec conformance for 11 tests."""
     from semlayer.pipeline import infer_with_report
     from semlayer.validate import validate_document
 
     doc, rep = infer_with_report(part_src, llm=None)
     assert not [k for k in doc if k.startswith("_")], "no private keys survive"
     assert validate_document(doc).ok
-    assert "scale_warning" not in rep, "this warehouse is small"
     assert rep["counts"]["tables"] and rep["counts"]["columns"]
