@@ -50,6 +50,22 @@ class Changeset:
         return not self.events
 
 
+def baseline(doc: dict) -> dict:
+    """What the layer claims the warehouse looks like: table -> {column: sql_type}.
+
+    Orphaned tables AND orphaned columns are left out. An orphaned column is
+    the record of a drop already detected; keeping it in the baseline made
+    every later run report the same drop again, so a maintained layer never
+    went quiet.
+    """
+    return {
+        t["name"]: {c["name"]: c["sql_type"] for c in t["columns"]
+                    if c.get("lifecycle") != "orphaned"}
+        for t in doc["semantic_layer"]["tables"]
+        if t.get("lifecycle") != "orphaned"
+    }
+
+
 def snapshot(source) -> dict:
     """Take a structural snapshot of the warehouse: table -> {column: sql_type}."""
     return {
