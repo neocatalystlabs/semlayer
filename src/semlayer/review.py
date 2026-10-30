@@ -125,7 +125,89 @@ def set_author(name: str | None, signal: str = "human") -> None:
     _SIGNAL = signal
 
 
-_VERDICT_WORD = {"accept": "accepted", "reject": "rejected"}
+_VERDICT_WORD = {"accept": "accepted", "reject": "rejected", "set": "set"}
+
+
+# --------------------------------------------------------------- set verdict
+#
+# Accept says the engine was right; reject says it was wrong and nothing
+# replaces the claim. `set:<value>` says what is true. The value is spec
+# vocabulary only (a semantic type and role, a table type, a metric's base
+# table or filter), never free text: a value in a semantic layer has to be
+# something compile, lint and the MCP tools can act on.
+
+def _is_set(verdict: str) -> bool:
+    return verdict.startswith("set:")
+
+
+def _set_value(verdict: str) -> str:
+    return verdict[4:].strip()
+
+
+def vocabulary() -> dict[str, list[str]]:
+    """The spec's closed lists a `set` verdict may name, read from the schema."""
+    from semlayer.validate import _load_schema
+    s = _load_schema()
+    d = s["$defs"]
+    return {"semantic_type": list(d["semantic_type"]["enum"]),
+            "entity_role": list(d["entity_role"]["enum"]),
+            "table_type": list(d["table"]["properties"]["table_type"]["enum"])}
+
+
+def set_shape(q: Question) -> str | None:
+    """What `set` accepts on this question, or None where set is not available."""
+    if q.kind == "low_confidence":
+        return "<semantic_type>/<entity_role>" if q.items[0].column else "<table_type>"
+    if q.kind == "metric_plausibility":
+        return "base=<table> | filter=<sql expression>"
+    return None
+
+
+def check_set(q: Question, value: str, doc: dict) -> str | None:
+    """Why `set:<value>` cannot be applied to this question, or None when it can."""
+    shape = set_shape(q)
+    if shape is None:
+        return f"set is not available on a {q.kind} question; accept or reject it"
+    if q.kind == "metric_plausibility":
+        return _check_set_metric(q, value, doc)
+    if q.items[0].column:
+        return _check_set_column(value)
+    return _check_set_table(value)
+
+
+def _check_set_column(value: str) -> str | None:
+    voc = vocabulary()
+    st, sep, role = value.partition("/")
+    if not sep or st not in voc["semantic_type"] or role not in voc["entity_role"]:
+        return (f"a column is set as <semantic_type>/<entity_role>; types: "
+                f"{', '.join(voc['semantic_type'])}; roles: {', '.join(voc['entity_role'])}")
+    return None
+
+
+def _check_set_table(value: str) -> str | None:
+    voc = vocabulary()
+    if value not in voc["table_type"]:
+        return f"a table is set as one of: {', '.join(voc['table_type'])}"
+    return None
+
+
+def _check_set_metric(q: Question, value: str, doc: dict) -> str | None:
+    key, sep, rest = value.partition("=")
+    if key == "filter" and sep and rest.strip():
+        return None
+    if key != "base" or not sep:
+        return "a metric is set as base=<table> or filter=<sql expression>"
+    sl = doc["semantic_layer"]
+    t = next((x for x in sl.get("tables", []) if x["name"] == rest), None)
+    if t is None:
+        return f"base={rest!r}: no such table in the document"
+    cols = {c["name"] for c in t["columns"]}
+    for it in q.items:
+        metric = _resolve_ref(sl, it.ref or "") or {}
+        col = str(metric.get("measure", "")).split(".", 1)[-1]
+        if col and col not in cols:
+            return f"base={rest}: it has no column {col!r}, which {metric.get('name')} measures"
+    return None
 
 
 def _human(obj: dict, detail: str) -> None:
@@ -339,6 +421,9 @@ def _apply_low_confidence(target: dict, item: ReviewItem, verdict: str) -> None:
     else:
         what = describe_table(target.get("table_type"))
         consequence = "now of unknown kind" if verdict != "accept" else None
+    if _is_set(verdict):
+        _set_claim(target, item, _set_value(verdict), what)
+        return
     if verdict != "accept":
         if item.column is not None:
             target["semantic_type"] = "unknown"
@@ -347,6 +432,29 @@ def _apply_low_confidence(target: dict, item: ReviewItem, verdict: str) -> None:
             target["table_type"] = "unknown"
     target["lifecycle"] = "reviewed"
     _verdict(target, verdict, what, consequence)
+
+
+def _set_claim(target: dict, item: ReviewItem, value: str, was: str) -> None:
+    """Replace the engine's claim with the reviewer's. Human-authored: no confidence."""
+    if item.column is not None:
+        st, _, role = value.partition("/")
+        target["semantic_type"], target["entity_role"] = st, role
+        if role == "measure":
+            target.setdefault("aggregations", {"allowed": ["sum", "avg", "min", "max", "count"],
+                                               "default": "sum"})
+        else:
+            target.pop("aggregations", None)
+        if st.startswith("pii_"):
+            target["pii"] = True
+        else:
+            target.pop("pii", None)
+        now = describe_column(st, role)
+    else:
+        target["table_type"] = value
+        now = describe_table(value)
+    target.pop("confidence", None)
+    target["lifecycle"] = "reviewed"
+    _verdict(target, "set", f"{was} -> {now}")
 
 
 def _apply_llm_guess_enum(target: dict, verdict: str) -> None:
@@ -458,6 +566,19 @@ def _drop_required_filter(sl: dict, base: str, expr: str) -> None:
 def _apply_metric_plausibility(sl: dict, metric: dict, verdict: str) -> None:
     """Accept promotes; reject deprecates the metric (never deletes it)."""
     what = f"is a metric over {_base_table(metric)}"
+    if _is_set(verdict):
+        key, _, rest = _set_value(verdict).partition("=")
+        if key == "base":
+            col = metric.get("measure", "").split(".", 1)[-1]
+            metric["measure"] = f"{rest}.{col}"
+            now = f"is a metric over {rest}"
+        else:
+            metric["filter"] = rest
+            now = f"{what}, filtered to {rest}"
+        metric.pop("confidence", None)
+        metric["lifecycle"] = "reviewed"
+        _verdict(metric, "set", f"{what} -> {now}")
+        return
     if verdict == "accept":
         metric["lifecycle"] = "reviewed"
         _verdict(metric, verdict, what)
@@ -580,7 +701,7 @@ _LEGACY_WHAT = "(claim not recorded: written before verdicts carried their claim
 
 
 def _parse_detail(detail: str) -> tuple[str, str]:
-    for v in ("accepted", "rejected"):
+    for v in ("accepted", "rejected", "set"):
         if detail.startswith(v + ": "):
             return v, detail[len(v) + 2:]
     low = detail.lower()
@@ -740,7 +861,8 @@ class Question:
             "objects": [{"where": i.location, "table": i.table, "column": i.column,
                          "claim": i.claim, "evidence": i.evidence, "ref": i.ref}
                         for i in self.items],
-            "on_accept": self.on_accept, "on_reject": self.on_reject, "notes": self.notes,
+            "on_accept": self.on_accept, "on_reject": self.on_reject,
+            "set_accepts": set_shape(self), "notes": self.notes,
         }
 
 

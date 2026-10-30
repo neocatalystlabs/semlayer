@@ -128,6 +128,42 @@ evidence the engine did not (a dbt description, a catalog tag, a stated
 convention, a query log). Where your only information is what the engine
 already saw, your yes is a coin flip dressed as a verdict; leave the note.
 
+## Saying what is true: `set`
+
+Accept says the engine was right. Reject says it was wrong and nothing
+replaces the claim: the column is left untyped, the metric deprecated. When
+you know what is true, `set` says so:
+
+```bash
+semlayer review layer.yaml --answer "q-9706b59a=set:identifier/primary_key"   # 30 sk_* columns
+semlayer review layer.yaml --answer "q-64c3907b=set:fact"                      # 19 *_hist tables
+semlayer review layer.yaml --answer "q-7de5ca04=set:base=fct_orders"           # a metric's table
+```
+
+Interactively, `t` prompts for the value and the question's `set` line says
+what shape it takes: `<semantic_type>/<entity_role>` for a column question,
+`<table_type>` for a table question, `base=<table>` or `filter=<expression>`
+for a metric question. Every value is checked against the spec vocabulary
+before anything is written, and a `set` on a question that has no such shape
+(a seam edge, a guessed enum) is refused: those are yes-or-no claims.
+
+What it writes: the value you named, `lifecycle: reviewed`, no `confidence`
+because the value is now human-authored, and a provenance line that keeps
+the claim it replaced:
+
+```yaml
+- signal: human
+  date: '2026-10-30'
+  by: raj
+  detail: 'set: holds a count or quantity; summed (type quantity) -> identifies a row; the table''s key (type identifier)'
+```
+
+A column set to a measure role gains the default aggregations; one set away
+from it loses them; a `pii_*` type sets the `pii` flag. `--decisions` counts
+`set` verdicts separately. There is no free-text path on purpose: a value in
+a semantic layer has to be something compile, lint and the MCP tools can act
+on, and only the vocabulary is. Descriptions and remarks go in `--note`.
+
 ## Hubs: one answer across the members
 
 A hub's own queue is its seam: the cross-member joins and same-entity pairs
@@ -158,6 +194,7 @@ seconds and one accept reached 753 columns in 41 files.
 |---|---|---|
 | see the queue | `review --list`, `--question N` | `review --list --json` |
 | decide | interactive, or `--answer K=accept --exclude K=obj` | `--answer ... --agent --by NAME` |
+| say what is true | `t`, or `--answer K=set:<value>` | same, within the autonomy policy |
 | cannot decide | skip, or `--note` | `--note "K=why" --agent --by NAME` |
 | read the record | `review --decisions` | `review --decisions --json` |
 | one item at a time | `review --flat` | |

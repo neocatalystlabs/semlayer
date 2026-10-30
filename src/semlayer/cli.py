@@ -196,8 +196,10 @@ def _add_review_parser(sub) -> None:
                         "and write verdicts into the member files (you need write access to them)")
     p.add_argument("--question", metavar="N|KEY", default=None,
                    help="With --list: print one question with every object it covers")
-    p.add_argument("--answer", metavar="N=accept,KEY=reject,...", default=None,
-                   help="Answer questions non-interactively (by number or stable key)")
+    p.add_argument("--answer", metavar="N=accept,KEY=reject,KEY=set:<value>,...", default=None,
+                   help="Answer questions non-interactively (by number or stable key); "
+                        "set:<value> replaces the claim with yours, in spec vocabulary "
+                        "(see each question's `set` line)")
     p.add_argument("--exclude", metavar="N=obj,obj;...", default=None,
                    help="With --answer: objects to leave out of a question's verdict")
     p.add_argument("--note", metavar="N=text", action="append", default=None,
@@ -398,7 +400,9 @@ def _print_decisions(doc: dict, undecided: int, is_hub: bool, as_json: bool,
             print(f"  {d.verdict:9} {len(run)} objects: {d.what}\n{'':12}{where}")
     n_a = sum(d.verdict == "accepted" for d in rows)
     n_r = sum(d.verdict == "rejected" for d in rows)
-    print(f"\n{len(rows)} decisions: {n_a} accepted, {n_r} rejected.  "
+    n_s = sum(d.verdict == "set" for d in rows)
+    print(f"\n{len(rows)} decisions: {n_a} accepted, {n_r} rejected"
+          + (f", {n_s} set" if n_s else "") + ".  "
           f"Undecided items in the queue: {undecided} (semlayer review --list)")
     if is_hub:
         print("members hold their own decisions: run this on each member file")
@@ -431,6 +435,10 @@ def _print_question(q, full: bool) -> None:
                   + (f" ... and {len(objs) - 6} more (--list --question {q.n})"
                      if len(objs) > 6 else ""))
         print(f"   accept -> {q.on_accept}; reject -> {q.on_reject}")
+        from semlayer.review import set_shape
+        shape = set_shape(q)
+        if shape:
+            print(f"   set {shape} -> replaces the claim with yours, human-authored")
     for nt in q.notes:
         who = nt.get("by") or nt.get("signal")
         print(f"   note ({who}, {nt.get('date')}): {nt.get('note')}")
@@ -534,11 +542,18 @@ def _review_answer(args, doc, hub, asked, not_asked, members=None) -> int:
     touched: set[str] = set()
     # parse everything before changing anything, so a bad flag changes nothing
     excludes = _parse_excludes(args, asked)
+    from semlayer.review import check_set
+
     verdicts = []
     for k, v in _parse_pairs(args.answer, ","):
-        if v not in ("accept", "reject"):
-            raise SpecError(f"verdict must be accept or reject, got {v!r}")
-        verdicts.append((_find_question(asked + not_asked, k), v))
+        q = _find_question(asked + not_asked, k)
+        if v.startswith("set:"):
+            why = check_set(q, v[4:].strip(), doc)
+            if why:
+                raise SpecError(f"question {q.n}: {why}")
+        elif v not in ("accept", "reject"):
+            raise SpecError(f"verdict must be accept, reject or set:<value>, got {v!r}")
+        verdicts.append((q, v))
     notes = []
     for spec in args.note or []:
         k, _, text = spec.partition("=")
@@ -548,7 +563,8 @@ def _review_answer(args, doc, hub, asked, not_asked, members=None) -> int:
     changed = 0
     for q, v in verdicts:
         n = answer(doc, q, v, excludes.get(q.key), hub, mdocs, touched)
-        print(f"{v}ed question {q.n} ({q.key}): {n} of {len(q.items)} {q.noun}(s)")
+        word = "set" if v.startswith("set:") else f"{v}ed"
+        print(f"{word} question {q.n} ({q.key}): {n} of {len(q.items)} {q.noun}(s)")
         changed += n
     for q, text in notes:
         note(target, q, text)
@@ -589,7 +605,7 @@ def _review_questions(args, doc, hub, items, asked, not_asked, members=None) -> 
     for q in asked:
         _print_question(q, full=False)
         if not args.list:
-            verdict, exclude = _ask(q)
+            verdict, exclude = _ask(q, doc)
             if verdict is not None:
                 saved += answer(doc, q, verdict, exclude, hub, mdocs, touched)
     if not_asked:
@@ -602,12 +618,24 @@ def _review_questions(args, doc, hub, items, asked, not_asked, members=None) -> 
     return 0
 
 
-def _ask(q) -> tuple[str | None, set[str]]:
+def _ask(q, doc: dict) -> tuple[str | None, set[str]]:
     """Prompt for one question: a verdict (or None for skip) and the objects left out."""
+    from semlayer.review import check_set, set_shape
+
     exclude: set[str] = set()
+    shape = set_shape(q)
+    menu = "accept/reject/skip/expand" + ("/set" if shape else "") + ", or x 3,7 to leave out"
+    keys = "[a/r/s/e" + ("/t" if shape else "") + "/x]"
     while True:
-        ans = input("    accept/reject/skip/expand, or x 3,7 to leave out [a/r/s/e/x]? ")
+        ans = input(f"    {menu} {keys}? ")
         ans = ans.strip().lower()
+        if shape and ans in ("t", "set"):
+            value = input(f"    set {shape}: ").strip()
+            why = check_set(q, value, doc)
+            if why:
+                print(f"    {why}")
+                continue
+            return f"set:{value}", exclude
         if ans in ("e", "expand"):
             for i, o in enumerate(q.objects, 1):
                 print(f"    {i:4}. {o}    {q.items[i - 1].evidence}")
