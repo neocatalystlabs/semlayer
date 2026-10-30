@@ -269,6 +269,38 @@ over the 4,311 modelled tables, plus two lines for the 7,387 set aside. On every
 core or staging throughout, so nothing there changed. A reviewer who
 disagrees with a tier changes it, and the next run models the table in full.
 
+**The multi-repo estate.** The same generator has a `--schemas` layout: each
+domain's star schema in a schema of its own, the conformed dimensions in
+`platform`, every copy in the schema of what it copies, and in some domains
+a shadow copy of a platform dimension with two columns of its own. Run the
+way the teams would, one `infer --schema` per schema and then `semlayer
+stitch` over the member files through the same warehouse, 5,000 tables on
+the same machine, 20 query workers:
+
+| | 5,000 tables | 15,000 tables |
+|---|---|---|
+| schemas (members) | 41 | 41 |
+| infer, all members, one after another | 112 s (largest, `platform`, 10 s) | 263 s (largest 24 s) |
+| stitch | 25 s | 88 s |
+| wall | 137 s | 351 s |
+| peak RSS | 0.7 GB | 1.7 GB |
+| hub file; largest member | 0.6 MB; 1.4 MB | 2.0 MB; 2.8 MB |
+| seam: gold keys crossing schemas | 1,019 of 1,019, precision 1.0 | 3,110 of 3,110, precision 1.0 |
+| all foreign keys | 0.948 precision, 1.00 recall, 0 wrong | 0.956, 1.00, 0 wrong |
+| MCP startup on the hub (parse and qualify members) | 3.1 s | 12.8 s |
+| MCP search; domains; the rest | 67 ms; 18 ms; under 1 ms | 218 ms; 58 ms; under 7 ms |
+
+The flat layout of the same 5,000 tables on this engine runs in 68 s
+(profile 15 s, link 38 s), and the flat 15,000 in 307 s, so the per-schema
+route costs more wall time when the members run one after another: each
+`infer` pays the catalogue listing and startup again, and copies of one
+entity that sit in different schemas are no longer folded into one, so the
+set holds 13,251 tables where the flat layer held 11,698. Teams run theirs independently, so
+that cost is theirs to parallelise, and the runner will do the same. What
+the split buys is visible in the file sizes: no team's layer is over 1.4 MB,
+the analyst's hub is 0.6 MB, and the cross-domain surface is the only thing
+that pays to load everything.
+
 Two honest limits remain. The ladder is an in-process DuckDB file, so the
 query term is CPU on one machine and does not predict a network warehouse,
 where each statement is a round trip to your compute. And the warehouse is

@@ -203,13 +203,26 @@ def infer_with_report(source, llm=None, options: InferOptions | None = None, *,
     return doc, report
 
 
+def _duckdb_args(path: str) -> tuple:
+    """Open a DuckDB file read-only; the engine never writes to a source.
+
+    Read-only is also what lets several processes read one file at once:
+    the default read-write open takes an exclusive lock, and on Windows a
+    second `infer --schema` on the same file failed with "being used by
+    another process". An in-memory database cannot be read-only.
+    """
+    if path in ("", ":memory:"):
+        return (path,)
+    return (path, True)   # (database, read_only)
+
+
 def open_source_from_uri(uri: str):
     """duckdb:<path> | postgresql://... | snowflake | bigquery | postgres (env-configured)."""
     if uri.startswith("duckdb:"):
         import duckdb
 
         from semlayer.source import DuckDBSource
-        return DuckDBSource(duckdb.connect(uri.split(":", 1)[1]))
+        return DuckDBSource(duckdb.connect(*_duckdb_args(uri.split(":", 1)[1])))
     if uri == "snowflake":
         from semlayer.connectors.snowflake import SnowflakeSource
         return SnowflakeSource.from_env(persona="reader")

@@ -22,9 +22,15 @@ def list_domains(doc: dict) -> list[dict]:
     out = []
     if sl.get("members"):
         # a resolved set: each member document is a domain (the hub too, if it
-        # owns tables), ahead of any domains the members declared themselves
+        # owns tables), ahead of any domains the members declared themselves.
+        # One pass over the tables: 41 members x 36,000 tables per call was
+        # 58 ms at 15,000 tables and growing with both.
+        counts: dict[str, int] = {}
+        for t in sl.get("tables", []):
+            owner = t["name"].split("/", 1)[0] if "/" in t["name"] else ""
+            counts[owner] = counts.get(owner, 0) + 1
         for n in [sl.get("name", ""), *(m["name"] for m in sl["members"])]:
-            count = sum(1 for t in sl.get("tables", []) if t["name"].startswith(f"{n}/"))
+            count = counts.get(n, 0)
             if count or n != sl.get("name", ""):
                 out.append({"name": n, "tables": count,
                             "description": "hub" if n == sl.get("name", "") else "member document"})
