@@ -186,6 +186,8 @@ def _join_paths(sl: dict, tables: dict, base: str) -> tuple[dict, set]:
     """
     edges: dict[str, list] = {}
     for r in sl.get("relationships", []):
+        if r.get("lifecycle") in ("deprecated", "orphaned"):
+            continue                      # a rejected or lost edge is not a join path
         if r["cardinality"] in ("many_to_one", "one_to_one"):
             edges.setdefault(r["from"]["table"], []).append(
                 (r["to"]["table"], r["from"]["columns"], r["to"]["columns"]))

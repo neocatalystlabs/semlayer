@@ -1,9 +1,13 @@
 # Scale: what we support, and how to make it fast
 
-**semlayer is tested to 2,000 tables / 30,000 columns.** Past that it still
-runs, and it tells you it is past the line, but foreign-key discovery starts
-truncating its candidate list and the output document becomes impractical to
-load. Narrow the run instead.
+**semlayer runs to 50,000 tables.** Measured on a synthetic estate of that
+size both as one file (40 minutes on a 20-core machine) and the way teams
+work, one `infer --schema` per schema and `semlayer stitch` over the files
+(13 minutes, four members at a time); the ladder is below. The largest REAL
+warehouse it has run against is about 2,000 tables, so past that you are on
+the ladder's evidence, not a customer's. Nothing is capped or truncated at
+any size: named candidate parents are never dropped, and the output is one
+file per team plus a hub.
 
 Data **volume** is not the limit. 4TB and 45TB are the same architecture: the
 cost is linear in rows and bounded by partitioning. What costs us is the number
@@ -143,7 +147,7 @@ temp, deprecated, empty. `--only` takes table or `schema.table` names and fails
 loudly on a name it cannot find, so a typo does not silently produce a thinner
 layer.
 
-## If you are past 2,000 tables
+## The ladder: 2,000 to 50,000 tables
 
 The free build has been walked up a ladder of synthetic warehouses
 (`fixtures/generators/scale.py`: N tables in an enterprise mix of 8% core

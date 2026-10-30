@@ -14,7 +14,7 @@ from semlayer.describe import describe_source
 from semlayer.enrich import enrich_source
 from semlayer.errors import SemlayerError, SourceError
 from semlayer.link import link_source
-from semlayer.profile.run import _scale_warning, profile_with_stats
+from semlayer.profile.run import profile_with_stats
 
 logger = logging.getLogger(__name__)
 
@@ -190,14 +190,6 @@ def infer_with_report(source, llm=None, options: InferOptions | None = None, *,
         "relationships": len(sl.get("relationships", [])),
         "metrics": len(sl.get("metrics", [])),
     }
-    # Computed here rather than stashed in the document: the root carries
-    # additionalProperties: false, so an extra key breaks spec conformance for
-    # anyone validating profile output -- which is how 11 tests failed when this
-    # was written into the doc. The pipeline already holds the counts.
-    warn = _scale_warning(report["counts"]["tables"], report["counts"]["columns"])
-    if warn:
-        report["scale_warning"] = warn
-        logger.warning("%s", warn)
     if llm is not None:
         report["llm"] = {"model": llm.model, "spend": llm.spend_summary}
     return doc, report

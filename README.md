@@ -60,7 +60,7 @@ Everything lands with `confidence` ([calibrated, with the misses published](docs
   them](cassettes/README.md)). The warehouses behind the numbers, with sources,
   pinned versions and licences, are listed in
   [docs/warehouses.md](docs/warehouses.md).
-- Scale: tested to **2,000 tables / 30,000 columns**; the run says so when a warehouse is past that. Data VOLUME is not the limit -- 4TB and 45TB are the same architecture. [How to make it fast](docs/scale.md).
+- Scale: measured to **50,000 tables**, as one file or as one layer per team stitched into a hub; the largest real warehouse run so far is about 2,000. Data VOLUME is not the limit -- 4TB and 45TB are the same architecture. [The ladder, and how to make it fast](docs/scale.md).
 - Warehouses: **Snowflake, BigQuery, PostgreSQL, DuckDB** (+ Iceberg on S3 via the [DuckDB bridge](docs/iceberg-bridge.md)). PostgreSQL also reaches Redshift and other Postgres-protocol engines, whose catalogs differ in places and are untested. Exporter: **dbt** (losses reported, never silent). LLM: Anthropic API (Bedrock/Vertex routing is next).
 - Not included: hosted service, ontology enrichment (it failed our own ablation gate — [receipts](docs/ablation-m5.md)), LookML/RDF exporters.
 - The eval harness ships in this repo — fixtures, gold layers, competency questions, benchmark runner. **Run our numbers yourself**: `python fixtures/build.py && pytest tests/ -q`.

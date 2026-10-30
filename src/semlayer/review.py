@@ -352,8 +352,24 @@ def _drop_from_routing(sl: dict, table: str) -> None:
             r["use"] = [u for u in r["use"] if u != table]
 
 
+def _apply_seam(sl: dict, rel: dict, verdict: str) -> None:
+    """Accept: reviewed, kept across `stitch --refresh`; reject: deprecated, also kept.
+
+    A rejected edge stays in the hub so the same inference does not come
+    back on the next refresh; consumers do not traverse it.
+    """
+    if verdict == "accept":
+        rel["lifecycle"] = "reviewed"
+        _human(rel, "seam edge accepted in review")
+    else:
+        rel["lifecycle"] = "deprecated"
+        _human(rel, "seam edge rejected in review: these tables are not related this way")
+
+
 def _resolve_ref(sl: dict, ref: str) -> dict | None:
     kind, _, name = ref.partition(".")
+    if kind == "seam":
+        return next((r for r in sl.get("relationships", []) if r.get("name") == name), None)
     if kind == "metrics":
         return next((m for m in sl.get("metrics", []) if m["name"] == name), None)
     if kind == "aggregate_tables":
@@ -362,6 +378,8 @@ def _resolve_ref(sl: dict, ref: str) -> dict | None:
 
 
 _REF_APPLIERS = {
+    "seam_edge": _apply_seam,
+    "same_entity": _apply_seam,
     "discovered_filter": _apply_discovered_filter,
     "metric_plausibility": _apply_metric_plausibility,
     "aggregate_mapping": _apply_aggregate_mapping,
@@ -396,3 +414,24 @@ def _full_prov(obj) -> str:
     so clipping them to 60 characters would hide the reason to say yes.
     """
     return "; ".join(p.get("detail", "") for p in (obj.get("provenance") or []))
+
+
+def apply_to_hub(hub: dict, item: ReviewItem, verdict: str) -> bool:
+    """Apply a verdict from a hub's queue to the hub's OWN document, not the resolved set.
+
+    The resolved set is a reading surface; saving it would write every
+    member's tables into the hub file. Seam items live in the hub's
+    relationships under the same names. An item on one of the hub's own
+    tables is applied with the `hub/` prefix removed. An item that belongs
+    to a member is not the hub's to settle: returns False, nothing changes.
+    """
+    hub_name = hub["semantic_layer"]["name"]
+    if item.ref is not None and item.ref.startswith("seam."):
+        apply(hub, item, verdict)
+        return True
+    if _owner(item.table) != hub_name:
+        return False
+    bare = ReviewItem(item.kind, item.table.split("/", 1)[1], item.column, item.claim,
+                      item.evidence, ref=item.ref)
+    apply(hub, bare, verdict)
+    return True

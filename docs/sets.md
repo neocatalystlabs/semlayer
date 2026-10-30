@@ -34,7 +34,10 @@ semantic_layer:
 
 Inside a set every table, hierarchy and metric is `<document>/<name>`:
 `finance/fct_gl`, `sales/net_revenue`, `platform/cost_center_geo.*`. Member
-files are never edited; the same file can sit in several hubs.
+files are never edited; the same file can sit in several hubs. A hub cannot
+yet be a member of another hub: validation refuses it, so a regional hub
+listed inside a global one fails loudly instead of contributing nothing.
+List the teams' files directly. Document names never contain `/`.
 
 ## Every command takes the hub
 
@@ -104,9 +107,33 @@ It writes the hub and touches no member.
   marked as untested.
 
 Statistics come from the member documents (`cardinality`, roles, types);
-the inclusion tests are the only queries stitch issues. Re-running stitch
-after a member changes rewrites the hub; keeping reviewed seam edges across
-a rerun is the next piece.
+the inclusion tests are the only queries stitch issues.
+
+## Reviewing the seam, and refreshing it
+
+`semlayer review acme.yaml` shows the hub's queue: seam edges below the
+threshold and `same_entity` pairs with no canonical copy. Accepting one
+marks it `reviewed`; rejecting one marks it `deprecated` and leaves it in
+the hub, so consumers skip it and the next refresh does not propose it
+again. Verdicts are written to the hub file itself, never to the members.
+
+When a member file changes, re-infer the seam from the members the hub
+lists:
+
+```bash
+semlayer stitch --refresh acme.yaml --via snowflake
+```
+
+The rule is the same one `infer --into` applies to a layer. Edges you
+reviewed, certified or rejected are kept as they are; `inferred` edges are
+dropped and inferred again; a kept edge whose end no longer exists in its
+member becomes `orphaned`, with the missing end named in its provenance,
+and stays until you delete it. A fresh inference is dropped when a kept
+edge already answers it: the same two ends whatever your verdict was, or
+the same key column under an edge you accepted. A rejected edge blocks only
+itself, so a different parent for that key is still proposed, and a key
+whose only parent was the one you rejected is listed under `unresolved`
+saying so. The hub's own tables, metrics and `federation` are untouched.
 
 ## Copies across members
 

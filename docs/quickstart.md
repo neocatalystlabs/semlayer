@@ -96,8 +96,9 @@ provenance, so you can see which ones they were.
 
 ## Large warehouses
 
-Tested to **2,000 tables / 30,000 columns**; past that the run warns and
-foreign-key discovery begins truncating. Data volume is a different question —
+Measured to **50,000 tables**, as one file and as one `infer --schema` per
+team stitched into a hub ([the ladder](scale.md)); the largest real warehouse
+run so far is about 2,000 tables. Data volume is a different question —
 4TB and 45TB are the same architecture, bounded by partitioning.
 
 The levers, in order of effect: partition your big facts and pass

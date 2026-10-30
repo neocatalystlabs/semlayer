@@ -491,7 +491,8 @@ def _apply_promoted_verdict(c: dict, v: dict) -> None:
 
 
 
-# The scale line we hold, and why these two numbers rather than terabytes.
+# Where the per-object costs are, and why they are counted in tables and
+# columns rather than terabytes (the measured ladder is in docs/scale.md).
 #
 # Measured (docs/calibration.md): data volume does NOT force an architecture
 # change -- it is linear and bounded once the large tables are partitioned.
@@ -510,42 +511,7 @@ def _apply_promoted_verdict(c: dict, v: dict) -> None:
 #                   requires every reference to resolve within the document).
 #
 # COLUMNS is the better primary signal: three of the four limits scale with
-# columns and only latency scales with tables. Both are reported.
-SCALE_TABLES = 2_000
-SCALE_COLUMNS = 30_000
-
-
-def _scale_warning(n_tables: int, n_columns: int) -> str | None:
-    """Say so when a warehouse is past the size this architecture is tested at.
-
-    A warning, never a refusal: the run still completes, and a user who knows
-    their warehouse may be right to proceed. What we must not do is produce a
-    quietly degraded layer and let them believe it is complete -- Link's cap
-    truncates silently, which is the failure mode this exists to surface.
-    """
-    over = []
-    if n_tables > SCALE_TABLES:
-        over.append(f"{n_tables:,} tables (tested to {SCALE_TABLES:,})")
-    if n_columns > SCALE_COLUMNS:
-        over.append(f"{n_columns:,} columns (tested to {SCALE_COLUMNS:,})")
-    if not over:
-        return None
-    # The first wording also said the output document "becomes impractical
-    # to load". Measured 2026-10-28 on a 15,000-table synthetic warehouse: the
-    # 42 MB layer parses in 14 s and every MCP tool answers in milliseconds
-    # after that, so that clause was retired. The truncation clause stands:
-    # Then measured at 50,000 tables: MAX_PARENTS had dropped 2,952 of 7,952
-    # real parent keys. Named parents are no longer capped; what is bounded
-    # past this size is the statistics-only (unnamed) candidates per child.
-    return (f"warehouse exceeds the tested scale: {', '.join(over)}. "
-            f"Foreign-key discovery bounds the speculative candidates it tests per "
-            f"column, so a key that nothing names may go untested above this size. "
-            f"Past it, run one schema at a time (--schema, one file per team) and "
-            f"combine the files with `semlayer stitch`: that route is measured to "
-            f"50,000 tables in docs/scale.md, which also records what the single-file "
-            f"run does past this size.")
-
-
+# columns and only latency scales with tables. Both are in the run report.
 def _partitions_or_empty(source) -> dict:
     """Physical partitions, or {} if the source cannot say.
 

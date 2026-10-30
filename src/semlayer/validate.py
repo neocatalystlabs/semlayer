@@ -127,6 +127,8 @@ def _check_foreign_keys(c: _Ctx) -> None:
 
 def _check_relationships(c: _Ctx) -> None:
     for rel in c.sl.get("relationships", []):
+        if rel.get("lifecycle") == "orphaned":
+            continue        # an end that no longer exists is what orphaned records (SPEC.md)
         for side in ("from", "to"):
             tref = rel[side]["table"]
             c.check_table(tref, f"relationship {rel.get('name')} {side}")

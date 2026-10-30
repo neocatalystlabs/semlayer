@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### `semlayer stitch --refresh`, and seam verdicts that stick
+
+`semlayer stitch --refresh acme.yaml` re-infers a hub's seam from the
+members it lists. Edges the analyst accepted (`reviewed`), certified or
+rejected (`deprecated`) are kept; inferred edges are replaced; a kept edge
+whose end disappeared from its member becomes `orphaned` with the missing
+end in its provenance. A fresh inference is dropped when a kept edge joins
+the same two ends, or the same key column under an accepted edge; a
+rejected edge blocks only itself, and a key whose only parent was rejected
+is listed under `unresolved` saying so. `semlayer review acme.yaml` now
+applies verdicts to seam edges and `same_entity` pairs (accept: reviewed;
+reject: deprecated) and writes them to the hub file itself: before this it
+saved the resolved set, which would have turned the hub into a copy of
+every member's tables. Compiled SQL no longer traverses a deprecated or
+orphaned relationship. SPEC §4 states the refresh rule. docs/sets.md.
+
 ### Stitch names copies: `same_entity`, `canonical`, `extends_with`
 
 A member's copy of another member's dimension (finance's `dim_customer`,
@@ -26,9 +42,22 @@ docs/sets.md.
 scoped to, the schemas joined with `_` when several, else the warehouse
 itself (Snowflake database, BigQuery project, DuckDB file stem), and writes
 `<name>.yaml`; it no longer falls back to `profiled` and
-`semantic_layer.yaml`. `-o` and `--name` still override. The scale warning
-now says what to do past 2,000 tables: one `infer --schema` per team and
-`semlayer stitch`, the route measured to 50,000 tables in docs/scale.md.
+`semantic_layer.yaml`. `-o` and `--name` still override.
+
+### A hub cannot yet be a member; names never contain `/`
+
+Both are refused by set validation so that hubs of hubs, when they come,
+have a clear grammar to grow into (`emea/finance/fct_gl`) and nobody today
+builds on a top hub that silently found no keys.
+
+### The "tested to 2,000 tables" warning is gone
+
+The run no longer warns past 2,000 tables or 30,000 columns. The line was
+drawn when the candidate-parent cap truncated silently; the cap on named
+parents is gone and the ladder is measured to 50,000 tables both as one
+file and per schema, so the warning said something that was no longer
+true. docs/scale.md now states what is measured and on what: 50,000 on a
+synthetic estate, about 2,000 on the largest real warehouse so far.
 
 ### `semlayer stitch`: infer the seam between several layers
 
