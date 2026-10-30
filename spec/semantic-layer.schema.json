@@ -151,6 +151,23 @@
         },
         "coverage": {
           "$ref": "#/$defs/coverage"
+        },
+        "review_notes": {
+          "type": "array",
+          "description": "Notes left on review questions without deciding them (an agent that could not decide; a human parking one). Written by `semlayer review --note`.",
+          "items": {
+            "type": "object",
+            "required": ["date", "signal", "question", "note"],
+            "additionalProperties": false,
+            "properties": {
+              "date": {"type": "string", "format": "date"},
+              "signal": {"enum": ["human", "agent"]},
+              "by": {"type": "string"},
+              "question": {"type": "string", "description": "The question's stable key (q-xxxxxxxx)."},
+              "about": {"type": "string"},
+              "note": {"type": "string"}
+            }
+          }
         }
       },
       "anyOf": [
@@ -194,8 +211,18 @@
             "view_ddl",
             "format_metadata",
             "docs",
-            "human"
+            "human",
+            "agent"
           ]
+        },
+        "date": {
+          "type": "string",
+          "format": "date",
+          "description": "When a human verdict was given (ISO date). Written by review."
+        },
+        "by": {
+          "type": "string",
+          "description": "Who gave a human verdict (git user.name or --by)."
         },
         "detail": {
           "type": "string"

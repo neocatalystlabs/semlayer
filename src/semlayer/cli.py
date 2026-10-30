@@ -112,9 +112,7 @@ def _build_parser() -> argparse.ArgumentParser:
                         "conflict; a column the warehouse no longer has becomes "
                         "`orphaned`, never deleted. Tables outside --only are untouched.")
 
-    p = sub.add_parser("review", help="Review inferred claims (terminal queue)")
-    p.add_argument("doc", help="semantic layer YAML path")
-    p.add_argument("--list", action="store_true", help="List items without prompting")
+    _add_review_parser(sub)
 
     p = sub.add_parser("telemetry",
                        help="Show or change anonymous usage telemetry")
@@ -174,6 +172,42 @@ def default_out(out: str | None, name: str) -> str:
     warehouse rather than a generic word.
     """
     return out or f"{name}.yaml"
+
+
+def _warn_if_overwriting_verdicts(args: argparse.Namespace) -> None:
+    """`-o` onto a file that holds human or agent verdicts loses them; `--into` keeps them."""
+    if args.into or not Path(args.out).exists():
+        return
+    text = Path(args.out).read_text()
+    n_verdicts = text.count("signal: human") + text.count("signal: agent")
+    if n_verdicts:
+        print(f"warning: {args.out} holds {n_verdicts} recorded verdict(s) and -o will "
+              f"overwrite them; use --into {args.out} to keep them", file=sys.stderr)
+
+
+def _add_review_parser(sub) -> None:
+    p = sub.add_parser("review", help="Review inferred claims as grouped questions")
+    p.add_argument("doc", help="semantic layer YAML path")
+    p.add_argument("--list", action="store_true", help="List the questions without prompting")
+    p.add_argument("--flat", action="store_true",
+                   help="One item at a time instead of grouped questions")
+    p.add_argument("--question", metavar="N|KEY", default=None,
+                   help="With --list: print one question with every object it covers")
+    p.add_argument("--answer", metavar="N=accept,KEY=reject,...", default=None,
+                   help="Answer questions non-interactively (by number or stable key)")
+    p.add_argument("--exclude", metavar="N=obj,obj;...", default=None,
+                   help="With --answer: objects to leave out of a question's verdict")
+    p.add_argument("--note", metavar="N=text", action="append", default=None,
+                   help="Leave a note on a question without deciding it (repeatable)")
+    p.add_argument("--decisions", action="store_true",
+                   help="List the verdicts already recorded in the document, newest first")
+    p.add_argument("--by", default=None,
+                   help="Who is deciding (default: git user.name where the document lives)")
+    p.add_argument("--agent", action="store_true",
+                   help="Verdicts are an automated reviewer's: recorded as signal `agent` "
+                        "(requires --by naming the agent)")
+    p.add_argument("--json", action="store_true",
+                   help="machine-readable output for --list and --decisions")
 
 
 def _load_doc(path: str) -> dict:
@@ -273,6 +307,7 @@ def _cmd_infer(args: argparse.Namespace) -> int:
         print(f"profiling schema(s): {', '.join(sorted(schema))}")
     name = document_name(args.name, schema, src)
     args.out = default_out(args.out, name)
+    _warn_if_overwriting_verdicts(args)
     options = InferOptions(no_sample_egress=args.no_sample_egress, only=only, schema=schema,
                            name=name, use_declared=not args.no_declared_constraints,
                            llm_workers=args.llm_workers, query_workers=args.query_workers)
@@ -308,18 +343,248 @@ def _cmd_infer(args: argparse.Namespace) -> int:
     return 0 if result.ok else 1
 
 
+def _git_author(doc_path: str) -> str | None:
+    import subprocess
+
+    try:
+        r = subprocess.run(["git", "config", "user.name"], cwd=Path(doc_path).resolve().parent,
+                           capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return r.stdout.strip() or None if r.returncode == 0 else None
+
+
+def _print_decisions(doc: dict, undecided: int, is_hub: bool, as_json: bool) -> None:
+    import json
+    from dataclasses import asdict
+
+    from semlayer.review import decisions
+
+    rows = decisions(doc)
+    if as_json:
+        print(json.dumps([asdict(d) for d in rows], indent=1))
+        return
+    name = doc["semantic_layer"].get("name", "")
+    print(f"Decisions recorded in semantic layer '{name}', newest first. "
+          "Each line: verdict, the table / table.column / metric / relationship it "
+          "was given on, the claim as it stood in words (spec type in brackets), "
+          "and after ';' what changed in the document. A heading says who decided "
+          "and whether that was a person or an agent. One verdict given to many "
+          "objects at once prints as one line with the count; --json lists every object.")
+    if not rows:
+        print("no decisions recorded in this document")
+    group = None
+    # one line per (day, author, verdict, claim), however the objects are spread in the file
+    runs_by: dict[tuple, list] = {}
+    for d in rows:
+        runs_by.setdefault((d.date, d.by, d.signal, d.verdict, d.what), []).append(d)
+    for run in runs_by.values():
+        d = run[0]
+        who = d.by or "(no author recorded)"
+        head = f"{d.date or 'undated'}  {who}" + ("  [agent]" if d.signal == "agent" else "")
+        if head != group:
+            print(head)
+            group = head
+        if len(run) <= 3:
+            for x in run:
+                print(f"  {x.verdict:9} {x.where:45} {x.what}")
+        else:
+            where = ", ".join(x.where for x in run[:4]) + f" ... and {len(run) - 4} more"
+            print(f"  {d.verdict:9} {len(run)} objects: {d.what}\n{'':12}{where}")
+    n_a = sum(d.verdict == "accepted" for d in rows)
+    n_r = sum(d.verdict == "rejected" for d in rows)
+    print(f"\n{len(rows)} decisions: {n_a} accepted, {n_r} rejected.  "
+          f"Undecided items in the queue: {undecided} (semlayer review --list)")
+    if is_hub:
+        print("members hold their own decisions: run this on each member file")
+
+
+def _print_question(q, full: bool) -> None:
+    n_obj = len(q.items)
+    if not q.decidable:
+        head = f"{n_obj} columns " if q.kind == "untyped" else ""
+        print(f"{q.n}. [{q.kind}] {head}{q.what}")
+        print(f"   {q.reason}")
+        print(f"   a verdict here {q.on_reject}")
+    else:
+        print(f"{q.n}. [{q.kind}] {n_obj} {q.noun}{'s' if n_obj != 1 else ''}: "
+              f"{'each ' if n_obj > 1 else ''}{q.what}")
+        conf = f"; confidence {q.confidence}" if q.confidence is not None else ""
+        print(f"   engine saw: {q.reason}{conf}")
+        names = q.distinct_names()
+        if n_obj > 1 and len(names) < n_obj:
+            label = (f"on {len(names)} tables" if q.noun == "metric"
+                     else f"{len(names)} distinct names")
+            print(f"   {label}: " + ", ".join(names[:12])
+                  + (f" ... and {len(names) - 12} more" if len(names) > 12 else ""))
+        objs = q.objects
+        if full:
+            for i, o in enumerate(objs, 1):
+                print(f"   {i:4}. {o}    {q.items[i - 1].evidence}")
+        else:
+            print("   objects: " + ", ".join(objs[:6])
+                  + (f" ... and {len(objs) - 6} more (--list --question {q.n})"
+                     if len(objs) > 6 else ""))
+        print(f"   accept -> {q.on_accept}; reject -> {q.on_reject}")
+    for nt in q.notes:
+        who = nt.get("by") or nt.get("signal")
+        print(f"   note ({who}, {nt.get('date')}): {nt.get('note')}")
+    print(f"   key: {q.key}")
+    print()
+
+
+def _find_question(qs, ref: str):
+    ref = ref.strip()
+    for q in qs:
+        if q.key == ref or str(q.n) == ref:
+            return q
+    raise SpecError(f"no question {ref!r}; numbers change as questions are answered, so "
+                    "scripts should use the key (q-xxxxxxxx) from `semlayer review --list`")
+
+
+def _parse_pairs(spec: str | None, sep: str) -> list[tuple[str, str]]:
+    out = []
+    for part in (spec or "").split(sep):
+        if not part.strip():
+            continue
+        k, _, v = part.partition("=")
+        if not v:
+            raise SpecError(f"expected N=value, got {part!r}")
+        out.append((k.strip(), v.strip()))
+    return out
+
+
 def _cmd_review(args: argparse.Namespace) -> int:
-    from semlayer.review import apply, apply_to_hub, collect, for_hub
+    from semlayer.review import collect, for_hub, group, set_author
     from semlayer.validate import load_yaml
 
+    if args.agent and not args.by:
+        raise SpecError("--agent needs --by naming the agent "
+                        "(e.g. --by maintainer/claude-opus-5-5)")
     doc = _load_doc(args.doc)
     # a hub is reviewed through the resolved set but SAVED as itself: the
     # resolved document holds every member's tables, and writing it back
     # would turn the hub file into a copy of the whole estate
     hub = load_yaml(Path(args.doc).read_text()) if doc["semantic_layer"].get("members") else None
+    target = hub if hub is not None else doc
     items = collect(doc)
     if hub is not None:
         items = for_hub(items, doc["semantic_layer"]["name"])
+    if args.decisions:
+        _print_decisions(target, len(items), hub is not None, args.json)
+        return 0
+    set_author(args.by or _git_author(args.doc), "agent" if args.agent else "human")
+    if args.flat:
+        return _review_flat(args, doc, hub, items)
+    asked, not_asked = group(items, target)
+    if args.answer or args.note:
+        return _review_answer(args, doc, hub, asked, not_asked)
+    return _review_questions(args, doc, hub, items, asked, not_asked)
+
+
+def _review_answer(args, doc, hub, asked, not_asked) -> int:
+    from semlayer.review import answer, note
+
+    target = hub if hub is not None else doc
+    # parse everything before changing anything, so a bad flag changes nothing
+    excludes: dict[str, set[str]] = {}
+    for k, v in _parse_pairs(args.exclude, ";"):
+        q = _find_question(asked, k)
+        wanted = {x.strip() for x in v.split(",") if x.strip()}
+        unknown = wanted - set(q.objects)
+        if unknown:
+            raise SpecError(f"not in question {q.n}: {', '.join(sorted(unknown))}")
+        excludes[q.key] = wanted
+    verdicts = []
+    for k, v in _parse_pairs(args.answer, ","):
+        if v not in ("accept", "reject"):
+            raise SpecError(f"verdict must be accept or reject, got {v!r}")
+        verdicts.append((_find_question(asked + not_asked, k), v))
+    notes = []
+    for spec in args.note or []:
+        k, _, text = spec.partition("=")
+        if not text.strip():
+            raise SpecError(f"expected N=text, got {spec!r}")
+        notes.append((_find_question(asked + not_asked, k), text.strip()))
+    changed = 0
+    for q, v in verdicts:
+        n = answer(doc, q, v, excludes.get(q.key), hub)
+        print(f"{v}ed question {q.n} ({q.key}): {n} of {len(q.items)} {q.noun}(s)")
+        changed += n
+    for q, text in notes:
+        note(target, q, text)
+        print(f"noted question {q.n} ({q.key})")
+        changed += 1
+    if changed:
+        _save_doc(args.doc, target)
+        print(f"saved {args.doc}")
+    return 0
+
+
+def _review_questions(args, doc, hub, items, asked, not_asked) -> int:
+    import json
+
+    from semlayer.review import answer
+
+    name = doc["semantic_layer"].get("name", "")
+    if args.json:
+        print(json.dumps({"document": name, "undecided_items": len(items),
+                          "questions": [q.as_dict() for q in asked],
+                          "not_asked": [q.as_dict() for q in not_asked]}, indent=1))
+        return 0
+    if not items:
+        print("review queue empty")
+        return 0
+    if args.question:
+        _print_question(_find_question(asked + not_asked, args.question), full=True)
+        return 0
+    print(f"Review queue for '{name}': {len(items)} undecided claims, {len(asked)} "
+          f"question{'s' if len(asked) != 1 else ''}. A verdict on a question applies to every "
+          "object listed under it: they are in one question only because the engine made the "
+          "identical claim about each for the identical reason. Each question: the claim in "
+          "words (spec type in brackets), what the engine saw, confidence, the objects, and "
+          "what accept / reject does. Numbers change as questions are answered; the key does "
+          "not.\n")
+    saved = 0
+    for q in asked:
+        _print_question(q, full=False)
+        if not args.list:
+            verdict, exclude = _ask(q)
+            if verdict is not None:
+                saved += answer(doc, q, verdict, exclude, hub)
+    if not_asked:
+        print("Shown, not asked:\n")
+        for q in not_asked:
+            _print_question(q, full=False)
+    if not args.list and saved:
+        _save_doc(args.doc, hub if hub is not None else doc)
+        print(f"saved {args.doc}: {saved} verdict(s) written")
+    return 0
+
+
+def _ask(q) -> tuple[str | None, set[str]]:
+    """Prompt for one question: a verdict (or None for skip) and the objects left out."""
+    exclude: set[str] = set()
+    while True:
+        ans = input("    accept/reject/skip/expand, or x 3,7 to leave out [a/r/s/e/x]? ")
+        ans = ans.strip().lower()
+        if ans in ("e", "expand"):
+            for i, o in enumerate(q.objects, 1):
+                print(f"    {i:4}. {o}    {q.items[i - 1].evidence}")
+            continue
+        if ans.startswith("x"):
+            for tok in ans[1:].replace(",", " ").split():
+                if tok.isdigit() and 1 <= int(tok) <= len(q.items):
+                    exclude.add(q.items[int(tok) - 1].location)
+            print(f"    leaving out {len(exclude)}: {', '.join(sorted(exclude))}")
+            continue
+        verdict = {"a": "accept", "accept": "accept", "r": "reject", "reject": "reject"}.get(ans)
+        return verdict, exclude
+
+
+def _review_flat(args: argparse.Namespace, doc: dict, hub: dict | None, items) -> int:
+    from semlayer.review import apply, apply_to_hub
+
     if not items:
         print("review queue empty")
         return 0

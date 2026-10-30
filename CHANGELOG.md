@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+### The review queue is questions, and agents can answer them
+
+`semlayer review` groups the queue: two claims are one question only when
+the engine made the identical claim for the identical reason at the same
+confidence, so a question is the per-item questions with the name blanked
+out. The 2,000-table benchmark estate's 1,708 items are seven questions
+plus two lines that are shown but not asked (1,198 columns the engine could
+not type at all, and the inventory-only tiers), because a verdict there
+would change nothing. Each question prints the claim in words, what the
+engine saw in words, the confidence, the distinct names, the objects, what
+accept and reject do, and a stable key. Interactive answers can expand a
+question (`e`) and leave objects out (`x 3,7`); `--answer K=accept
+--exclude K=obj` does the same from a script; `--question N` prints one
+question in full; `--flat` is the old one-at-a-time walk; `--list --json`
+carries everything, untruncated, with the engine's raw reason strings.
+Agents sign verdicts `--agent --by <name>`: the provenance signal is
+`agent`, `--decisions` shows them under an `[agent]` heading, and `--note
+"K=why"` leaves a note on a question an agent could not decide, stored in
+`review_notes` and shown under the question. `--decisions` prints one line
+per (day, author, verdict, claim) with the count and the first objects.
+`infer -o` onto a file holding verdicts warns to use `--into`. Schema:
+`agent` signal, `review_notes`. docs/review.md.
+
+### `semlayer review --decisions`: the file says what you decided
+
+A verdict used to leave `review: accept` in the column's provenance and
+nothing else: no date, no author, and on a reject not even what was
+rejected, since the claim is reset. Every verdict now writes a `human`
+provenance entry with `date`, `by` (git `user.name` where the document
+lives, or `--by`) and a detail in words: `accepted: holds the display name
+of the row; grouped by (type name)`, `rejected: holds a dated version of
+each record per row (a snapshot table) (table_type snapshot_scd2); now of
+unknown kind`. No raw type name is printed to a person: `name rule ->
+name` is gone. `semlayer review layer.yaml --decisions` lists the verdicts
+newest first, grouped by date and author, with a closing count and the
+number of items still undecided; `--json` for scripts. Entries written
+before this release print with "(claim not recorded)". Schema: provenance
+entries may carry `date` and `by`; SPEC producer rule 9.
+
 ### `semlayer stitch --refresh`, and seam verdicts that stick
 
 `semlayer stitch --refresh acme.yaml` re-infers a hub's seam from the
