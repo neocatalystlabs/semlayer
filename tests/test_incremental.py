@@ -885,7 +885,7 @@ def test_scale_warning_fires_only_past_the_tested_line():
     assert _scale_warning(10, 10) is None
     over_t = _scale_warning(SCALE_TABLES + 1, 10)
     over_c = _scale_warning(10, SCALE_COLUMNS + 1)
-    assert over_t and "tables" in over_t and "--only" in over_t
+    assert over_t and "tables" in over_t and "--schema" in over_t and "stitch" in over_t
     assert over_c and "columns" in over_c
     both = _scale_warning(SCALE_TABLES * 3, SCALE_COLUMNS * 3)
     assert "tables" in both and "columns" in both
