@@ -80,6 +80,29 @@
             }
           }
         },
+        "unresolved": {
+          "type": "array",
+          "description": "On a hub written by `stitch`: key columns of the members that point outside their own document and for which no parent was found in any member. Listed so nobody assumes they are fine.",
+          "items": {
+            "type": "object",
+            "required": [
+              "table",
+              "column"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "table": {
+                "type": "string"
+              },
+              "column": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              }
+            }
+          }
+        },
         "generated_by": {
           "$ref": "#/$defs/generated_by"
         },

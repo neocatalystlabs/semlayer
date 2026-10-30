@@ -52,7 +52,10 @@ TXN_TABLES = 1000       # tables per transaction while building; see create()
 # Bump when the generated DATA changes for the same (n_tables, seed), so a
 # runner that keeps warehouses knows to rebuild. 2: staging copies carry
 # the full key set (v1 sampled a subset and the gold was inconsistent).
+# The `--schemas` layout is a separate axis recorded as `layout` in the
+# sidecar; the flat layout's data is unchanged by it.
 GENERATOR_VERSION = 2
+PLATFORM = "platform"   # --schemas: the schema that owns the conformed dimensions
 TIERS = (("core", 0.08), ("staging", 0.22), ("raw", 0.45), ("scratch", 0.25))
 
 DOMAINS = [
@@ -96,11 +99,22 @@ def _quota(n_tables: int) -> dict[str, int]:
     return q
 
 
-def plan(n_tables: int, rng: random.Random) -> list[dict]:
+def plan(n_tables: int, rng: random.Random, schemas: bool = False) -> list[dict]:
     """Decide the whole warehouse before writing any of it.
 
     Each table: name, tier, kind (dim|scd2|fact|agg|copy|raw|scratch|junk),
     entity, and for facts/aggs the entities they reference.
+
+    With `schemas`, every table also gets a `schema`: each domain's star
+    schema in a schema of its own, the conformed dimensions (the ones not
+    prefixed by a domain) in `platform`, and every copy in the schema of
+    the table it copies. That is the multi-repo estate: a team per schema,
+    a platform team owning the shared dimensions, and facts whose keys point
+    at another schema -- the references `stitch` resolves. Some domains
+    also get a SHADOW of a conformed dimension: `dim_<entity>` in their own
+    schema, the platform rows for their own customers plus two columns of
+    their own, which is the duplicate a cross-domain analyst has to see
+    through. The flat layout consumes the random stream exactly as before.
     """
     quota = _quota(n_tables)
     tables: list[dict] = []
@@ -196,17 +210,84 @@ def plan(n_tables: int, rng: random.Random) -> list[dict]:
         add({"name": name, "tier": "scratch", "kind": kind, "entity": ent,
              "of": core_dims[i % len(core_dims)] if core_dims else None})
         i += 1
+    if schemas:
+        _assign_schemas(tables, core_dims, rng)
     return tables
 
 
-def build(con, n_tables: int, seed: int = SEED) -> dict:
-    """Build N tables into `con`. Returns the meta dict (tiers + gold edges)."""
+def _schema_name(dom: str) -> str:
+    return dom
+
+
+def _assign_schemas(tables: list[dict], core_dims: list[dict], rng: random.Random) -> None:
+    """Give every planned table a schema, and add the shadow dimensions.
+
+    Core dims and facts carry their domain in the name (`dim_<dom>_<ent>`,
+    `fct_<dom>_...`); a dim named for a bare entity is conformed and goes to
+    `platform`. Copies follow the table they copy. Then, for some domains
+    that reference a conformed dimension, a shadow `dim_<ent>` is added in
+    the domain's schema, kind `shadow`: a filtered copy of the platform rows
+    with two extra columns.
+    """
+    doms = [d for d in DOMAINS]
+    def dom_of(name: str) -> str | None:
+        body = name.split("_", 1)[1] if "_" in name else name
+        best = None
+        for d in doms:
+            if body == d or body.startswith(d + "_"):
+                if best is None or len(d) > len(best):
+                    best = d
+        return best
+    ent_schema: dict[str, str] = {}
+    for t in tables:
+        if t["tier"] != "core":
+            continue
+        if t["kind"] in ("dim", "scd2"):
+            d = dom_of(t["name"])
+            t["schema"] = _schema_name(d) if d else PLATFORM
+            ent_schema[t["entity"]] = t["schema"]
+        else:
+            d = dom_of(t["name"])
+            t["schema"] = _schema_name(d) if d else PLATFORM
+    for t in tables:
+        if "schema" in t:
+            continue
+        of = t.get("of")
+        ent = of["entity"] if of else t["entity"]
+        t["schema"] = ent_schema.get(ent) or (dom_of(t["name"]) or PLATFORM)
+    # shadows: a domain that references a conformed dim keeps its own copy
+    conformed = {d["entity"] for d in core_dims if ent_schema.get(d["entity"]) == PLATFORM}
+    seen: set[tuple[str, str]] = set()
+    for t in list(tables):
+        if t["kind"] != "fact" or t["schema"] == PLATFORM:
+            continue
+        for e in t["refs"]:
+            if e in conformed and (t["schema"], e) not in seen and rng.random() < 0.3:
+                seen.add((t["schema"], e))
+                tables.append({"name": f"dim_{e}", "tier": "core", "kind": "shadow",
+                               "entity": e, "schema": t["schema"], "of": None})
+
+
+def build(con, n_tables: int, seed: int = SEED, schemas: bool = False) -> dict:
+    """Build N tables into `con`. Returns the meta dict (tiers + gold edges).
+
+    With `schemas`, tables are created in their planned schemas and every
+    name in the gold and the sidecar is `schema.table`.
+    """
     rng = random.Random(seed)
-    tables = plan(n_tables, rng)
-    names = {t["name"] for t in tables}
+    tables = plan(n_tables, rng, schemas)
+
+    def qn(t: dict) -> str:
+        return f"{t['schema']}.{t['name']}" if schemas else t["name"]
+
+    names = {qn(t) for t in tables}
+    by_bare = {t["name"]: qn(t) for t in tables if t.get("schema") != PLATFORM or True}
     domains: dict[str, list[int]] = {}
     gold: list[tuple[str, str, str, str]] = []
-    dim_table: dict[str, str] = {}        # entity -> core dim table name
+    dim_table: dict[str, str] = {}        # entity -> core dim table (qualified when schemas)
+    if schemas:
+        for sch in sorted({t["schema"] for t in tables}):
+            con.execute(f'CREATE SCHEMA IF NOT EXISTS "{sch}"')
 
     def domain(ent: str) -> list[int]:
         if ent not in domains:
@@ -250,12 +331,13 @@ def build(con, n_tables: int, seed: int = SEED) -> dict:
     # that happens rarely, and main() checkpoints once at the end.
     created = 0
 
-    def create(name: str, cols: list[str], rows: list[tuple]) -> None:
+    def create(t: dict, cols: list[str], rows: list[tuple]) -> None:
         nonlocal created
         if created % TXN_TABLES == 0:
             con.execute("BEGIN")
-        con.execute(f'CREATE TABLE "{name}" ({", ".join(cols)})')
-        insert_rows(con, f'"{name}"', rows)
+        ident = f'"{t["schema"]}"."{t["name"]}"' if schemas else f'"{t["name"]}"'
+        con.execute(f'CREATE TABLE {ident} ({", ".join(cols)})')
+        insert_rows(con, ident, rows)
         created += 1
         if created % TXN_TABLES == 0:
             con.execute("COMMIT")
@@ -268,11 +350,21 @@ def build(con, n_tables: int, seed: int = SEED) -> dict:
                 f"{rng.getrandbits(64):016x}")
 
     for t in tables:
-        name, kind, ent = t["name"], t["kind"], t["entity"]
+        name, kind, ent = qn(t), t["kind"], t["entity"]
         if kind in ("dim", "scd2"):
             cols, rows = dim_cols(ent, kind == "scd2")
-            create(name, cols, rows)
+            create(t, cols, rows)
             dim_table[ent] = name
+        elif kind == "shadow":
+            # the platform dimension's rows for this domain's own keys (a
+            # filtered copy), plus two columns the domain added for itself
+            keys = domain(ent)
+            own = sorted(rng.sample(keys, max(2, len(keys) * 2 // 3)))
+            cols = [f'"{ent}_id" INTEGER', f'"{ent}_name" VARCHAR', '"segment" VARCHAR',
+                    '"credit_limit" DOUBLE', '"owner_team" VARCHAR']
+            rows = [(k, f"{ent}-{k}", rng.choice("ABC"), round(rng.uniform(100, 9000), 2),
+                     rng.choice(["east", "west"])) for k in own]
+            create(t, cols, rows)
         elif kind in ("fact", "agg"):
             refs = t["refs"]
             cols = ['"event_id" INTEGER'] if kind == "fact" else ['"month" DATE']
@@ -284,6 +376,8 @@ def build(con, n_tables: int, seed: int = SEED) -> dict:
                 fkcols.append(c)
                 cols.append(f'"{c}" INTEGER')
                 gold.append((name, c, dim_table.get(e, f"dim_{e}"), f"{e}_id"))
+                # a fact's key is gold against the CONFORMED dimension even where
+                # its own schema keeps a shadow copy: the shadow is partial
             meas = rng.sample(MEASURES, rng.randint(1, 3))
             mcols = ([f"amt_{m}" for m in meas] if kind == "fact"
                      else [f"total_{m}" for m in meas] + ["cnt_events"])
@@ -300,7 +394,7 @@ def build(con, n_tables: int, seed: int = SEED) -> dict:
                 row += [rng.choice(["OPEN", "CLOSED", "X"]) for _ in orph]
                 row += ["2025-01-01 00:00:00"] if kind == "fact" else []
                 rows.append(tuple(row))
-            create(name, cols, rows)
+            create(t, cols, rows)
         elif kind in ("copy", "cdc"):
             of = t["of"]
             if of is not None and "refs" in of:          # a copy of a fact
@@ -311,7 +405,7 @@ def build(con, n_tables: int, seed: int = SEED) -> dict:
                 for e in refs:
                     # the copy of the dim in the same stage, if it was planned;
                     # otherwise the core dim (same key domain either way)
-                    parent = f"{parent_stage}{e}" if parent_stage else None
+                    parent = by_bare.get(f"{parent_stage}{e}") if parent_stage else None
                     if parent not in names:
                         parent = dim_table.get(e, f"dim_{e}")
                     gold.append((name, f"{e}_id", parent, f"{e}_id"))
@@ -340,22 +434,28 @@ def build(con, n_tables: int, seed: int = SEED) -> dict:
                     if kind == "cdc":
                         row += [rng.choice(["I", "U", "D"]), "2025-02-01 00:00:00"]
                     rows.append(tuple(row))
-            create(name, cols, rows)
+            create(t, cols, rows)
         else:   # junk
             ncols = rng.randint(2, 5)
             cols = ['"c1" INTEGER'] + [f'"col{j}" VARCHAR' for j in range(2, ncols + 1)]
             rows = [(r, *[f"x{r}{j}" for j in range(2, ncols + 1)])
                     for r in range(rng.randint(5, 30))]
-            create(name, cols, rows)
+            create(t, cols, rows)
 
     if created % TXN_TABLES:
         con.execute("COMMIT")
     meta = {
         "n_tables": len(tables), "seed": seed, "generator_version": GENERATOR_VERSION,
+        "layout": "schemas" if schemas else "flat",
         "tiers": {k: sum(1 for t in tables if t["tier"] == k) for k, _ in TIERS},
-        "tables": {t["name"]: {"tier": t["tier"], "kind": t["kind"]} for t in tables},
+        "tables": {qn(t): {"tier": t["tier"], "kind": t["kind"]} for t in tables},
         "gold_fks": gold,
     }
+    if schemas:
+        meta["schemas"] = {qn(t): t["schema"] for t in tables}
+        meta["cross_schema_fks"] = sum(1 for c, _, p, _ in gold
+                                       if c.split(".")[0] != p.split(".")[0])
+        meta["shadows"] = [qn(t) for t in tables if t["kind"] == "shadow"]
     return meta
 
 
@@ -364,6 +464,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--tables", type=int, required=True)
     ap.add_argument("--out", required=True, help="DuckDB file to create (replaced if present)")
     ap.add_argument("--seed", type=int, default=SEED)
+    ap.add_argument("--schemas", action="store_true",
+                    help="one schema per domain, conformed dimensions in `platform`, shadow "
+                         "copies in some domains; names in the sidecar become schema.table")
     ap.add_argument("--block-size", type=int, default=16384,
                     help="DuckDB block size; the 256 KB default costs ~280 KB per table "
                          "(85 MB per 300 tables), 16 KB is the minimum and gives ~24 KB")
@@ -378,13 +481,15 @@ def main(argv: list[str] | None = None) -> int:
     con.execute(f"ATTACH '{out}' AS scale_db (BLOCK_SIZE {args.block_size})")
     con.execute("USE scale_db")
     try:
-        meta = build(con, args.tables, args.seed)
+        meta = build(con, args.tables, args.seed, schemas=args.schemas)
         con.execute("CHECKPOINT")
     finally:
         con.close()
     Path(str(out) + ".meta.json").write_text(json.dumps(meta, indent=1))
+    extra = (f"  schemas {len(set(meta['schemas'].values()))}  cross-schema fks "
+             f"{meta['cross_schema_fks']}  shadows {len(meta['shadows'])}" if args.schemas else "")
     print(f"built {meta['n_tables']} tables -> {out}  tiers {meta['tiers']}  "
-          f"gold fks {len(meta['gold_fks'])}  ({out.stat().st_size / 1e6:.0f} MB)")
+          f"gold fks {len(meta['gold_fks'])}  ({out.stat().st_size / 1e6:.0f} MB){extra}")
     return 0
 
 
