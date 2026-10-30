@@ -83,8 +83,11 @@ provenance, so you can see which ones they were.
 
 ## Then
 
-- `semlayer review layer.yaml` — walk the inferred-claims queue (the ≤30-minute
-  human pass that turns inference into a trusted model).
+- `semlayer review layer.yaml` — answer the questions the engine could not
+  settle. Identical claims are one question (the 2,000-table benchmark estate
+  asks seven), every verdict is written into `layer.yaml` with date, author
+  and the claim in words, and `--decisions` reads them back. Agents use the
+  same commands with `--json` and `--agent`. [docs/review.md](review.md).
 - Commit `layer.yaml` to your repo; wire `semlayer drift layer.yaml <source>`
   into CI or cron (nonzero exit = drift found).
 - `semlayer lint layer.yaml models/revenue.sql` — check SQL (a dbt model, a

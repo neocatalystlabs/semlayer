@@ -20,14 +20,127 @@ metric confidences are rule constants, not measured rates (docs/metrics.md).
 
 Verdicts are STICKY (SPEC.md §3.3): accept -> lifecycle reviewed;
 reject removes the claim, never the column.
+
+Every verdict is written into the document as a `human` provenance entry
+carrying the date, the author when known, and a `detail` of the form
+`accepted: <claim in words>` or `rejected: <claim in words>[; <consequence>]`.
+`decisions()` reads those entries back, so "what did I decide" is answered
+from the layer file itself (SPEC.md producer rule 9).
 """
 
 from __future__ import annotations
 
+import datetime as _dt
+import hashlib
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 REVIEW_THRESHOLD = 0.7
+
+# The words a reader sees for a claim. The spec vocabulary (`name`, `code`,
+# `snapshot_scd2`) stays in the file; nothing printed to a person is a raw
+# type name -- "name rule -> name" taught us that.
+TYPE_PHRASES = {
+    "identifier": "identifies a row",
+    "monetary_value": "holds an amount of money",
+    "quantity": "holds a count or quantity",
+    "rate": "holds a rate",
+    "percentage": "holds a percentage",
+    "timestamp_event": "records when something happened",
+    "timestamp_effective": "records when a value took effect",
+    "date": "holds a calendar date",
+    "duration": "holds a length of time",
+    "status_code": "holds a status code",
+    "enum": "holds one of a fixed set of values",
+    "flag": "is a yes/no flag",
+    "free_text": "holds free text",
+    "name": "holds the display name of the row",
+    "url": "holds a URL",
+    "code": "holds a short coded value",
+    "geo_country": "holds a country",
+    "geo_region": "holds a region or state",
+    "geo_city": "holds a city",
+    "geo_postal": "holds a postal code",
+    "geo_coordinates": "holds coordinates",
+    "pii_email": "holds an email address (personal data)",
+    "pii_name": "holds a person's name (personal data)",
+    "pii_phone": "holds a phone number (personal data)",
+    "pii_address": "holds a postal address (personal data)",
+    "pii_national_id": "holds a national id number (personal data)",
+    "pii_other": "holds personal data",
+    "json_object": "holds a JSON document",
+    "unknown": "is untyped",
+}
+ROLE_PHRASES = {
+    "primary_key": "the table's key",
+    "unique_key": "unique per row",
+    "natural_key": "the business key",
+    "foreign_key": "a key into another table",
+    "dimension": "grouped by",
+    "measure": "summed",
+    "metadata": "ETL bookkeeping, not for analysis",
+}
+TABLE_PHRASES = {
+    "fact": "records events or transactions (a fact table)",
+    "dimension": "describes one entity per row (a dimension)",
+    "denormalized": "is a wide table with its dimensions joined in",
+    "aggregate": "is a pre-summarised rollup of a fact table",
+    "snapshot_scd2": "holds a dated version of each record per row (a snapshot table)",
+    "operational": "is an application table, not shaped for analysis",
+    "staging": "is an intermediate ETL step",
+    "unknown": "is of unknown kind",
+}
+
+
+def describe_column(semantic_type: str | None, role: str | None) -> str:
+    """`code` + `dimension` -> "holds a short coded value; grouped by (type code)"."""
+    st, r = semantic_type or "unknown", role or "dimension"
+    if st == "unknown" and r == "metadata":
+        return "is an ETL bookkeeping column, not for analysis (type unknown)"
+    if st == "unknown":
+        return f"is untyped; {ROLE_PHRASES.get(r, r)} (type unknown)"
+    return f"{TYPE_PHRASES.get(st, st)}; {ROLE_PHRASES.get(r, r)} (type {st})"
+
+
+def describe_table(table_type: str | None) -> str:
+    """`snapshot_scd2` -> "holds a dated version ... (table_type snapshot_scd2)"."""
+    tt = table_type or "unknown"
+    return f"{TABLE_PHRASES.get(tt, tt)} (table_type {tt})"
+
+
+_AUTHOR: str | None = None
+_SIGNAL = "human"
+
+
+def set_author(name: str | None, signal: str = "human") -> None:
+    """Who signs the verdicts this process writes, and as what.
+
+    `signal` is `human` (the CLI passes git user.name or --by) or `agent`
+    (an automated reviewer; `by` then names the agent and model). The file
+    always says which, so a decision an agent took is never mistaken for one
+    a person took.
+    """
+    global _AUTHOR, _SIGNAL
+    _AUTHOR = name or None
+    _SIGNAL = signal
+
+
+_VERDICT_WORD = {"accept": "accepted", "reject": "rejected"}
+
+
+def _human(obj: dict, detail: str) -> None:
+    entry: dict = {"signal": _SIGNAL, "date": _dt.date.today().isoformat()}
+    if _AUTHOR:
+        entry["by"] = _AUTHOR
+    entry["detail"] = detail
+    obj.setdefault("provenance", []).append(entry)
+
+
+def _verdict(obj: dict, verdict: str, what: str, consequence: str | None = None) -> None:
+    detail = f"{_VERDICT_WORD.get(verdict, verdict)}: {what}"
+    if consequence:
+        detail += f"; {consequence}"
+    _human(obj, detail)
 _FKQ_RE = re.compile(r"REVIEW-QUEUED candidate -> (\S+) \(ratio ([\d.]+), name score ([\d.]+)")
 
 
@@ -204,6 +317,20 @@ def _metric_items(sl: dict) -> list[ReviewItem]:
 
 def _apply_low_confidence(target: dict, item: ReviewItem, verdict: str) -> None:
     """Accept promotes lifecycle; reject also resets the claimed type to unknown."""
+    consequence: str | None
+    if item.column is not None:
+        if (target.get("semantic_type") or "unknown") == "unknown" \
+                and target.get("entity_role", "dimension") == "dimension":
+            # there is no claim to accept or reject; say so instead of
+            # "is untyped; now untyped" (unknown + metadata IS a claim: ETL bookkeeping)
+            what = "no type could be inferred for this column"
+            consequence = "still untyped" if verdict != "accept" else "confirmed as untyped"
+        else:
+            what = describe_column(target.get("semantic_type"), target.get("entity_role"))
+            consequence = "now untyped" if verdict != "accept" else None
+    else:
+        what = describe_table(target.get("table_type"))
+        consequence = "now of unknown kind" if verdict != "accept" else None
     if verdict != "accept":
         if item.column is not None:
             target["semantic_type"] = "unknown"
@@ -211,53 +338,55 @@ def _apply_low_confidence(target: dict, item: ReviewItem, verdict: str) -> None:
         else:
             target["table_type"] = "unknown"
     target["lifecycle"] = "reviewed"
-    target.setdefault("provenance", []).append({"signal": "human", "detail": f"review: {verdict}"})
+    _verdict(target, verdict, what, consequence)
 
 
 def _apply_llm_guess_enum(target: dict, verdict: str) -> None:
     """Accept promotes guessed decodes to human-sourced; reject drops them."""
+    decs = {e["value"]: e["meaning"] for e in target.get("enum_values") or []
+            if e.get("decode_source") == "llm_guess"}
+    what = f"the coded values mean {decs}"
     if verdict == "accept":
         for e in target.get("enum_values", []):
             if e.get("decode_source") == "llm_guess":
                 e["decode_source"] = "human"
+        _verdict(target, verdict, what)
     else:
         target.pop("enum_values", None)
-    detail = f"enum decodes: {verdict}"
-    target.setdefault("provenance", []).append({"signal": "human", "detail": detail})
+        _verdict(target, verdict, what, "guessed meanings removed")
 
 
-def _apply_conflict(target: dict, verdict: str) -> None:
+def _apply_conflict(target: dict, item: ReviewItem, verdict: str) -> None:
     """Resolving a conflict clears it; accept also promotes lifecycle."""
     target.pop("conflicts", None)
-    detail = f"conflict resolved: {verdict}"
-    target.setdefault("provenance", []).append({"signal": "human", "detail": detail})
+    what = f"the inferred claim, over the disagreement: {item.claim}"
     if verdict == "accept":
         target["lifecycle"] = "reviewed"
+        _verdict(target, verdict, what)
+    else:
+        _verdict(target, verdict, what, "left as inferred, disagreement cleared")
 
 
 def _apply_fk_candidate(target: dict, item: ReviewItem, verdict: str) -> None:
     """Accept materializes the FK; either verdict clears the REVIEW-QUEUED marker."""
     m = re.search(r"-> (\S+)", item.claim)
+    parent = m.group(1) if m else "?"
     if verdict == "accept" and m and item.column:
         target["entity_role"] = "foreign_key"
         target["foreign_key"] = {"references": m.group(1), "relationship": "many_to_one"}
         target["lifecycle"] = "reviewed"
     target["provenance"] = [p for p in target.get("provenance", [])
                             if "REVIEW-QUEUED" not in p.get("detail", "")]
-    detail = f"fk candidate: {verdict}"
-    target.setdefault("provenance", []).append({"signal": "human", "detail": detail})
+    _verdict(target, verdict, f"is a key into {parent} (foreign key)",
+             None if verdict == "accept" else "no relationship recorded")
 
 
 _APPLIERS = {
     "low_confidence": lambda target, item, verdict: _apply_low_confidence(target, item, verdict),
     "llm_guess_enum": lambda target, item, verdict: _apply_llm_guess_enum(target, verdict),
-    "conflict": lambda target, item, verdict: _apply_conflict(target, verdict),
+    "conflict": lambda target, item, verdict: _apply_conflict(target, item, verdict),
     "fk_candidate": lambda target, item, verdict: _apply_fk_candidate(target, item, verdict),
 }
-
-
-def _human(obj: dict, detail: str) -> None:
-    obj.setdefault("provenance", []).append({"signal": "human", "detail": detail})
 
 
 def _apply_discovered_filter(sl: dict, metric: dict, verdict: str) -> None:
@@ -273,16 +402,18 @@ def _apply_discovered_filter(sl: dict, metric: dict, verdict: str) -> None:
         # the lifecycle verdict still stands, there is just nothing to move
         metric["lifecycle"] = "reviewed" if verdict == "accept" else metric.get(
             "lifecycle", "inferred")
-        _human(metric, f"discovered filter {verdict}: no filter on the metric")
+        _verdict(metric, verdict, "applies a discovered rule",
+                 "the metric no longer carries a filter, nothing to change")
         return
     base = _base_table(metric)
+    what = f"applies the rule {expr}, which nobody declared"
     if verdict == "accept":
         metric["lifecycle"] = "reviewed"
-        _human(metric, f"discovered filter confirmed: {expr}")
+        _verdict(metric, verdict, what)
         _promote_required_filter(sl, base, expr)
         return
     metric.pop("filter", None)
-    _human(metric, f"discovered filter rejected: {expr}")
+    _verdict(metric, verdict, what, "rule removed from the metric and from the table")
     _drop_required_filter(sl, base, expr)
 
 
@@ -292,7 +423,7 @@ def _promote_required_filter(sl: dict, base: str, expr: str) -> None:
             continue
         for f in (t.get("knowledge") or {}).get("required_filters", []):
             if f["expr"] == expr:
-                _human(t, f"required_filter confirmed: {expr}")
+                _verdict(t, "accept", f"every query on this table applies {expr}")
 
 
 def _drop_required_filter(sl: dict, base: str, expr: str) -> None:
@@ -304,7 +435,8 @@ def _drop_required_filter(sl: dict, base: str, expr: str) -> None:
             kept = [f for f in rfs if f["expr"] != expr]
             if len(kept) != len(rfs):
                 k["required_filters"] = kept
-                _human(t, f"required_filter rejected in review: {expr}")
+                _verdict(t, "reject", f"every query on this table applies {expr}",
+                         "rule removed")
             continue
         for f in rfs:
             if f"inherited from {base}" in (f.get("reason") or ""):
@@ -317,13 +449,14 @@ def _drop_required_filter(sl: dict, base: str, expr: str) -> None:
 
 def _apply_metric_plausibility(sl: dict, metric: dict, verdict: str) -> None:
     """Accept promotes; reject deprecates the metric (never deletes it)."""
+    what = f"is a metric over {_base_table(metric)}"
     if verdict == "accept":
         metric["lifecycle"] = "reviewed"
-        _human(metric, "metric confirmed in review")
+        _verdict(metric, verdict, what)
         return
     metric["lifecycle"] = "deprecated"
     metric["deprecation"] = {"reason": "rejected in review: not a meaningful metric"}
-    _human(metric, "metric rejected in review")
+    _verdict(metric, verdict, what, "metric deprecated")
 
 
 def _apply_aggregate_mapping(sl: dict, agg: dict, verdict: str) -> None:
@@ -334,15 +467,16 @@ def _apply_aggregate_mapping(sl: dict, agg: dict, verdict: str) -> None:
     earn it is an open spec question. A reviewed lifecycle still outranks an
     inferred one under 2.6, so the verdict is not inert.
     """
+    what = f"is a rollup of {agg.get('aggregates')}"
     if verdict == "accept":
         agg["lifecycle"] = "reviewed"
-        _human(agg, "mapping confirmed in review")
+        _verdict(agg, verdict, what)
         return
     agg["lifecycle"] = "deprecated"
     agg["deprecation"] = {"reason": "rejected in review: mapping does not hold"}
     agg.setdefault("routing", {})["status"] = "advisory"
     agg.setdefault("consistency", {})["status"] = "divergent"
-    _human(agg, "mapping rejected in review")
+    _verdict(agg, verdict, what, "no longer routed to")
     _drop_from_routing(sl, agg["table"])
 
 
@@ -358,12 +492,18 @@ def _apply_seam(sl: dict, rel: dict, verdict: str) -> None:
     A rejected edge stays in the hub so the same inference does not come
     back on the next refresh; consumers do not traverse it.
     """
+    a, b = rel["from"]["table"], rel["to"]["table"]
+    if rel.get("same_entity"):
+        what = f"{a} and {b} are the same entity"
+    else:
+        what = (f"{a}.{','.join(rel['from']['columns'])} joins "
+                f"{b}.{','.join(rel['to']['columns'])}")
     if verdict == "accept":
         rel["lifecycle"] = "reviewed"
-        _human(rel, "seam edge accepted in review")
+        _verdict(rel, verdict, what)
     else:
         rel["lifecycle"] = "deprecated"
-        _human(rel, "seam edge rejected in review: these tables are not related this way")
+        _verdict(rel, verdict, what, "not traversed")
 
 
 def _resolve_ref(sl: dict, ref: str) -> dict | None:
@@ -414,6 +554,315 @@ def _full_prov(obj) -> str:
     so clipping them to 60 characters would hide the reason to say yes.
     """
     return "; ".join(p.get("detail", "") for p in (obj.get("provenance") or []))
+
+
+@dataclass
+class Decision:
+    """One human verdict read back from the document."""
+
+    verdict: str          # accepted | rejected | noted
+    where: str            # table, table.column, metrics.<name>, aggregate_tables.<t>, seam.<r>
+    what: str
+    date: str | None = None
+    by: str | None = None
+    signal: str = "human"  # human | agent
+
+
+_LEGACY_WHAT = "(claim not recorded: written before verdicts carried their claim)"
+
+
+def _parse_detail(detail: str) -> tuple[str, str]:
+    for v in ("accepted", "rejected"):
+        if detail.startswith(v + ": "):
+            return v, detail[len(v) + 2:]
+    low = detail.lower()
+    if "reject" in low:
+        return "rejected", f"{detail} {_LEGACY_WHAT}"
+    if "accept" in low or "confirmed" in low:
+        return "accepted", f"{detail} {_LEGACY_WHAT}"
+    return "noted", detail
+
+
+def _human_entries(obj: dict, where: str) -> list[Decision]:
+    out = []
+    for p in obj.get("provenance") or []:
+        if p.get("signal") not in ("human", "agent"):
+            continue
+        verdict, what = _parse_detail(p.get("detail", ""))
+        out.append(Decision(verdict, where, what, p.get("date"), p.get("by"),
+                            p.get("signal", "human")))
+    return out
+
+
+def decisions(doc: dict) -> list[Decision]:
+    """Every human verdict in the document, newest first (undated last)."""
+    sl = doc["semantic_layer"]
+    out: list[Decision] = []
+    for t in sl.get("tables", []) or []:
+        out += _human_entries(t, t["name"])
+        for c in t.get("columns", []) or []:
+            out += _human_entries(c, f"{t['name']}.{c['name']}")
+    for m in sl.get("metrics", []) or []:
+        out += _human_entries(m, f"metrics.{m['name']}")
+    for a in sl.get("aggregate_tables", []) or []:
+        out += _human_entries(a, f"aggregate_tables.{a['table']}")
+    for r in sl.get("relationships", []) or []:
+        crosses = _owner(r["from"]["table"]) != _owner(r["to"]["table"])
+        out += _human_entries(r, f"{'seam' if crosses else 'relationships'}.{r.get('name', '')}")
+    dated = [d for d in out if d.date]
+    dated.sort(key=lambda d: (d.signal, d.by or ""))              # one block per author
+    dated.sort(key=lambda d: d.date or "", reverse=True)          # newest day first (stable)
+    return dated + [d for d in out if not d.date]
+
+
+# --------------------------------------------------------------- questions
+#
+# The queue a person or an agent sees is QUESTIONS, not items. Two items are
+# in one question only when the engine knows exactly the same things about
+# them apart from their names: same kind of claim, same spec fields, same
+# reason string the engine wrote, same confidence. Not similar -- identical.
+# A grouped question is the per-item questions with the name blanked out;
+# nothing the engine could have shown one at a time is lost.
+
+REASON_WORDS = {
+    "name rule -> name": "the column name ends in _name",
+    "name rule -> code": "the column name contains a word the engine reads as a code",
+    "name rule -> status_code": "the column name says status",
+    "name rule -> flag": "the column name says flag or is_",
+    "integer fallback": "an integer column with many distinct values and no other signal",
+    "decimal fallback": "a decimal column with no other signal",
+    "audit/etl name": "the column name looks like ETL bookkeeping",
+    "audit/etl timestamp name": "the column name looks like an ETL timestamp",
+    "no rule matched": "nothing in the name or the statistics matched a rule",
+    "id-named but low cardinality": "the name says id but there are only a few distinct values",
+    "table_type: snapshot naming/flag (no validity columns)":
+        "the table name says _hist or _snapshot but there are no valid_from / valid_to columns",
+    "table_type: isolated, no measures":
+        "nothing joins to it, it joins to nothing, and it has no measures",
+    "table_type: measure-heavy, few FKs resolved":
+        "it has several measures but few of its keys resolved to a parent",
+    "table_type: no decisive signal": "nothing about the name, keys or measures was decisive",
+    "integer with N distinct values: grouped, not summed":
+        "an integer column with only a few distinct values, so grouped rather than summed",
+    "table_type: N FK out + N measures, nothing references it":
+        "it has a key out and a measure but nothing references it",
+}
+
+_DIGITS_RE = re.compile(r"\d+")
+
+
+def _norm_reason(raw: str) -> str:
+    """`integer with 22 distinct values` and `... 23 ...` are one reason, not two.
+
+    The engine's reason strings carry the number they measured; the question
+    is the same whatever the number, so the key and the words see `N`.
+    """
+    return _DIGITS_RE.sub("N", raw)
+
+_CONSEQUENCE = {
+    "column": ("keeps the type, marked reviewed", "clears the type; the column stays, untyped"),
+    "table": ("keeps the table kind, marked reviewed", "clears the table kind to unknown"),
+    "metric_plausibility": ("keeps the metric, marked reviewed",
+                            "deprecates the metric; agents see it as unusable"),
+    "discovered_filter": ("the rule becomes a required filter on the table",
+                          "the rule is removed from the metric and the table"),
+    "aggregate_mapping": ("keeps the mapping, marked reviewed",
+                          "deprecates the mapping; the table is no longer routed to"),
+    "llm_guess_enum": ("the guessed meanings become human-sourced",
+                       "the guessed meanings are removed"),
+    "conflict": ("the claim stands, marked reviewed; the disagreement is cleared",
+                 "the claim stays inferred; the disagreement is cleared"),
+    "fk_candidate": ("the foreign key is recorded", "no relationship is recorded"),
+    "seam_edge": ("the join is kept across refreshes", "the join is deprecated and not traversed"),
+    "same_entity": ("the two tables are recorded as one entity",
+                    "the pair is deprecated; they are not the same entity"),
+}
+
+
+@dataclass
+class Question:
+    """One decision, over every object the engine made the identical claim about."""
+
+    key: str
+    kind: str
+    what: str                 # the claim in words, spec vocabulary in brackets
+    reason: str               # what the engine saw, in words
+    reason_raw: str           # the engine's own string
+    confidence: float | None
+    items: list[ReviewItem]
+    on_accept: str
+    on_reject: str
+    decidable: bool = True    # False: shown, but a verdict would change nothing
+    n: int = 0
+    notes: list[dict] = field(default_factory=list)
+
+    @property
+    def objects(self) -> list[str]:
+        """Every object's address, in queue order."""
+        return [i.location for i in self.items]
+
+    @property
+    def noun(self) -> str:
+        """What one object is called: column, table, metric, join, pair."""
+        if self.kind == "low_confidence":
+            return "column" if self.items[0].column else "table"
+        return {"metric_plausibility": "metric", "discovered_filter": "metric",
+                "aggregate_mapping": "aggregate table", "seam_edge": "join",
+                "same_entity": "pair", "inventory_only": "tier"}.get(self.kind, "object")
+
+    def distinct_names(self) -> list[str]:
+        """What a person scans: the column names (or table stems), not 328 locations."""
+        if self.items[0].column:
+            return sorted({i.column for i in self.items if i.column})
+        return sorted({_stem(i.table) for i in self.items})
+
+    def as_dict(self) -> dict:
+        """The question for an agent: every field, every object, nothing truncated."""
+        return {
+            "n": self.n, "key": self.key, "kind": self.kind, "decidable": self.decidable,
+            "claim": self.what, "engine_saw": self.reason, "engine_saw_raw": self.reason_raw,
+            "confidence": self.confidence, "count": len(self.items),
+            "distinct_names": self.distinct_names(),
+            "objects": [{"where": i.location, "table": i.table, "column": i.column,
+                         "claim": i.claim, "evidence": i.evidence, "ref": i.ref}
+                        for i in self.items],
+            "on_accept": self.on_accept, "on_reject": self.on_reject, "notes": self.notes,
+        }
+
+
+_STAGE_RE = re.compile(r"^(stg_[a-z0-9]+__|int__|dim_|fct_|agg_)", re.I)
+
+
+def _stem(table: str) -> str:
+    return _STAGE_RE.sub("", table.rsplit("/", 1)[-1])
+
+
+def _target(sl: dict, item: ReviewItem) -> dict | None:
+    if item.ref is not None:
+        return _resolve_ref(sl, item.ref)
+    t = next((x for x in sl["tables"] if x["name"] == item.table), None)
+    if t is None or item.column is None:
+        return t
+    return next((c for c in t["columns"] if c["name"] == item.column), None)
+
+
+def _reason_of(target: dict | None) -> str:
+    ps = (target or {}).get("provenance") or []
+    return ps[-1].get("detail", "") if ps else ""
+
+
+def _key(*parts: str) -> str:
+    return "q-" + hashlib.sha1("|".join(parts).encode()).hexdigest()[:8]
+
+
+def _classify(it: ReviewItem, tg: dict | None, raw: str, tables: dict) -> tuple:
+    """(key, claim in words, raw reason, reason in words, confidence, on_accept, on_reject)."""
+    tg = tg or {}
+    norm = _norm_reason(raw)
+    if it.kind == "low_confidence":
+        if it.column:
+            what = describe_column(tg.get("semantic_type"), tg.get("entity_role"))
+            acc, rej = _CONSEQUENCE["column"]
+        else:
+            what = describe_table(tg.get("table_type"))
+            acc, rej = _CONSEQUENCE["table"]
+        conf = tg.get("confidence")
+        return (_key(it.kind, what, norm, str(conf)), what, raw, REASON_WORDS.get(norm, norm),
+                conf, acc, rej)
+    if it.kind == "metric_plausibility":
+        tt = tables.get(it.table, {}).get("table_type") or "unknown"
+        what = f"is a metric over a table that {TABLE_PHRASES.get(tt, tt)} (table_type {tt})"
+        words = ("the base table is a pre-summarised rollup, and metrics are normally "
+                 "defined on the fact it rolls up")
+        acc, rej = _CONSEQUENCE[it.kind]
+        return _key(it.kind, tt), what, f"metric on {tt}", words, None, acc, rej
+    acc, rej = _CONSEQUENCE.get(it.kind, ("marked reviewed", "claim removed"))
+    return (_key(it.kind, it.location, it.claim), it.claim, raw, REASON_WORDS.get(norm, norm),
+            None, acc, rej)
+
+
+def group(items: list[ReviewItem], doc: dict) -> tuple[list[Question], list[Question]]:
+    """Fold the queue into questions. Returns (asked, not_asked).
+
+    not_asked holds what is shown but not asked: claims the engine never made
+    (semantic_type unknown with no rule matched: nothing to accept or reject)
+    and the inventory-only tier lines (a verdict changes nothing; the lever is
+    `tier` on the table).
+    """
+    sl = doc["semantic_layer"]
+    tables = {t["name"]: t for t in sl["tables"]}
+    asked: dict[str, Question] = {}
+    untyped: dict[str, list[ReviewItem]] = {}
+    tiers: list[Question] = []
+    for it in items:
+        tg = _target(sl, it)
+        raw = _reason_of(tg)
+        if it.kind == "inventory_only":
+            tiers.append(Question(_key("tier", it.ref or ""), it.kind, it.claim,
+                                  it.evidence, "", None, [it], "nothing changes",
+                                  "nothing changes: set `tier` on the tables you want modelled",
+                                  decidable=False))
+            continue
+        if it.kind == "low_confidence" and it.column and tg is not None \
+                and (tg.get("semantic_type") or "unknown") == "unknown" \
+                and tg.get("entity_role", "dimension") == "dimension":
+            untyped.setdefault(it.column, []).append(it)
+            continue
+        key, what, raw, words, conf, acc, rej = _classify(it, tg, raw, tables)
+        q = asked.get(key)
+        if q is None:
+            q = asked[key] = Question(key, it.kind, what, words, raw, conf, [], acc, rej)
+        q.items.append(it)
+    out = sorted(asked.values(), key=lambda q: -len(q.items))
+    not_asked: list[Question] = []
+    if untyped:
+        flat = [i for its in untyped.values() for i in its]
+        names = sorted(untyped, key=lambda c: -len(untyped[c]))
+        not_asked.append(Question(
+            _key("untyped"), "untyped", "could not be typed at all: nothing to accept or reject",
+            "; ".join(f"{c} ({len(untyped[c])} tables)" for c in names), "no rule matched",
+            None, flat, "nothing changes", "nothing changes: they stay untyped until a rule "
+            "or a reviewer names them", decidable=False))
+    not_asked += tiers
+    for n, q in enumerate(out + not_asked, 1):
+        q.n = n
+    notes = sl.get("review_notes") or []
+    for q in out + not_asked:
+        q.notes = [x for x in notes if x.get("question") == q.key]
+    return out, not_asked
+
+
+def answer(doc: dict, q: Question, verdict: str, exclude: set[str] | None = None,
+           hub: dict | None = None) -> int:
+    """Apply one verdict to every object in the question; returns how many it reached."""
+    if not q.decidable:
+        return 0
+    n = 0
+    for it in q.items:
+        if exclude and it.location in exclude:
+            continue
+        if hub is not None:
+            if apply_to_hub(hub, it, verdict):
+                n += 1
+        else:
+            apply(doc, it, verdict)
+            n += 1
+    return n
+
+
+def note(doc: dict, q: Question, text: str) -> dict:
+    """Leave a note on a question without deciding it.
+
+    An agent that could not decide says why; a human parks one for later.
+    """
+    entry: dict = {"date": _dt.date.today().isoformat(), "signal": _SIGNAL,
+                   "question": q.key, "about": f"{len(q.items)} {q.noun}(s): {q.what}",
+                   "note": text}
+    if _AUTHOR:
+        entry["by"] = _AUTHOR
+    doc["semantic_layer"].setdefault("review_notes", []).append(entry)
+    q.notes.append(entry)
+    return entry
 
 
 def apply_to_hub(hub: dict, item: ReviewItem, verdict: str) -> bool:
