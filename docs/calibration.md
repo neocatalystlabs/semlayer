@@ -500,6 +500,11 @@ over the 785 gold columns, strict grade, before and after all seven:
   over the 65 gold columns ending `_name`/`_nm`, 26 are `name`, 20
   `free_text`, 5 `geo_city`, 5 `pii_name`, 9 other. The rule must keep
   escalating to the LLM, and without one the question belongs in the queue.
+  A side effect the FK cost guard caught: `concept_class_name` (three copies
+  in dbt_synthea) and `EnglishProductCategoryName` (AdventureWorksDW) were
+  `code` and so were tested as foreign-key children; all four matched
+  nothing. As `name` they are not children: 72 and 21 fewer wasted inclusion
+  tests, figures in docs/scale.md and `tests/test_fk_query_cost.py`.
 - **Isolated `int__` tables** follow their staging tier (0.85, capped) at the
   table-type fallthrough instead of `operational` at 0.1. A table the graph
   can type keeps the graph's answer. Uncalibrated: no gold fixture has an
