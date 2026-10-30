@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### `set`: a reviewer can say what is true
+
+Beside accept and reject, `set:<value>` replaces the engine's claim with
+the reviewer's: `set:identifier/primary_key` on a column question,
+`set:fact` on a table question, `set:base=<table>` or
+`set:filter=<expr>` on a metric question; `t` in the interactive walk.
+Values are spec vocabulary only, checked before anything is written, and
+refused on questions that are yes-or-no claims. The object becomes
+`reviewed` with no `confidence` (human-authored) and its provenance line
+keeps the claim that was replaced. `--decisions` counts `set` verdicts.
+docs/review.md "Saying what is true".
+
 ### `semlayer review hub.yaml --members`: one answer across the set
 
 A hub's members ask the same questions: on the 5,000-table estate 41
