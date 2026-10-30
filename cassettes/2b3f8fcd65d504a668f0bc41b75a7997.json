@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"chnl_nm\",\n    \"semantic_type\": \"name\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": null,\n    \"rationale\": \"Channel name; dimension table attribute with 4 distinct values\"\n  }\n]\n```",
+ "usage": {
+  "in": 428,
+  "out": 89
+ }
+}

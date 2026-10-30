@@ -9,6 +9,7 @@ PK candidates come from full-column uniqueness + id-naming.
 
 from __future__ import annotations
 
+import collections
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from importlib.metadata import version
@@ -192,7 +193,9 @@ def profile_with_stats(source, no_sample_values: bool = False, llm=None, context
     profiled_total = 0
     pending: list[tuple[TableStats, dict]] = []   # escalation, after the scan
     shallow_total = 0
+    doc_names = _doc_table_names(tables_meta)
     for t in sorted(tables_meta, key=lambda x: (x.schema, x.name)):
+        doc_table_name = doc_names[(t.schema, t.name)]
         parts = partitions.get((t.schema, t.name)) if partitions else None
         inc = None
         # The tier is decided from the catalogue alone -- name and column
@@ -205,14 +208,16 @@ def profile_with_stats(source, no_sample_values: bool = False, llm=None, context
         tier = infer_tier(t.name, [c.name for c in t.columns])
         if is_informational(tier) and not parts:
             ts, doc, n = _list_inventory(t, tier, comments, lineage)
-            stats_by_table[t.name] = ts
+            doc["name"] = doc_table_name
+            stats_by_table[doc_table_name] = ts
             out_tables.append(doc)
             n_comments += n
             shallow_total += 1
             continue
         ts, inc = _stats_for(source, t, parts, state)
-        stats_by_table[t.name] = ts
+        stats_by_table[doc_table_name] = ts
         doc = _table_doc(ts, no_sample_values, tier)
+        doc["name"] = doc_table_name
         if inc is not None:
             from semlayer.incremental import apply_cardinality
             reused_total += len(inc.reused)
@@ -581,6 +586,26 @@ def _log_shallow(shallow: int, total: int) -> None:
     if shallow:
         logger.info("profile: %d of %d tables are inventory-only and were listed from the "
                     "catalogue without a statistics scan", shallow, total)
+
+
+def _doc_table_names(tables_meta) -> dict[tuple[str, str], str]:
+    """The document name for each table: bare, or `schema__table` where the bare name collides.
+
+    A document's table names must be unique: Link keys its statistics by
+    them, foreign keys reference them, review addresses them. Two schemas
+    holding the same bare name (crm.dim_region, erp.dim_region) used to
+    produce two tables called dim_region; Link then read one table's
+    statistics under the other's name and crashed on the first column the
+    two did not share. A name only one schema holds stays bare, so
+    single-schema runs and per-schema members are unchanged.
+    """
+    seen = collections.Counter(t.name for t in tables_meta)
+    collisions = {n for n, k in seen.items() if k > 1}
+    if collisions:
+        logger.info("%d table name(s) exist in more than one schema; qualified as "
+                    "schema__table: %s", len(collisions), ", ".join(sorted(collisions)[:8]))
+    return {(t.schema, t.name): (f"{t.schema}__{t.name}" if t.name in collisions else t.name)
+            for t in tables_meta}
 
 
 def _stats_for(source, t, parts, state) -> tuple[TableStats, IncrementalResult | None]:

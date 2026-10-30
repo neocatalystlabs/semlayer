@@ -1,0 +1,9 @@
+{
+ "model": "claude-haiku-4-5-20251001",
+ "system_sha": "b99d1038a5ec",
+ "response": "```json\n[\n  {\n    \"column\": \"category_nm\",\n    \"semantic_type\": \"name\",\n    \"entity_role\": \"dimension\",\n    \"confidence\": 0.95,\n    \"enum_decodes\": null,\n    \"rationale\": \"Product category names; unique, descriptive text values\"\n  },\n  {\n    \"column\": \"dept_cd\",\n    \"semantic_type\": \"code\",\n    \"entity_role\": \"foreign_key\",\n    \"confidence\": 0.90,\n    \"enum_decodes\": {\n      \"ELEC\": \"Electronics\",\n      \"HOME\": \"Home\",\n      \"APPRL\": \"Apparel\",\n      \"GROC\": \"Grocery\",\n      \"TOYS\": \"Toys\"\n    },\n    \"rationale\": \"Department code; abbreviated values, likely FK to dept dimension\"\n  }\n]\n```",
+ "usage": {
+  "in": 634,
+  "out": 215
+ }
+}

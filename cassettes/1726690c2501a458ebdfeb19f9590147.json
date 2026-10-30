@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "a2ec036e2008",
+ "response": "[\n {\"id\": 0, \"correct\": false, \"useful\": true, \"issue\": \"describes channel dimension, not departments\"},\n {\"id\": 1, \"correct\": false, \"useful\": true, \"issue\": \"swapped with dept_cd description\"},\n {\"id\": 2, \"correct\": false, \"useful\": true, \"issue\": \"swapped with dept_nm description\"},\n {\"id\": 3, \"correct\": false, \"useful\": true, \"issue\": \"describes order fact table, not channels\"},\n {\"id\": 4, \"correct\": false, \"useful\": true, \"issue\": \"swapped with chnl_nm; values are codes\"},\n {\"id\": 5, \"correct\": false, \"useful\": true, \"issue\": \"swapped with chnl_cd; values are names\"},\n {\"id\": 6, \"correct\": false, \"useful\": true, \"issue\": \"describes campaign dim, not order header\"},\n {\"id\": 7, \"correct\": false, \"useful\": true, \"issue\": \"swapped with src_sys_id description\"},\n {\"id\": 8, \"correct\": false, \"useful\": true, \"issue\": \"swapped with promo_id description\"},\n {\"id\": 9, \"correct\": false, \"useful\": true, \"issue\": \"swapped with date_key description\"},\n {\"id\": 10, \"correct\": false, \"useful\": true, \"issue\": \"describes ETL metadata, not campaigns\"},\n {\"id\": 11, \"correct\": false, \"useful\": true, \"issue\": \"describes cmpgn_id, not end_dt\"}\n]",
+ "usage": {
+  "in": 3977,
+  "out": 1192
+ }
+}

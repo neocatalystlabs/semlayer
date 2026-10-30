@@ -613,7 +613,11 @@ def _monetary_metrics(t: dict, status_col: dict | None, seen: set) -> list[dict]
             continue
         if c.get("semantic_type") != "monetary_value":
             continue
-        base = f"total_{c['name']}"
+        # `total_tax` already says total; `total_total_tax` said it twice.
+        # Only the full word: messy_mart's `tot_amt` keeps `total_tot_amt`,
+        # which its gold, docs and export tests all name.
+        already = c["name"].startswith("total_")
+        base = c["name"] if already else f"total_{c['name']}"
         if base in seen:
             base = f"total_{t['name']}_{c['name']}"
         seen.add(base)

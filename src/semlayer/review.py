@@ -284,10 +284,18 @@ def _metric_items(sl: dict) -> list[ReviewItem]:
     """
     items: list[ReviewItem] = []
     types = {t["name"]: t for t in sl["tables"]}
+    # A rollup whose sums reconciled to a fact, per group, has had its metric
+    # proven by data; asking a human "is this a metric?" on top of that was
+    # 764 of 11,845 items on the 15,000-table estate. An UNRECONCILED rollup
+    # is still asked: nothing but a name says the summary means what it says.
+    reconciled = {a["table"] for a in sl.get("aggregate_tables", []) or []
+                  if a.get("lifecycle") != "deprecated"}
     for m in sl.get("metrics", []) or []:
         if m.get("lifecycle") != "inferred":
             continue
         base = _base_table(m)
+        if base in reconciled:
+            continue
         rule = next((mt.group(1) for p in m.get("provenance", []) or []
                      if (mt := _RECONCILED_RE.search(p.get("detail", "")))), None)
         if rule is not None:
@@ -642,6 +650,12 @@ REASON_WORDS = {
     "table_type: measure-heavy, few FKs resolved":
         "it has several measures but few of its keys resolved to a parent",
     "table_type: no decisive signal": "nothing about the name, keys or measures was decisive",
+    "ETL bookkeeping column name": "the column name is one ETL tooling writes",
+    "raw payload column name": "the column name says it holds the raw record",
+    "staging tier by name prefix, nothing joins to it":
+        "the name prefix says staging (int__, stg_), and nothing joins to it",
+    "staging tier by name prefix, no other signal":
+        "the name prefix says staging (int__, stg_), and nothing else was decisive",
     "integer with N distinct values: grouped, not summed":
         "an integer column with only a few distinct values, so grouped rather than summed",
     "table_type: N FK out + N measures, nothing references it":
@@ -790,7 +804,7 @@ def group(items: list[ReviewItem], doc: dict) -> tuple[list[Question], list[Ques
     `tier` on the table).
     """
     sl = doc["semantic_layer"]
-    tables = {t["name"]: t for t in sl["tables"]}
+    tables = {t["name"]: t for t in sl.get("tables") or []}
     asked: dict[str, Question] = {}
     untyped: dict[str, list[ReviewItem]] = {}
     tiers: list[Question] = []
@@ -833,21 +847,50 @@ def group(items: list[ReviewItem], doc: dict) -> tuple[list[Question], list[Ques
 
 
 def answer(doc: dict, q: Question, verdict: str, exclude: set[str] | None = None,
-           hub: dict | None = None) -> int:
-    """Apply one verdict to every object in the question; returns how many it reached."""
+           hub: dict | None = None, members: dict[str, dict] | None = None,
+           touched: set[str] | None = None) -> int:
+    """Apply one verdict to every object in the question; returns how many it reached.
+
+    On a hub, an object the hub owns (its seam, its own tables) is applied to
+    the hub document. With `members` (name -> that member's own document) an
+    object a member owns is applied to the member, so one verdict settles the
+    same question in every file that holds it; `touched` collects the names
+    of the members written to, so the caller saves exactly those. Without
+    `members`, member objects are not the hub's to settle and are skipped.
+    """
     if not q.decidable:
         return 0
     n = 0
     for it in q.items:
         if exclude and it.location in exclude:
             continue
-        if hub is not None:
-            if apply_to_hub(hub, it, verdict):
-                n += 1
-        else:
+        if hub is None:
             apply(doc, it, verdict)
             n += 1
+        elif apply_to_hub(hub, it, verdict):
+            n += 1
+        elif members is not None and _owner(it.table) in members:
+            owner = _owner(it.table)
+            bare = ReviewItem(it.kind, it.table.split("/", 1)[1], it.column, it.claim,
+                              it.evidence, ref=it.ref)
+            apply(members[owner], bare, verdict)
+            if touched is not None:
+                touched.add(owner)
+            n += 1
     return n
+
+
+def decisions_across(hub: dict, members: dict[str, dict]) -> list[Decision]:
+    """The hub's decisions and every member's, member objects prefixed `member/`."""
+    out = decisions(hub)
+    for name, mdoc in members.items():
+        for d in decisions(mdoc):
+            d.where = f"{name}/{d.where}"
+            out.append(d)
+    dated = [d for d in out if d.date]
+    dated.sort(key=lambda d: (d.signal, d.by or ""))
+    dated.sort(key=lambda d: d.date or "", reverse=True)
+    return dated + [d for d in out if not d.date]
 
 
 def note(doc: dict, q: Question, text: str) -> dict:

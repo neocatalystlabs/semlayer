@@ -26,5 +26,16 @@ jobs:
           python -m venv /tmp/wt && /tmp/wt/bin/pip install --quiet dist/*.whl
           cd /tmp && /tmp/wt/bin/python -c "import semlayer, semlayer.validate"
           /tmp/wt/bin/semlayer --help > /dev/null
+      - name: Benchmark replays reproduce at this release
+        # docs/benchmark.md is "accurate as of release X". This is the one place
+        # that claim is checked: the replay tests are skipped in ordinary CI
+        # and run here, with no API key, against the committed cassettes.
+        env:
+          SEMLAYER_RELEASE_CHECK: "1"
+          ANTHROPIC_API_KEY: ""
+        run: |
+          python -m pip install --quiet -e ".[dev]"
+          python fixtures/build.py
+          python -m pytest tests/test_benchmark_replays.py -q
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

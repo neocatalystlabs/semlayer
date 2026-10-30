@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "a2ec036e2008",
+ "response": "[\n {\"id\": 0, \"correct\": false, \"useful\": true, \"issue\": \"Describes as name/descriptive label, but it's an ID code\"},\n {\"id\": 1, \"correct\": false, \"useful\": true, \"issue\": \"Describes as end date, but column is name text\"},\n {\"id\": 2, \"correct\": false, \"useful\": true, \"issue\": \"Describes SCD2 customer dimension, not job control table\"},\n {\"id\": 3, \"correct\": false, \"useful\": true, \"issue\": \"Describes job_nm values, mismatched to actv_flg\"},\n {\"id\": 4, \"correct\": false, \"useful\": true, \"issue\": \"Describes last_run_dt content, mismatched to job_nm\"},\n {\"id\": 5, \"correct\": false, \"useful\": true, \"issue\": \"Describes actv_flg content, mismatched to last_run_dt\"},\n {\"id\": 6, \"correct\": false, \"useful\": true, \"issue\": \"Describes product table, mismatched to cust_mstr\"},\n {\"id\": 7, \"correct\": false, \"useful\": true, \"issue\": \"Describes city column, mismatched to eff_start_dt\"},\n {\"id\": 8, \"correct\": false, \"useful\": true, \"issue\": \"Describes surrogate key, mismatched to city_nm\"},\n {\"id\": 9, \"correct\": false, \"useful\": true, \"issue\": \"Describes eff_start_dt, mismatched to cust_sk\"},\n {\"id\": 10, \"correct\": false, \"useful\": true, \"issue\": \"Describes address table, mismatched to prod_ref\"},\n {\"id\": 11, \"correct\": false, \"useful\": true, \"issue\": \"Describes list_price, mismatched to prod_nm\"}\n]",
+ "usage": {
+  "in": 4064,
+  "out": 1293
+ }
+}

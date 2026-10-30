@@ -465,6 +465,67 @@ that were already better.
 - **Corpus is synthetic.** 9 fixtures, one shape of "enterprise-looking". Real
   warehouses will move these numbers.
 
+## Rule fixes from the 2,000-table review queue (2026-10-30)
+
+The grouped review queue on the 2,000-table benchmark estate asked nine
+questions; seven of them were the engine's to answer, not the user's. Each
+fix below is pinned by `tests/test_rule_fixes_2026_10_30.py`. Typing scores
+over the 785 gold columns, strict grade, before and after all seven:
+
+| fixture | type before | type after | role before | role after |
+|---|---|---|---|---|
+| collision_heavy | 0.871 | 0.887 | 0.919 | 0.919 |
+| messy_mart | 0.833 | 0.854 | 0.722 | 0.732 |
+| every other fixture | unchanged | | unchanged | |
+| **all 785 columns** | **0.815** | **0.822** | **0.811** | **0.814** |
+
+- **ETL bookkeeping names** (`src_system`, `record_hash`, `src_sys`, the
+  Fivetran/Airbyte/dbt-utils columns `semlayer.tier` already knows): typed
+  `unknown`/`metadata` at **0.85** by exact name, before the id rule, so
+  `etl_batch_id` is bookkeeping and not a foreign key. `batch_id` and `op`
+  are left out: a fact can carry a real batch key. **Uncalibrated**: no gold
+  fixture has these columns; the number is a judgement that tool-written
+  names are unambiguous. On the estate these three names were 1,198 of the
+  1,708 review items.
+- **Raw payload names** (`payload`, `raw_payload`, `raw_json`, `raw_record`):
+  `json_object`/`metadata` at 0.75. Uncalibrated, same reason.
+- **`sk_` prefix** is a key like the `sk` suffix (`_ID_NAME_RE`, `is_keyish`).
+  30 surrogate keys on the estate were summed measures from the integer
+  fallback. Confidence is the id rule's existing 0.85 / 0.7.
+- **`_name` before the code vocabulary.** `category_name`, `chnl_nm`,
+  `priority_name` are the display names of coded dimensions and gold types
+  every one `name`; the code rule claimed them because `category` and
+  `chnl` are in its stem list. This is the whole of the collision_heavy and
+  messy_mart gains above. The rule's **0.65 is deliberately not raised**:
+  over the 65 gold columns ending `_name`/`_nm`, 26 are `name`, 20
+  `free_text`, 5 `geo_city`, 5 `pii_name`, 9 other. The rule must keep
+  escalating to the LLM, and without one the question belongs in the queue.
+  A side effect the FK cost guard caught: `concept_class_name` (three copies
+  in dbt_synthea) and `EnglishProductCategoryName` (AdventureWorksDW) were
+  `code` and so were tested as foreign-key children; all four matched
+  nothing. As `name` they are not children: 72 and 21 fewer wasted inclusion
+  tests, figures in docs/scale.md and `tests/test_fk_query_cost.py`.
+- **Isolated `int__` tables** follow their staging tier (0.85, capped) at the
+  table-type fallthrough instead of `operational` at 0.1. A table the graph
+  can type keeps the graph's answer. Uncalibrated: no gold fixture has an
+  `int__` table.
+- **Metrics on rollups**: a rollup whose sums reconciled to a fact, per
+  group, has had its metric proven by data, so `semlayer review` no longer
+  asks "is this a metric?" about it; an unreconciled rollup is still asked.
+  The metrics themselves are kept on every rollup: a consumer may compile
+  against the rollup directly, with its time dimension resolved through the
+  date dimension (`tests/test_compile.py`), and a first cut that dropped them
+  broke exactly that. `total_tax` no longer becomes `total_total_tax`.
+- **Reason strings** stay as the engine writes them (`name rule -> name`);
+  `semlayer review` renders them in words from a table in `review.py`. The
+  strings are stable identifiers (`ALWAYS_ESCALATE` compares on one, the
+  question key hashes one), so rewording them in the engine would churn
+  every existing layer's provenance for no information a reader does not
+  already get.
+
+The escalation set changed (`category_nm` and friends now sit under 0.7),
+so the messy_mart cassettes were re-recorded: three new prompts.
+
 ## Queued rule fixes the data points at
 
 Measured confusions that are specific enough to fix, each its own reviewed diff:

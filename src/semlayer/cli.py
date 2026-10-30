@@ -191,6 +191,9 @@ def _add_review_parser(sub) -> None:
     p.add_argument("--list", action="store_true", help="List the questions without prompting")
     p.add_argument("--flat", action="store_true",
                    help="One item at a time instead of grouped questions")
+    p.add_argument("--members", action="store_true",
+                   help="On a hub: ask every member's questions too, once each across the set, "
+                        "and write verdicts into the member files (you need write access to them)")
     p.add_argument("--question", metavar="N|KEY", default=None,
                    help="With --list: print one question with every object it covers")
     p.add_argument("--answer", metavar="N=accept,KEY=reject,...", default=None,
@@ -354,13 +357,15 @@ def _git_author(doc_path: str) -> str | None:
     return r.stdout.strip() or None if r.returncode == 0 else None
 
 
-def _print_decisions(doc: dict, undecided: int, is_hub: bool, as_json: bool) -> None:
+def _print_decisions(doc: dict, undecided: int, is_hub: bool, as_json: bool,
+                     members=None) -> None:
     import json
     from dataclasses import asdict
 
-    from semlayer.review import decisions
+    from semlayer.review import decisions, decisions_across
 
-    rows = decisions(doc)
+    rows = decisions_across(doc, {k: v[1] for k, v in members.items()}) if members \
+        else decisions(doc)
     if as_json:
         print(json.dumps([asdict(d) for d in rows], indent=1))
         return
@@ -467,26 +472,49 @@ def _cmd_review(args: argparse.Namespace) -> int:
     # would turn the hub file into a copy of the whole estate
     hub = load_yaml(Path(args.doc).read_text()) if doc["semantic_layer"].get("members") else None
     target = hub if hub is not None else doc
+    if args.members and hub is None:
+        raise SpecError(f"{args.doc} is not a hub; --members applies to a set")
+    members = _load_members(args.doc, hub) if (hub is not None and args.members) else None
     items = collect(doc)
-    if hub is not None:
+    if hub is not None and members is None:
         items = for_hub(items, doc["semantic_layer"]["name"])
     if args.decisions:
-        _print_decisions(target, len(items), hub is not None, args.json)
+        _print_decisions(target, len(items), hub is not None and members is None, args.json,
+                         members)
         return 0
     set_author(args.by or _git_author(args.doc), "agent" if args.agent else "human")
     if args.flat:
         return _review_flat(args, doc, hub, items)
-    asked, not_asked = group(items, target)
+    asked, not_asked = group(items, doc)   # the resolved set: a hub has no tables of its own
     if args.answer or args.note:
-        return _review_answer(args, doc, hub, asked, not_asked)
-    return _review_questions(args, doc, hub, items, asked, not_asked)
+        return _review_answer(args, doc, hub, asked, not_asked, members)
+    return _review_questions(args, doc, hub, items, asked, not_asked, members)
 
 
-def _review_answer(args, doc, hub, asked, not_asked) -> int:
-    from semlayer.review import answer, note
+def _load_members(hub_path: str, hub: dict) -> dict[str, tuple[Path, dict]]:
+    """Each member's own file, by name, for `--members` to write verdicts into."""
+    from semlayer.validate import load_yaml
 
-    target = hub if hub is not None else doc
-    # parse everything before changing anything, so a bad flag changes nothing
+    out = {}
+    for m in hub["semantic_layer"]["members"]:
+        p = Path(m["path"])
+        if not p.is_absolute():
+            p = Path(hub_path).resolve().parent / p
+        out[m["name"]] = (p, load_yaml(p.read_text()))
+    return out
+
+
+def _save_reviewed(doc_path: str, target: dict, members, touched: set[str], note: str) -> None:
+    """Save the reviewed document and, with --members, every member file a verdict reached."""
+    _save_doc(doc_path, target)
+    print(f"saved {doc_path}{note}")
+    for name in sorted(touched):
+        path, mdoc = members[name]
+        _save_doc(str(path), mdoc)
+        print(f"saved {path}")
+
+
+def _parse_excludes(args, asked) -> dict[str, set[str]]:
     excludes: dict[str, set[str]] = {}
     for k, v in _parse_pairs(args.exclude, ";"):
         q = _find_question(asked, k)
@@ -495,6 +523,17 @@ def _review_answer(args, doc, hub, asked, not_asked) -> int:
         if unknown:
             raise SpecError(f"not in question {q.n}: {', '.join(sorted(unknown))}")
         excludes[q.key] = wanted
+    return excludes
+
+
+def _review_answer(args, doc, hub, asked, not_asked, members=None) -> int:
+    from semlayer.review import answer, note
+
+    target = hub if hub is not None else doc
+    mdocs = {k: v[1] for k, v in members.items()} if members else None
+    touched: set[str] = set()
+    # parse everything before changing anything, so a bad flag changes nothing
+    excludes = _parse_excludes(args, asked)
     verdicts = []
     for k, v in _parse_pairs(args.answer, ","):
         if v not in ("accept", "reject"):
@@ -508,7 +547,7 @@ def _review_answer(args, doc, hub, asked, not_asked) -> int:
         notes.append((_find_question(asked + not_asked, k), text.strip()))
     changed = 0
     for q, v in verdicts:
-        n = answer(doc, q, v, excludes.get(q.key), hub)
+        n = answer(doc, q, v, excludes.get(q.key), hub, mdocs, touched)
         print(f"{v}ed question {q.n} ({q.key}): {n} of {len(q.items)} {q.noun}(s)")
         changed += n
     for q, text in notes:
@@ -516,17 +555,18 @@ def _review_answer(args, doc, hub, asked, not_asked) -> int:
         print(f"noted question {q.n} ({q.key})")
         changed += 1
     if changed:
-        _save_doc(args.doc, target)
-        print(f"saved {args.doc}")
+        _save_reviewed(args.doc, target, members, touched, "")
     return 0
 
 
-def _review_questions(args, doc, hub, items, asked, not_asked) -> int:
+def _review_questions(args, doc, hub, items, asked, not_asked, members=None) -> int:
     import json
 
     from semlayer.review import answer
 
     name = doc["semantic_layer"].get("name", "")
+    mdocs = {k: v[1] for k, v in members.items()} if members else None
+    touched: set[str] = set()
     if args.json:
         print(json.dumps({"document": name, "undecided_items": len(items),
                           "questions": [q.as_dict() for q in asked],
@@ -551,14 +591,14 @@ def _review_questions(args, doc, hub, items, asked, not_asked) -> int:
         if not args.list:
             verdict, exclude = _ask(q)
             if verdict is not None:
-                saved += answer(doc, q, verdict, exclude, hub)
+                saved += answer(doc, q, verdict, exclude, hub, mdocs, touched)
     if not_asked:
         print("Shown, not asked:\n")
         for q in not_asked:
             _print_question(q, full=False)
     if not args.list and saved:
-        _save_doc(args.doc, hub if hub is not None else doc)
-        print(f"saved {args.doc}: {saved} verdict(s) written")
+        _save_reviewed(args.doc, hub if hub is not None else doc, members, touched,
+                       f": {saved} verdict(s) written")
     return 0
 
 

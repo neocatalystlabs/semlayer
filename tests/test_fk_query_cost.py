@@ -35,9 +35,15 @@ EXT = pathlib.Path(__file__).resolve().parents[1] / "fixtures" / "external" / "d
 # (fixture, tested children, total tests, median per tested child, share at cap)
 # Measured 2026-10-16, deterministic (llm=None, no manifest). Reproduced
 # independently by a reviewer within 1.5% before being written down.
+# 667 -> 664 and 144 -> 143 on 2026-10-30, when the `_name` typing rule was
+# moved above the code vocabulary: concept_class_name (three copies) and
+# EnglishProductCategoryName were typed `code`, so Link tested them as
+# foreign-key children, and every one of their tests missed (all four were
+# no-match children). Typed `name`, they are not children. 72 and 21 fewer
+# wasted tests; per-child rate, median and cap share did not move.
 EXPECTED = {
-    "dbt_synthea": (667, 23_198, 40.0, 0.74),
-    "adventureworks_dw": (144, 2_008, 15.5, 0.00),
+    "dbt_synthea": (664, 23_128, 40.0, 0.74),
+    "adventureworks_dw": (143, 1_991, 15.0, 0.00),
 }
 
 
@@ -93,7 +99,9 @@ NO_MATCH = {
     # patients.Id (same 1,171 values, no shared name token) and
     # device_exposure.unique_device_id and payer_plan_period.plan_source_value
     # found an included parent for the first time. Shares did not move.
-    "dbt_synthea": (341, 0.57, 0.41),
+    # 341 -> 338 on 2026-10-30: the three concept_class_name copies left the
+    # child set altogether (see EXPECTED above). Shares did not move.
+    "dbt_synthea": (338, 0.56, 0.41),
 }
 
 

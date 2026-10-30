@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "a2ec036e2008",
+ "response": "[\n {\"id\": 0, \"correct\": false, \"useful\": false, \"issue\": \"Not a sequential PK; it's a filename\"},\n {\"id\": 1, \"correct\": false, \"useful\": false, \"issue\": \"Describes currency dim, not subscription events\"},\n {\"id\": 2, \"correct\": false, \"useful\": false, \"issue\": \"sub_id is subscription identifier, not a date\"},\n {\"id\": 3, \"correct\": false, \"useful\": false, \"issue\": \"crt_dt is creation date, not event date\"},\n {\"id\": 4, \"correct\": false, \"useful\": false, \"issue\": \"evt_dt is a date, not an identifier\"},\n {\"id\": 5, \"correct\": false, \"useful\": false, \"issue\": \"Describes product departments, not currencies\"},\n {\"id\": 6, \"correct\": false, \"useful\": false, \"issue\": \"curr_nm holds full names, not codes\"},\n {\"id\": 7, \"correct\": false, \"useful\": false, \"issue\": \"curr_cd is code, not exchange rate\"},\n {\"id\": 8, \"correct\": false, \"useful\": false, \"issue\": \"to_usd_rate is numeric rate, not name\"}\n]",
+ "usage": {
+  "in": 2266,
+  "out": 1028
+ }
+}

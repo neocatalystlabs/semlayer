@@ -54,6 +54,13 @@ def classify_table(t: dict, fk_out: int, fk_in: int) -> tuple[str, float, str]:
     )
     # entity-shape: tiny table, a key plus name/descriptive columns
     has_name_col = any(n.endswith(("_name", "_nm")) for n in col_names)
+    # The tier (semlayer.tier) already read the name prefix: an `int__` table is
+    # staging there at 0.9 while the rules below, finding no graph signal,
+    # called it operational at 0.1. The tier settles the fallthrough only --
+    # a table the graph can type keeps the graph's answer.
+    tier = t.get("tier") or {}
+    staging_tier = tier.get("value") == "staging"
+    tier_conf = round(min(float(tier.get("confidence") or 0.5), 0.85), 2)
 
     rules: list[tuple[bool, str, float, str]] = [
         (bool(_STAGING_RE.search(name)), "staging", 0.85, "staging naming"),
@@ -94,10 +101,14 @@ def classify_table(t: dict, fk_out: int, fk_in: int) -> tuple[str, float, str]:
         (n_cols <= 4 and n_measures == 0 and has_name_col, "dimension", 0.65,
          "key + name entity shape"),
         (n_measures >= 2, "fact", 0.1, "measure-heavy, few FKs resolved"),
+        (staging_tier and fk_in == 0 and fk_out == 0 and n_measures == 0, "staging", tier_conf,
+         "staging tier by name prefix, nothing joins to it"),
         (fk_in == 0 and fk_out == 0 and n_measures == 0, "operational", 0.1,
          "isolated, no measures"),
     ]
     for matched, ttype, conf, detail in rules:
         if matched:
             return ttype, conf, detail
+    if staging_tier:
+        return "staging", tier_conf, "staging tier by name prefix, no other signal"
     return "unknown", 0.05, "no decisive signal"

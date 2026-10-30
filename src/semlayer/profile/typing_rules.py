@@ -20,6 +20,7 @@ import re
 from dataclasses import dataclass
 
 from semlayer.profile.stats import ColumnStats
+from semlayer.tier import ETL_METADATA_COLUMNS
 
 
 @dataclass
@@ -76,6 +77,15 @@ _NAME_RULES: list[tuple[re.Pattern, str, float]] = [
     (re.compile(r"(^|_)(qty|quantity|units|cnt|count|num)($|_)"), "quantity", 0.75),
     (re.compile(r"(^|_)(rate|ratio)($|_)"), "rate", 0.75),
     (re.compile(r"(^|_)(pct|percent|percentage)($|_)"), "percentage", 0.8),
+    # `_name` BEFORE the status/code vocabulary: `category_name`, `chnl_nm` and
+    # `priority_name` are the display names of coded dimensions, and gold types
+    # every one of them `name`; the code rule below was claiming them because
+    # `category`/`chnl` are in its stem list. Specific vocabularies (pii_name,
+    # geo_city, ...) are still above this line and still win. 0.65 is NOT
+    # raised: over the 65 gold columns ending in _name/_nm only 26 are `name`
+    # (20 are free_text, 5 geo_city, 5 pii_name), so the rule must keep
+    # escalating to the LLM and, without one, keep its place in the queue.
+    (re.compile(r"(^|_)(nm|name)$"), "name", 0.65),
     (re.compile(r"(^|_)(sts|status|state)(_cd|_code)?($|_)"), "status_code", 0.7),
     (
         re.compile(
@@ -87,7 +97,6 @@ _NAME_RULES: list[tuple[re.Pattern, str, float]] = [
     (re.compile(r"(^|_)(is|has|flg|flag|active|enabled|deleted)($|_)"), "flag", 0.7),
     (re.compile(r"(^|_)(url|link|href)($|_)"), "url", 0.85),
     (re.compile(r"(^|_)(desc|description|comment|notes?|txt|text|title)($|_)"), "free_text", 0.7),
-    (re.compile(r"(^|_)(nm|name)$"), "name", 0.65),
     # Generic coded-value conventions, LAST so every specific rule above wins
     # (`country_cd` is geo_country, not a bare code). The rule above matches a
     # vocabulary of stems -- typ, cat, class, seg, chnl, rsn -- so a `_cd`
@@ -105,7 +114,11 @@ _NAME_RULES: list[tuple[re.Pattern, str, float]] = [
     (re.compile(r"(^|_)(grade|bucket|band|tier)($|_)"), "code", 0.5),
 ]
 
-_ID_NAME_RE = re.compile(r"(^|_)(id|key|sk|pk)$|^id($|_)")
+# `sk_customer` is a surrogate key by prefix as surely as `customer_sk` is by
+# suffix; without the prefix form every `sk_*` column in a dimension fell to the
+# integer fallback and was typed a summed measure (30 of them on the 2,000-table
+# benchmark estate, each a review question).
+_ID_NAME_RE = re.compile(r"(^|_)(id|key|sk|pk)$|^id($|_)|^(sk|pk|fk)_")
 
 # Key-ish tails. A trailing ordinal is only stripped when what remains still
 # looks like a key, so `concept_id_1` folds to `concept_id` while `sales_2024`
@@ -193,6 +206,25 @@ def _rule_nested(stats: ColumnStats, name: str, t: str, no_sample_values: bool) 
     return None
 
 
+# Columns ETL tooling writes. tier.py already uses this list to recognise a
+# landing table; the typing rules did not, so `src_system`, `record_hash` and
+# friends fell through every rule to "unknown" at 0.05 -- 1,198 of the 1,708
+# review items on the 2,000-table estate, 70% of the queue, on three names.
+# `batch_id` and `op` are left out: a fact table can have a real batch key.
+# Uncalibrated: no gold fixture carries these columns (docs/calibration.md).
+_ETL_EXACT = (ETL_METADATA_COLUMNS | {"src_sys", "source_sys", "etl_run_id", "dw_batch_id"}) \
+    - {"batch_id", "op"}
+_PAYLOAD_RE = re.compile(r"(^|_)(payload|raw_payload|raw_json|raw_record|raw_data)($|_)")
+
+
+def _rule_etl_name(stats: ColumnStats, name: str, t: str, no_sample_values: bool) -> Typing | None:
+    if name in _ETL_EXACT or stats.name.lower() in _ETL_EXACT:
+        return Typing("unknown", "metadata", 0.85, "naming", "ETL bookkeeping column name")
+    if _PAYLOAD_RE.search(name):
+        return Typing("json_object", "metadata", 0.75, "naming", "raw payload column name")
+    return None
+
+
 def _rule_id_name(stats: ColumnStats, name: str, t: str, no_sample_values: bool) -> Typing | None:
     # Folded first: `concept_id_1` and `concept_id_2` in OMOP's
     # concept_relationship are identifiers, but _ID_NAME_RE anchors on $ so the
@@ -272,6 +304,7 @@ _RULES = [
     _rule_bool,
     _rule_temporal,
     _rule_nested,
+    _rule_etl_name,
     _rule_id_name,
     _rule_name_table,
     _rule_metadata_name,
@@ -308,7 +341,7 @@ _NOT_KEYS = frozenset((
     "liquid", "candid", "period", "rigid", "vivid", "squid", "plaid", "afraid",
 ))
 _KEYISH = re.compile(
-    r"(?:^|_|(?<=[a-z0-9]))(id|key|no|num|number|code|cd|sk|pk|nbr)$",
+    r"(?:^|_|(?<=[a-z0-9]))(id|key|no|num|number|code|cd|sk|pk|nbr)$|^(sk|pk|fk)_",
     re.IGNORECASE)
 
 
