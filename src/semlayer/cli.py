@@ -385,7 +385,8 @@ def _cmd_drift(args: argparse.Namespace) -> int:
         import yaml
 
         suite = yaml.safe_load(Path(args.cqs).read_text())["cq_suite"]["questions"]
-        con = duckdb.connect(args.source.split(":", 1)[1])
+        from semlayer.pipeline import _duckdb_args
+        con = duckdb.connect(*_duckdb_args(args.source.split(":", 1)[1]))
         try:
             cs.broken_cqs = drift_mod.cq_regression(con, suite, events, doc)
         finally:

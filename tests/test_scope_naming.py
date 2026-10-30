@@ -112,3 +112,22 @@ def test_warehouse_uri_is_credential_free_and_portable():
     assert warehouse_uri(SnowflakeSource()) == "snowflake:ANALYTICS"
     assert warehouse_uri(BigQuerySource()) == "bigquery:acme-dw"
     assert warehouse_uri(Other()) == "other"
+
+
+def test_duckdb_sources_open_read_only_so_several_processes_can_share_one_file(tmp_path):
+    """Teams infer their schemas concurrently against one file; a writer lock would stop them."""
+    import duckdb
+
+    from semlayer.pipeline import open_source_from_uri
+
+    path = tmp_path / "w.duckdb"
+    con = duckdb.connect(str(path))
+    con.execute("create table t(a integer)")
+    con.close()
+    a = open_source_from_uri(f"duckdb:{path}")
+    b = open_source_from_uri(f"duckdb:{path}")           # a second read-only open succeeds
+    assert a.list_tables() and b.list_tables()
+    with pytest.raises(duckdb.Error):
+        a.con.execute("create table u(a integer)")        # and nothing can write through it
+    a.con.close()
+    b.con.close()
