@@ -1031,6 +1031,30 @@
           "type": "boolean",
           "description": "True when traversing this relationship can multiply fact rows. Compilers MUST apply fanout_safety when aggregating across it."
         },
+        "same_entity": {
+         "type": "boolean",
+         "description": "Both tables describe the same entity: a row of one and a row of the other with equal keys are the same thing (a copy, a shadow, an extension), not a fact and its dimension. Requires cardinality one_to_one."
+        },
+        "canonical": {
+         "type": "string",
+         "description": "For a same_entity relationship: the table the organisation stands behind, one of the two ends. Absent when neither certification nor key containment decides; a consumer then treats the edge as unreviewed."
+        },
+        "shared_columns": {
+         "type": "array",
+         "items": {"type": "string"},
+         "description": "Columns present on both ends of a same_entity relationship, named as the `from` table spells them."
+        },
+        "extends_with": {
+         "type": "array",
+         "items": {"type": "string"},
+         "description": "Columns the `from` table carries that the `to` table does not."
+        },
+        "key_overlap": {
+         "type": "object",
+         "additionalProperties": false,
+         "properties": {"from_in_to": {"type": "number", "minimum": 0, "maximum": 1}, "to_in_from": {"type": "number", "minimum": 0, "maximum": 1}},
+         "description": "Measured fraction of the `from` key values present in `to`, and the reverse. Both 1.0 is the same key set; one below 1.0 is a subset."
+        },
         "asof": {
           "type": "object",
           "required": [

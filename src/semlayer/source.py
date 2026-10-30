@@ -529,3 +529,25 @@ class WorkerExecutor:
 
     def __getattr__(self, name: str):
         return getattr(self._source, name)
+
+
+def document_name(name: str | None, schema: set[str] | frozenset[str] | None, source) -> str:
+    """The document's identity, and so its default file name: `<name>.yaml`.
+
+    `--name` wins. Else the schema when the run is scoped to one, the schemas
+    joined with `_` when scoped to several, else the warehouse itself: the
+    DuckDB file's stem, the Snowflake database, the BigQuery project, the
+    Postgres database. The identity is what other documents reference once
+    layers are combined, so it is never a generic word like `semantic_layer`
+    when something more specific is known.
+    """
+    if name:
+        return name
+    if schema:
+        return "_".join(sorted(schema))
+    label = warehouse_uri(source).split(":", 1)[-1].rstrip("/").rsplit("/", 1)[-1]
+    label = re.sub(r"\.(duckdb|ddb|db)$", "", label)
+    label = re.sub(r"[^A-Za-z0-9_.-]+", "_", label).strip("_")
+    if not label or label == "memory":
+        return "semantic_layer"
+    return label

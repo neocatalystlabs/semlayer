@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+### Stitch names copies: `same_entity`, `canonical`, `extends_with`
+
+A member's copy of another member's dimension (finance's `dim_customer`,
+the platform rows for its own customers plus two columns of its own) is
+the same entity, not a fact and its parent. `semlayer stitch` now finds
+such pairs (single-column entity keys sharing a name, key values contained
+one in the other, tested through `--via`) and writes a `one_to_one`
+relationship with `same_entity: true`, `canonical` (a certified copy first,
+else the key superset; absent and queued for review when neither decides),
+`shared_columns`, `extends_with` and the measured `key_overlap` both ways.
+Surrogate names (`id`, `event_id`) never make a pair; an SCD2 table's
+natural key counts as its entity key; among tables in one member holding
+the same keys the one in the copy's naming layer wins. Set validation
+checks the cardinality and that `canonical` is an end. On the 5,000-table
+multi-schema estate: 6 shadow dimensions, 6 found, 0 false, canonical named
+on all; seam unchanged at 1,019/1,019. Spec and schema gain the five fields.
+docs/sets.md.
+
+### The document is named for what it describes, and the file follows
+
+`semlayer infer` without `--name` names the document for the schema it is
+scoped to, the schemas joined with `_` when several, else the warehouse
+itself (Snowflake database, BigQuery project, DuckDB file stem), and writes
+`<name>.yaml`; it no longer falls back to `profiled` and
+`semantic_layer.yaml`. `-o` and `--name` still override. The scale warning
+now says what to do past 2,000 tables: one `infer --schema` per team and
+`semlayer stitch`, the route measured to 50,000 tables in docs/scale.md.
+
 ### `semlayer stitch`: infer the seam between several layers
 
 `semlayer stitch finance.yaml sales.yaml platform.yaml -o acme.yaml --via

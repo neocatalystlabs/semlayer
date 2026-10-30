@@ -107,3 +107,43 @@ Statistics come from the member documents (`cardinality`, roles, types);
 the inclusion tests are the only queries stitch issues. Re-running stitch
 after a member changes rewrites the hub; keeping reviewed seam edges across
 a rerun is the next piece.
+
+## Copies across members
+
+Finance keeps its own `dim_customer`: the platform rows for finance's
+customers, plus `credit_limit` and `owner_team` that only finance needs.
+That is not a fact and its dimension, it is the same entity twice, and a
+consumer that joined the two as if they were a key and its parent would be
+wrong. Stitch looks for it: two tables in different members whose
+single-column entity keys share a name (an SCD2 table's natural key counts;
+`id` and `event_id` do not, every fact has one) and whose key values are
+contained one in the other. It writes:
+
+```yaml
+    - name: finance_dim_customer_same_entity_as_platform_dim_customer
+      from: {table: finance/dim_customer,  columns: [customer_id]}
+      to:   {table: platform/dim_customer, columns: [customer_id]}
+      cardinality: one_to_one
+      same_entity: true
+      canonical: platform/dim_customer
+      shared_columns: [customer_id, customer_name, segment]
+      extends_with: [credit_limit, owner_team]
+      key_overlap: {from_in_to: 1.0, to_in_from: 0.667}
+      confidence: 0.85
+```
+
+`canonical` is the table the organisation stands behind: a `certified` copy
+first, else the one whose keys contain the other's. When neither decides
+(the same keys, neither certified) the edge is written at 0.5 without
+`canonical` and `semlayer review acme.yaml` shows it as a `same_entity`
+item for the analyst to settle. `key_overlap` is measured both ways, so a
+subset reads as it is: finance holds two thirds of platform's customers.
+`extends_with` is what finance added. Among several tables in one member
+that hold the same keys (`dim_ticket` and the `int__ticket` it is built
+from), the one in the same naming layer as the copy wins. Without a
+connection the pair is proposed from names and distinct counts at 0.3 with
+no `canonical`.
+
+On the 5,000-table multi-schema estate (41 members, 6 shadow dimensions)
+stitch found all 6 with no false pair and named the canonical table on each;
+the seam itself is unchanged at 1,019 of 1,019.

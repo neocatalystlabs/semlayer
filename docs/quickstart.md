@@ -116,9 +116,12 @@ A team that owns one schema scopes to it: `semlayer infer snowflake --schema
 finance` profiles only that schema and writes `finance.yaml` whose document
 `name` is `finance`. That name is the document's identity when several
 teams' layers are later combined, and the file name follows it so three
-teams do not end up with three files called semantic_layer.yaml. Every
-document also records the `warehouse` it was inferred from, credential-free,
-so a consumer holding several can tell whether two tables share one.
+teams do not end up with three files of the same name. Without `--schema`
+the document is named for the warehouse (the Snowflake database, the
+BigQuery project, the DuckDB file's stem) and written to `<name>.yaml`;
+`--name` overrides both. Every document also records the `warehouse` it was
+inferred from, credential-free, so a consumer holding several can tell
+whether two tables share one.
 
 `--llm-workers` is how many model calls are in flight (typing escalation,
 foreign-key validation and both Describe passes); raise it as far as your API
