@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "a2ec036e2008",
+ "response": "[\n {\"id\": 0, \"correct\": false, \"useful\": false, \"issue\": \"Describes price column as creation date\"},\n {\"id\": 1, \"correct\": false, \"useful\": false, \"issue\": \"Describes date column as product name\"},\n {\"id\": 2, \"correct\": false, \"useful\": false, \"issue\": \"Describes address table as payment methods dim\"},\n {\"id\": 3, \"correct\": false, \"useful\": false, \"issue\": \"city_nm mislabeled as FK to cust_mstr\"},\n {\"id\": 4, \"correct\": false, \"useful\": false, \"issue\": \"cust_id mislabeled as postal code, wrong cardinality\"},\n {\"id\": 5, \"correct\": false, \"useful\": false, \"issue\": \"postal_cd mislabeled as city name\"},\n {\"id\": 6, \"correct\": false, \"useful\": false, \"issue\": \"Payment dim mislabeled as staging customer table\"},\n {\"id\": 7, \"correct\": false, \"useful\": false, \"issue\": \"desc column mislabeled as code/PK\"},\n {\"id\": 8, \"correct\": false, \"useful\": false, \"issue\": \"code column mislabeled as description\"},\n {\"id\": 9, \"correct\": false, \"useful\": false, \"issue\": \"Staging table mislabeled as subscription fact table\"},\n {\"id\": 10, \"correct\": false, \"useful\": false, \"issue\": \"raw_id mislabeled as load timestamp\"},\n {\"id\": 11, \"correct\": false, \"useful\": false, \"issue\": \"load_ts mislabeled as filename column\"}\n]",
+ "usage": {
+  "in": 3258,
+  "out": 1354
+ }
+}

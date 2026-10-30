@@ -5,11 +5,15 @@ Engine 0.6.0b1. Haiku rows recorded 2026-10-28 against
 `claude-sonnet-5`. Answers are execution-scored against gold CQ suites (fixed
 questions, human-verified expected SQL, executed live).
 
-**This table is a point in time.** It measures one engine version, one prompt
-version and one pinned model ID each, on the date above. The committed
-cassettes make exactly that run reproducible with no API key, for as long as
-the repository exists, with `python -m semlayer.benchmark`; they are not a
-claim about whatever the current model does. A newer model generation gets a
+**This table is a point in time: accurate as of release 0.6.0b1.** It
+measures one engine version, one prompt version and one pinned model ID each,
+on the date above. The committed cassettes make exactly that run reproducible
+with no API key, for as long as the repository exists, with `python -m
+semlayer.benchmark` checked out at that release; they are not a claim about
+whatever the current model, or the current engine, does. The engine changes
+between releases and those changes alter the layer the benchmark embeds in
+its prompts, so the numbers are re-measured at a release, not per change
+(`tests/test_benchmark_replays.py` runs under `SEMLAYER_RELEASE_CHECK=1`). A newer model generation gets a
 new row with its own ID and date. Rows are never silently overwritten: when a
 row's number changes, the section at the end of this page says why.
 

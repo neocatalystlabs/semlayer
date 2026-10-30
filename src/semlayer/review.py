@@ -642,6 +642,12 @@ REASON_WORDS = {
     "table_type: measure-heavy, few FKs resolved":
         "it has several measures but few of its keys resolved to a parent",
     "table_type: no decisive signal": "nothing about the name, keys or measures was decisive",
+    "ETL bookkeeping column name": "the column name is one ETL tooling writes",
+    "raw payload column name": "the column name says it holds the raw record",
+    "staging tier by name prefix, nothing joins to it":
+        "the name prefix says staging (int__, stg_), and nothing joins to it",
+    "staging tier by name prefix, no other signal":
+        "the name prefix says staging (int__, stg_), and nothing else was decisive",
     "integer with N distinct values: grouped, not summed":
         "an integer column with only a few distinct values, so grouped rather than summed",
     "table_type: N FK out + N measures, nothing references it":

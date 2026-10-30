@@ -12,6 +12,14 @@ The pattern is structural, not careless: a maintainer with a key never sees the
 failure, because their run records what is missing and passes. Only a keyless
 run can tell. So this test is the claim's only real guard, and it is why the
 benchmark's reproducibility is now enforced rather than asserted.
+
+Enforced AT A RELEASE, not on every commit (decided 2026-10-30). The table in
+docs/benchmark.md describes a named release; the engine keeps evolving between
+releases, and each type change on messy_mart alters the layer the benchmark
+embeds in its prompts, which would force a paid re-record per PR to keep a
+document current. Cassettes are re-recorded for functional reasons only. So
+these tests run when SEMLAYER_RELEASE_CHECK=1 (the release workflow sets it,
+and whoever publishes new numbers runs it) and are skipped in ordinary CI.
 """
 
 from __future__ import annotations
@@ -24,6 +32,11 @@ import sys
 import pytest
 
 OSS = pathlib.Path(__file__).resolve().parents[1]
+
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("SEMLAYER_RELEASE_CHECK"),
+    reason="benchmark replays are a release-time check: docs/benchmark.md describes a named "
+           "release, not HEAD; set SEMLAYER_RELEASE_CHECK=1 to run them")
 
 
 @pytest.mark.slow

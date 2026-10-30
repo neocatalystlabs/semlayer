@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Seven rule fixes from the 2,000-table review queue; multi-schema names
+
+The grouped queue showed that seven of the nine questions on the benchmark
+estate were the engine's: ETL bookkeeping columns (`src_system`,
+`record_hash`, `payload`) typed unknown at 0.05 on 1,198 columns, `sk_*`
+surrogate keys typed as summed measures, `channel_name` typed as a code,
+isolated `int__` tables called operational, `total_tax` becoming the metric
+`total_total_tax`, and metrics proposed on rollups that already reconcile to
+a fact. All fixed; typing accuracy over the 785 gold columns 0.815 -> 0.822,
+role 0.811 -> 0.814, no fixture down; details and the uncalibrated constants
+in docs/calibration.md. docs/benchmark.md now says what it is: accurate as
+of release 0.6.0b1, re-measured at a release and not per engine change, and
+its replay tests run under `SEMLAYER_RELEASE_CHECK=1` rather than in every
+CI run. Separately, a flat `infer` over a warehouse where
+two schemas share a bare table name (`crm.dim_region`, `erp.dim_region`)
+crashed in Link; both tables are now named `<schema>__<table>` and every
+other name stays bare (SPEC producer rule 8).
+
 ### The review queue is questions, and agents can answer them
 
 `semlayer review` groups the queue: two claims are one question only when

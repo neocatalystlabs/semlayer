@@ -115,10 +115,15 @@ def enrich_source(source, doc: dict, stats: dict) -> dict:
     # BEFORE the metric producers: every metric copies its base table's grain,
     # and reading it earlier silently gave all of them an empty string.
     _infer_grain(sl)
-    metrics = _metric_candidates(sl)
+    # Aggregates BEFORE metrics: a rollup that reconciles to a fact is served
+    # by the fact's metrics and the routing entry; proposing `total_x` on the
+    # rollup as well is a duplicate the reviewer then has to reject. A rollup
+    # that reconciles to nothing still gets its metrics, review-queued, since
+    # the summary may be the only table that holds the number.
+    aggs = _detect_aggregates(source, sl, stats)
+    metrics = _metric_candidates(sl, skip={a["table"] for a in aggs})
     if metrics:
         sl["metrics"] = metrics
-    aggs = _detect_aggregates(source, sl, stats)
     if aggs:
         sl["aggregate_tables"] = aggs
     _grain_from_reconciliation(sl, aggs)
@@ -613,7 +618,11 @@ def _monetary_metrics(t: dict, status_col: dict | None, seen: set) -> list[dict]
             continue
         if c.get("semantic_type") != "monetary_value":
             continue
-        base = f"total_{c['name']}"
+        # `total_tax` already says total; `total_total_tax` said it twice.
+        # Only the full word: messy_mart's `tot_amt` keeps `total_tot_amt`,
+        # which its gold, docs and export tests all name.
+        already = c["name"].startswith("total_")
+        base = c["name"] if already else f"total_{c['name']}"
         if base in seen:
             base = f"total_{t['name']}_{c['name']}"
         seen.add(base)
@@ -730,7 +739,7 @@ def _time_dimension_for(t: dict, sl: dict) -> str | None:
     return None
 
 
-def _metric_candidates(sl) -> list[dict]:
+def _metric_candidates(sl, skip: set | None = None) -> list[dict]:
     """Derive simple metrics.
 
     sum() over monetary measures (plus a status-filtered "completed" variant
@@ -741,7 +750,7 @@ def _metric_candidates(sl) -> list[dict]:
     seen: set = set()
     for t in sl["tables"]:
         eligible = t.get("table_type") in ("fact", "aggregate", "unknown")
-        if t.get("lifecycle") == "deprecated" or not eligible:
+        if t.get("lifecycle") == "deprecated" or not eligible or t["name"] in (skip or ()):
             continue
         pk = (t.get("primary_key") or [None])[0]
         status_col = _status_col_for_metrics(t)
