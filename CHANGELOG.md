@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### The maintainer on a schedule, as a pull request
+
+`examples/maintain/semlayer-maintain.yml` runs `semlayer maintain --apply`
+nightly in GitHub Actions and, when anything changed, pushes the layer to
+one standing branch and opens or updates a pull request whose description
+is the maintainer's own report. Nothing reaches the default branch until
+a person merges it; the LLM is used when `ANTHROPIC_API_KEY` is a
+repository secret, as on `infer`, and the PR says which. `maintain
+--json-out PATH` writes the record the workflow builds the body from
+while the report still prints. On the messy_mart event the PR diff is
+72 lines added, 5 removed, all of them the change.
+
 ### `semlayer maintain`: the loop as one command, dry run by default
 
 `maintain layer.yaml <source>` detects drift, builds the changeset, names

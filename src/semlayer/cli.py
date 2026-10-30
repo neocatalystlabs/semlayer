@@ -197,6 +197,9 @@ def _add_maintain_parser(sub) -> None:
                    help="Re-infer the tables the changeset names and merge them into DOC")
     p.add_argument("--cqs", help="CQ suite YAML to regression-check (DuckDB sources)")
     p.add_argument("--json", action="store_true", help="one machine-readable record")
+    p.add_argument("--json-out", metavar="PATH",
+                   help="Also write the record to PATH (the report still prints); what a "
+                        "scheduled job hands to the step that opens the pull request")
     p.add_argument("--no-llm", action="store_true",
                    help="Re-infer without the LLM (same meaning as on infer; the default, "
                         "like infer's, is the LLM when ANTHROPIC_API_KEY is set)")
@@ -243,6 +246,8 @@ def _cmd_maintain(args: argparse.Namespace) -> int:
                                    "llm_workers": args.llm_workers,
                                    "query_workers": args.query_workers})
         _save_doc(args.doc, doc)
+    if args.json_out:
+        Path(args.json_out).write_text(json.dumps(r.as_dict(), indent=1))
     if args.json:
         print(json.dumps(r.as_dict(), indent=1))
     else:

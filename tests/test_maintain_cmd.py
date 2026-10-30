@@ -82,3 +82,51 @@ def test_dry_run_plans_and_writes_nothing_then_apply_does_it(tmp_path):
     # settled: a second run finds nothing
     r = _run(str(layer), f"duckdb:{db}")
     assert r.returncode == 0 and "nothing to do" in r.stdout
+
+
+def test_json_out_writes_the_record_while_the_report_prints(tmp_path):
+    db, layer = _world(tmp_path)
+    con = duckdb.connect(str(db))
+    con.execute("CREATE TABLE loyalty_pts (cust_id VARCHAR, pts INTEGER)")
+    con.close()
+    out = tmp_path / "maintain.json"
+    r = _run(str(layer), f"duckdb:{db}", "--json-out", str(out))
+    assert r.returncode == 1 and "dry run" in r.stdout
+    j = json.loads(out.read_text())
+    assert j["plan"]["reinfer"] == ["loyalty_pts"] and j["applied"] is False
+
+
+def test_the_workflow_template_is_what_it_says(tmp_path):
+    """The scheduled template parses, runs maintain, and builds the PR body from the record."""
+    import re
+    wf = yaml.safe_load((OSS / "examples" / "maintain" / "semlayer-maintain.yml").read_text())
+    assert "schedule" in wf[True] if True in wf else "schedule" in wf["on"]   # PyYAML reads `on:` as True
+    assert wf["permissions"] == {"contents": "write", "pull-requests": "write"}
+    steps = {s.get("name", ""): s for s in wf["jobs"]["maintain"]["steps"]}
+    run = steps["Maintain the layer"]["run"]
+    assert "semlayer maintain" in run and "--apply" in run and "--json-out maintain.json" in run
+    pr = steps["Open or update the pull request"]["run"]
+    assert "gh pr create" in pr and "gh pr edit" in pr and "--force-with-lease" in pr
+    # the body-building python, extracted and run against a real record
+    import textwrap
+    body_py = textwrap.dedent(re.search(r"python - <<'PY'\n(.*?)\nPY\n", pr, re.S).group(1))
+    db, layer = _world(tmp_path)
+    con = duckdb.connect(str(db))
+    con.execute("ALTER TABLE ord_hdr DROP COLUMN tot_amt")
+    con.close()
+    _run(str(layer), f"duckdb:{db}", "--apply", "--cqs", str(CQS), "--json-out",
+         str(tmp_path / "maintain.json"))
+    import os
+    cwd = os.getcwd()
+    os.chdir(tmp_path)
+    try:
+        import contextlib
+        import io
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            exec(body_py, {})
+    finally:
+        os.chdir(cwd)
+    text = buf.getvalue()
+    assert "Engine: without an LLM" in text and "Review queue:" in text
+    assert "Competency questions flagged:" in text
