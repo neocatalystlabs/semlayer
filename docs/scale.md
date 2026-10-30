@@ -274,32 +274,40 @@ domain's star schema in a schema of its own, the conformed dimensions in
 `platform`, every copy in the schema of what it copies, and in some domains
 a shadow copy of a platform dimension with two columns of its own. Run the
 way the teams would, one `infer --schema` per schema and then `semlayer
-stitch` over the member files through the same warehouse, 5,000 tables on
-the same machine, 20 query workers:
+stitch` over the member files through the same warehouse, on the same
+machine as the flat ladder, 20 query workers:
 
-| | 5,000 tables | 15,000 tables |
-|---|---|---|
-| schemas (members) | 41 | 41 |
-| infer, all members, one after another | 112 s (largest, `platform`, 10 s) | 263 s (largest 24 s) |
-| stitch | 25 s | 88 s |
-| wall | 137 s | 351 s |
-| peak RSS | 0.7 GB | 1.7 GB |
-| hub file; largest member | 0.6 MB; 1.4 MB | 2.0 MB; 2.8 MB |
-| seam: gold keys crossing schemas | 1,019 of 1,019, precision 1.0 | 3,110 of 3,110, precision 1.0 |
-| all foreign keys | 0.948 precision, 1.00 recall, 0 wrong | 0.956, 1.00, 0 wrong |
-| MCP startup on the hub (parse and qualify members) | 3.1 s | 12.8 s |
-| MCP search; domains; the rest | 67 ms; 18 ms; under 1 ms | 218 ms; 58 ms; under 7 ms |
+| | 5,000 tables | 15,000 tables | 50,000 tables |
+|---|---|---|---|
+| schemas (members) | 41 | 41 | 41 |
+| infer, all members, one after another | 112 s (largest, `platform`, 10 s) | 263 s (largest 24 s) | 1,305 s (largest, `erp`, 115 s); 383 s wall with four members at a time |
+| stitch | 25 s | 88 s | 416 s |
+| wall | 137 s | 351 s | 799 s |
+| peak RSS | 0.7 GB | 1.7 GB | 5.0 GB (stitch; the largest member 3.1 GB) |
+| hub file; largest member | 0.6 MB; 1.4 MB | 2.0 MB; 2.8 MB | 6.5 MB; 8.2 MB |
+| seam: gold keys crossing schemas | 1,019 of 1,019, precision 1.0 | 3,110 of 3,110, precision 1.0 | 10,169 of 10,169, precision 1.0 |
+| all foreign keys | 0.948 precision, 1.00 recall, 0 wrong | 0.956, 1.00, 0 wrong | 0.958, 1.00, 0 wrong |
+| MCP startup on the hub (parse and qualify members) | 3.1 s | 12.8 s | 52 s |
+| MCP search; domains; the rest | 67 ms; 18 ms; under 1 ms | 218 ms; 58 ms; under 7 ms | 649 ms; 13 ms; under 24 ms |
 
 The flat layout of the same 5,000 tables on this engine runs in 68 s
-(profile 15 s, link 38 s), and the flat 15,000 in 307 s, so the per-schema
-route costs more wall time when the members run one after another: each
-`infer` pays the catalogue listing and startup again, and copies of one
-entity that sit in different schemas are no longer folded into one, so the
-set holds 13,251 tables where the flat layer held 11,698. Teams run theirs independently, so
-that cost is theirs to parallelise, and the runner will do the same. What
-the split buys is visible in the file sizes: no team's layer is over 1.4 MB,
-the analyst's hub is 0.6 MB, and the cross-domain surface is the only thing
-that pays to load everything.
+(profile 15 s, link 38 s), and the flat 15,000 in 307 s, so at those sizes
+the per-schema route costs more wall time when the members run one after
+another: each `infer` pays the catalogue listing and startup again, and
+copies of one entity that sit in different schemas are no longer folded
+into one, so the set holds 13,251 tables where the flat layer held 11,698.
+At 50,000 the order reverses. The flat run took 2,388 s, 1,969 s of it in
+Link, because every child column in the warehouse was tested against one
+pool of candidate parents; split by schema, each member's Link sees only
+its own parents, stitch tests only the keys that resolved nowhere inside a
+member, and the whole estate was done in 799 s with four members inferring
+at a time (the runner's `--member-workers`; teams run theirs independently
+anyway). The members' Link time adds up to 441 s and stitch to 416 s, so
+even run strictly one after another the split would cost 1,721 s against
+the flat 2,388 s. What the split buys is also visible in the file sizes:
+no team's layer is over 8 MB, the analyst's hub is 6.5 MB, and the
+cross-domain surface is the only thing that pays to load everything, which
+the MCP server does once at startup in 52 s and then answers from memory.
 
 Two honest limits remain. The ladder is an in-process DuckDB file, so the
 query term is CPU on one machine and does not predict a network warehouse,
