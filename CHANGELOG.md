@@ -2,6 +2,66 @@
 
 ## Unreleased
 
+### Snowflake: the first connection a stranger can actually make
+
+Ten days of telemetry after the sender went live recorded one install outside
+the team trying a real warehouse: Snowflake, 14 runs, 14 `connection` errors,
+zero successes. The only Snowflake path that produces that error class is the
+"unsupported source uri" refusal, so what they pasted was a connection name or
+a URL — and `semlayer infer` accepted neither. It took the bare word
+`snowflake` plus six environment variables, and answered anything else with
+"expected one of: snowflake, bigquery, duckdb:<path>".
+
+Three forms are accepted now, on every command that takes a warehouse
+(`infer`, `maintain`, `drift`, `probe`, `stitch` — they share one dispatcher):
+
+```bash
+semlayer infer snowflake                 # the environment, as `semlayer init` sets it up
+semlayer infer snowflake:work            # a named connection from ~/.snowflake/connections.toml
+semlayer infer 'snowflake://me@ORG-ACCOUNT/analytics?role=reader&warehouse=wh_xs'
+```
+
+The account may be spelled any way the console offers it, including the full
+`abc12345.us-east-1.snowflakecomputing.com` hostname. A named connection is
+read from the file the Snowflake CLI already writes, so `snow` users restate
+nothing; the role and database are read from it because both are recorded in
+the run report. URL parts that are omitted fall back to the environment, and a
+password in a URL is accepted with a warning that says where it belongs.
+
+Behind that wall stood two more, both fixed:
+
+- **The quickstart's export line omitted `SNOWFLAKE_READER_ROLE`**, which is
+  required, so following the documented path exactly failed with "no Snowflake
+  session role set".
+- **Driver failures and missing settings read as our bug.** A refused login now
+  raises `SourceError` carrying the driver's own message as the hint, a missing
+  `SNOWFLAKE_ACCOUNT` says so instead of raising `KeyError` (which telemetry
+  filed as `internal`, the class that is supposed to mean a semlayer defect),
+  and a missing `[warehouses]` extra says `pip install` instead of
+  `No module named 'snowflake'`.
+
+### A declared primary key no longer suppresses a table's description
+
+`semlayer infer` with the LLM on crashed with `KeyError: 'description'` on the
+first table of any warehouse that declares primary keys — Postgres, Snowflake,
+BigQuery with constraints — which is the next thing the person above would have
+hit. `link` records a declared key with `catalog_prior` provenance; `describe`
+read that signal as "a human wrote this description", skipped the description,
+and then read it back. Columns with a declared foreign key lost their
+descriptions the same way, silently.
+
+Describe now checks what the provenance is *about*, not just its signal. The
+catalog-description details are a named vocabulary shared by the writer
+(`profile.run`) and the reader (`describe.run`) so the two cannot drift. No
+format change: the schema fixes `provenance` entries at
+`additionalProperties: false`, so a new marker field was not available.
+
+The reason no test caught it: every LLM-on test ran `use_declared=False`,
+chosen to avoid a paid cassette re-record, so the declared-key path and the
+describe path had never run together. There is now one of each — a
+cassette-free unit test on the discriminator (it cannot skip) and a replay test
+over `fan_trap` with declarations on.
+
 ### The model-response cache is a cache, and it says so
 
 The LLM cache (the `cassettes/` mechanism, which replays a recorded response

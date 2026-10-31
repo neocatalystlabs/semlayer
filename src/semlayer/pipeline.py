@@ -209,15 +209,19 @@ def _duckdb_args(path: str) -> tuple:
 
 
 def open_source_from_uri(uri: str):
-    """duckdb:<path> | postgresql://... | snowflake | bigquery | postgres (env-configured)."""
+    """duckdb:<path> | snowflake[:<name>|://<url>] | postgresql://... | bigquery | postgres."""
     if uri.startswith("duckdb:"):
         import duckdb
 
         from semlayer.source import DuckDBSource
         return DuckDBSource(duckdb.connect(*_duckdb_args(uri.split(":", 1)[1])))
-    if uri == "snowflake":
+    # Snowflake takes a connection name or a URL as well as the environment:
+    # a bare word was the only accepted form, and every other spelling a
+    # person might paste was refused as an unsupported URI. See
+    # SnowflakeSource.from_uri for what the three forms are and why.
+    if uri == "snowflake" or uri.startswith("snowflake:"):
         from semlayer.connectors.snowflake import SnowflakeSource
-        return SnowflakeSource.from_env(persona="reader")
+        return SnowflakeSource.from_uri(uri, persona="reader")
     if uri == "bigquery":
         from semlayer.connectors.bigquery import BigQuerySource
         return BigQuerySource.from_env(persona="reader")
@@ -235,5 +239,6 @@ def open_source_from_uri(uri: str):
     # `internal`, which should mean OUR bug.
     raise SourceError(
         f"unsupported source uri: {uri}",
-        hint="expected one of: snowflake, bigquery, duckdb:<path>, "
+        hint="expected one of: snowflake, snowflake:<connection>, "
+             "snowflake://<user>@<account>/<db>, bigquery, duckdb:<path>, "
              "postgres, postgresql://<dsn>")

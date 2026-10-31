@@ -52,6 +52,22 @@ def _native_comments(source) -> dict:
         return {}
 
 
+# The exact provenance details that mark a DESCRIPTION as the catalog's own.
+# describe.run imports this to decide what it must never overwrite. The
+# `catalog_prior` signal alone cannot carry that meaning: a declared PRIMARY
+# KEY or FOREIGN KEY writes `catalog_prior` too (link.run), so reading the
+# signal by itself made every table in a constraint-declaring warehouse look
+# as though a human had written its description -- which skipped the
+# description and then crashed reading it back (KeyError: 'description').
+_DBT_TABLE_DESC = "table description read from the dbt project"
+_DBT_COLUMN_DESC = "column description read from the dbt project"
+_COMMENT_TABLE_DESC = "table COMMENT read from the warehouse catalog"
+_COMMENT_COLUMN_DESC = "column COMMENT read from the warehouse catalog"
+CATALOG_DESCRIPTION_DETAILS = frozenset({
+    _DBT_TABLE_DESC, _DBT_COLUMN_DESC, _COMMENT_TABLE_DESC, _COMMENT_COLUMN_DESC,
+})
+
+
 def _apply_dbt_docs(doc: dict, ts, lineage) -> int:
     """Seed descriptions from the dbt project's own documentation.
 
@@ -85,7 +101,7 @@ def _apply_dbt_docs(doc: dict, ts, lineage) -> int:
             })
         doc.setdefault("provenance", []).append({
             "signal": "catalog_prior",
-            "detail": "table description read from the dbt project",
+            "detail": _DBT_TABLE_DESC,
         })
     for col in doc["columns"]:
         cd = lineage.column_descriptions.get((table, col["name"]))
@@ -96,7 +112,7 @@ def _apply_dbt_docs(doc: dict, ts, lineage) -> int:
             applied += 1
         col.setdefault("provenance", []).append({
             "signal": "catalog_prior",
-            "detail": "column description read from the dbt project",
+            "detail": _DBT_COLUMN_DESC,
         })
     return applied
 
@@ -112,7 +128,7 @@ def _apply_comments(doc: dict, ts, comments: dict) -> int:
         doc["description"] = tc
         doc.setdefault("provenance", []).append({
             "signal": "catalog_prior",
-            "detail": "table COMMENT read from the warehouse catalog",
+            "detail": _COMMENT_TABLE_DESC,
         })
         applied += 1
     for col in doc["columns"]:
@@ -122,7 +138,7 @@ def _apply_comments(doc: dict, ts, comments: dict) -> int:
         col["description"] = cc[:200]
         col.setdefault("provenance", []).append({
             "signal": "catalog_prior",
-            "detail": "column COMMENT read from the warehouse catalog",
+            "detail": _COMMENT_COLUMN_DESC,
         })
         applied += 1
     return applied

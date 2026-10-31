@@ -8,6 +8,8 @@ Point it at your warehouse. It profiles every column, discovers the foreign keys
 ```bash
 pip install -e ".[warehouses]"
 semlayer init snowflake            # generates the minimal-grant setup script
+# `snowflake` reads the environment; `snowflake:<connection>` reads
+# ~/.snowflake/connections.toml; `snowflake://user@account/db?role=..` is a URL
 semlayer infer snowflake -o layer.yaml \
   --context ./docs/ --context ./etl-repo/CLAUDE.md   # optional: your wikis/dictionaries as priors
 semlayer review layer.yaml         # accept/reject what the engine inferred
