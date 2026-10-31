@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### The maintainer PR stays compact with the LLM on
+
+Re-inferring one table with the LLM re-described every column on it, and
+six of twelve rewrites lost a fact the old text had; a dictionary-join
+decode was replaced by a guess because the partial run could not see the
+dimension. The merge (`infer --into`, `maintain --apply`) now keeps a
+column's description when its type and statistics did not move, its
+provenance when type, role and statistics did not move, and its decodes
+when the old ones came from a join or a person and the new ones are
+guesses; a table keeps its description and `ai_context` while its live
+column set is unchanged. On the messy_mart event the LLM-on PR diff went
+from +119/−34 to +100/−10 lines (no LLM: +72/−5). The merge report lists
+"Descriptions kept". docs/maintain.md has the table.
+
 ### The maintainer on a schedule, as a pull request
 
 `examples/maintain/semlayer-maintain.yml` runs `semlayer maintain --apply`

@@ -65,9 +65,27 @@ re-inferred, whether the LLM was used, how many review questions appeared.
 Nothing reaches your default branch until a person merges it; when nothing
 changed the job ends quietly. The PR is the gate, so there is no separate
 dry-run stage to configure: the branch is the dry run and merging is the
-decision. Measured on the messy_mart event above, the PR's diff is 72 lines
-added and 5 removed on a 5,367-line layer, every one of them the change
-itself. The README beside the template lists the secrets per warehouse.
+decision. The README beside the template lists the secrets per warehouse.
+
+**How big is the PR?** Measured on the messy_mart event below (drop a column,
+add a column, create a table) on a layer of about 5,400 lines:
+
+| engine | diff | what the extra lines were |
+|---|---|---|
+| without an LLM | +72 / −5 | the change itself, nothing else |
+| with the LLM, before the merge rules below | +119 / −34 | 12 of the 13 unchanged `ord_hdr` columns re-described; six rewrites lost a fact the old text had ("foreign key to chnl_dim", "no nulls"); a dictionary-join decode replaced by a guess |
+| with the LLM, now | +100 / −10 | the change itself, plus the new table's descriptions and a refreshed description for the table whose columns changed |
+
+Three merge rules make the difference, and they hold for `infer --into` too.
+A column whose SQL type and statistics did not move keeps its description:
+re-describing it yields the model's variance, not information. A column
+whose type, role and statistics did not move keeps its provenance. Decodes
+that came from a dictionary join or a person are never replaced by a guess:
+a partial re-inference of one table cannot see the dimension the decodes
+came from. A table whose live column set is unchanged keeps its description
+and `ai_context`; one that gained or lost a column gets a fresh one, since
+the prose may name the columns. The merge report lists what it kept under
+"Descriptions kept".
 
 ## The replay
 
