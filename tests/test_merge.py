@@ -193,3 +193,66 @@ def test_fk_inside_scope_is_still_updated():
     r = merge_layer(base, incoming, scope={"ord_hdr", "cust_mstr"})
     assert _find(base, "ord_hdr", "cust_id")["confidence"] == 0.95
     assert "ord_hdr.cust_id" not in r.preserved
+
+
+CARD = {"distinct": 60, "lower_bound": 60, "upper_bound": 60, "method": "exact", "null_count": 7000}
+
+
+def test_a_description_stands_when_type_and_statistics_did_not_move():
+    """Re-describing an unchanged column yields the model's variance, not information."""
+    base = _doc([_tab("ord_hdr", [
+        _col("promo_id", description="Promotion identifier; foreign key to promo_dim. 70% null.",
+             lifecycle="inferred", cardinality=dict(CARD)),
+        _col("rep_id", description="Sales rep identifier. 20% null.", lifecycle="inferred",
+             cardinality={**CARD, "distinct": 80}),
+    ], description="Order headers, one row per order.", ai_context="Join to dims on *_id.")])
+    incoming = _doc([_tab("ord_hdr", [
+        _col("promo_id", description="Promotion identifier; foreign key. 60 promos.",
+             lifecycle="inferred", cardinality=dict(CARD)),
+        _col("rep_id", description="Rep id.", lifecycle="inferred",
+             cardinality={**CARD, "distinct": 95}),            # statistics moved
+    ], description="Orders.", ai_context="Join to dims.")])
+    r = merge_layer(base, incoming, scope={"ord_hdr"})
+    assert _find(base, "ord_hdr", "promo_id")["description"].startswith("Promotion identifier; foreign key to promo_dim")
+    assert _find(base, "ord_hdr", "rep_id")["description"] == "Rep id."
+    t = next(x for x in base["semantic_layer"]["tables"] if x["name"] == "ord_hdr")
+    assert t["description"] == "Order headers, one row per order."      # same column set: kept
+    assert t["ai_context"] == "Join to dims on *_id."
+    assert sorted(r.descriptions_kept) == ["ord_hdr", "ord_hdr.promo_id"]
+    assert "Descriptions kept" in render_report(r)
+
+
+def test_table_prose_is_refreshed_when_its_columns_changed():
+    base = _doc([_tab("ord_hdr", [
+        _col("promo_id", description="old", lifecycle="inferred", cardinality=dict(CARD)),
+    ], description="Order headers.")])
+    incoming = _doc([_tab("ord_hdr", [
+        _col("promo_id", description="new", lifecycle="inferred", cardinality=dict(CARD)),
+        _col("gift_flg", sql_type="BOOLEAN", description="gift order flag"),
+    ], description="Order headers, with a gift flag.")])
+    r = merge_layer(base, incoming, scope={"ord_hdr"})
+    t = next(x for x in base["semantic_layer"]["tables"] if x["name"] == "ord_hdr")
+    assert t["description"] == "Order headers, with a gift flag."
+    assert _find(base, "ord_hdr", "promo_id")["description"] == "old"   # column itself unchanged
+    assert r.descriptions_kept == ["ord_hdr.promo_id"]
+
+
+def test_dictionary_decodes_and_unchanged_reasoning_survive_a_partial_re_inference():
+    """`infer --only ord_hdr` cannot see curr_dim; its guesses must not replace the join's facts."""
+    old_enum = [{"value": "USD", "meaning": "US Dollar", "decode_source": "dictionary_join"}]
+    new_enum = [{"value": "USD", "meaning": "United States Dollar", "decode_source": "llm_guess"}]
+    prov = [{"signal": "llm", "detail": "currency code, 4 values"}]
+    base = _doc([_tab("ord_hdr", [
+        _col("curr_cd", semantic_type="code", entity_role="dimension", description="Currency.",
+             lifecycle="inferred", cardinality=dict(CARD), enum_values=old_enum, provenance=prov),
+    ])])
+    incoming = _doc([_tab("ord_hdr", [
+        _col("curr_cd", semantic_type="code", entity_role="dimension", description="Currency.",
+             lifecycle="inferred", cardinality=dict(CARD), enum_values=new_enum,
+             provenance=[{"signal": "llm", "detail": "reworded reasoning"}]),
+    ])])
+    r = merge_layer(base, incoming, scope={"ord_hdr"})
+    c = _find(base, "ord_hdr", "curr_cd")
+    assert c["enum_values"] == old_enum and c["provenance"] == prov
+    assert "ord_hdr.curr_cd (enum decodes)" in r.preserved
+    assert r.touched == 0

@@ -59,6 +59,7 @@ class MergeReport:
     conflicts: list[str] = field(default_factory=list)
     relationships_added: list[str] = field(default_factory=list)
     metrics_added: list[str] = field(default_factory=list)
+    descriptions_kept: list[str] = field(default_factory=list)
 
     @property
     def touched(self) -> int:
@@ -119,6 +120,64 @@ def _keeps_cross_table_evidence(base_c: dict, scope: set[str]) -> bool:
     return bool(target) and target not in scope
 
 
+def _same_evidence(base_c: dict, new_c: dict) -> bool:
+    """Did the facts a description is written from stay the same?
+
+    Describe reads a column's SQL type, its statistics and its neighbours.
+    When type and statistics are unchanged, a fresh description carries no
+    new information, only the model's variance: re-inferring messy_mart's
+    ord_hdr after one column was dropped reworded 12 of the 13 columns that
+    had not changed, and six of the rewrites lost a fact the old text had
+    ("foreign key to chnl_dim", "no nulls"). So the old text stands.
+    """
+    return (base_c.get("sql_type") == new_c.get("sql_type")
+            and base_c.get("cardinality") is not None          # statistics were measured
+            and base_c.get("cardinality") == new_c.get("cardinality")
+            and bool(base_c.get("description")) and bool(new_c.get("description")))
+
+
+def _same_conclusion(base_c: dict, new_c: dict) -> bool:
+    return (base_c.get("cardinality") is not None
+            and base_c.get("cardinality") == new_c.get("cardinality")
+            and base_c.get("sql_type") == new_c.get("sql_type")
+            and base_c.get("semantic_type") == new_c.get("semantic_type")
+            and base_c.get("entity_role") == new_c.get("entity_role")
+            and bool(base_c.get("provenance")))
+
+
+def _guess_over_fact(base_c: dict, new_c: dict) -> bool:
+    old = base_c.get("enum_values") or []
+    new = new_c.get("enum_values") or []
+    return (bool(old) and bool(new) and old != new
+            and any(e.get("decode_source") != "llm_guess" for e in old)
+            and all(e.get("decode_source") == "llm_guess" for e in new))
+
+
+def _hold_unchanged(base_c: dict, new_c: dict, where: str, report: MergeReport) -> dict:
+    """What a re-inference of an unchanged column may not rewrite: a copy of new_c with it held."""
+    new_c = dict(new_c)
+    if _same_evidence(base_c, new_c) and base_c["description"] != new_c["description"]:
+        _keep_prose(base_c, new_c, ("description",))
+        report.descriptions_kept.append(where)
+    if _same_conclusion(base_c, new_c):
+        # identical type and role from identical evidence: the old reasoning
+        # stands too, or every re-escalation rewords the provenance
+        new_c["provenance"] = base_c.get("provenance", new_c.get("provenance"))
+    if _guess_over_fact(base_c, new_c):
+        # decodes that came from a dictionary join (or a human) are evidence
+        # from a table this partial run did not read; a guess does not
+        # replace them
+        new_c["enum_values"] = base_c["enum_values"]
+        report.preserved.append(f"{where} (enum decodes)")
+    return new_c
+
+
+def _keep_prose(base: dict, new: dict, keys: tuple[str, ...]) -> None:
+    for k in keys:
+        if base.get(k):
+            new[k] = base[k]
+
+
 def _merge_columns(base_t: dict, new_t: dict, report: MergeReport,
                    scope: set[str]) -> None:
     base_cols = {c["name"]: c for c in base_t.get("columns", [])}
@@ -141,6 +200,7 @@ def _merge_columns(base_t: dict, new_t: dict, report: MergeReport,
                                report, where)
             continue
         before = _snapshot(base_c)
+        new_c = _hold_unchanged(base_c, new_c, where, report)
         if _keeps_cross_table_evidence(base_c, scope):
             held = {k: base_c[k] for k in CROSS_TABLE_KEYS if k in base_c}
             _replace_content(base_c, new_c)
@@ -203,6 +263,18 @@ def merge_layer(base: dict, incoming: dict, scope: set[str] | None = None) -> Me
         before = _snapshot(base_t)
         blind = any(_keeps_cross_table_evidence(c, scope)
                     for c in base_t.get("columns", []))
+        # a table whose live columns are the same set is the same table: its
+        # description and ai_context stand (a new or dropped column earns a
+        # fresh one, since the prose may mention the column set)
+        same_shape = ({c["name"] for c in base_t.get("columns", [])
+                       if c.get("lifecycle") != "orphaned"}
+                      == {c["name"] for c in new_t.get("columns", [])})
+        if same_shape and not _protected(base_t) and any(
+                base_t.get(k) and new_t.get(k) and base_t[k] != new_t[k]
+                for k in ("description", "ai_context")):
+            new_t = dict(new_t)
+            _keep_prose(base_t, new_t, ("description", "ai_context"))
+            report.descriptions_kept.append(name)
         if _protected(base_t):
             report.protected.append(name)
         else:
@@ -248,6 +320,8 @@ def render_report(r: MergeReport) -> str:
                          ("Metrics added", r.metrics_added),
                          ("Protected (reviewed/certified, content kept)", r.protected),
                          ("Kept (FK evidence from tables outside the scope)", r.preserved),
+                         ("Descriptions kept (type and statistics unchanged)",
+                          r.descriptions_kept),
                          ("CONFLICTS (recorded, not resolved)", r.conflicts)):
         if items:
             out.append(f"\n## {label}")
