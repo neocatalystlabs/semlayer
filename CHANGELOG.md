@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+### The model-response cache is a cache, and it says so
+
+The LLM cache (the `cassettes/` mechanism, which replays a recorded response
+instead of paying for the same prompt twice) had three problems outside this
+repository. Outside a checkout it resolved to the source tree's parent, which
+in a pip install is the parent of `site-packages`: an `infer` run wrote the
+model's text about the user's schema into their Python installation. Inside a
+checkout the CLI wrote into `cassettes/`, which is tracked and not git-ignored,
+so a clone of this repo plus one `infer` plus `git add -A` would commit
+descriptions of the user's warehouse. And no document mentioned that any of it
+existed.
+
+Now: the CLI caches in the platform cache directory
+(`$XDG_CACHE_HOME/semlayer/cassettes`, `~/Library/Caches/...`, `%LOCALAPPDATA%\...`)
+and never in a source tree; `--no-llm-cache` on `infer` and `maintain`, or
+`SEMLAYER_LLM_CACHE=off`, switches it off entirely, and `SEMLAYER_LLM_CACHE=<dir>`
+moves it. README "Cost & privacy" says what the cache holds and where.
+
+Unchanged: the committed cassettes still back `pytest` and
+`python -m semlayer.benchmark`, so every published number reproduces keylessly
+exactly as before. `examples/agent_pipeline` shells out to the CLI to build its
+layer and so now passes `SEMLAYER_LLM_CACHE` explicitly; CI caught that and a
+local run did not, because a leftover `layer.yaml` makes the example skip the
+subprocess entirely. What the cache is worth to a run is one thing only — an
+interrupted whole-warehouse run resumes for free, since unchanged data profiles
+to the same prompts. It deduplicates nothing within a single run: measured on
+messy_mart, 98 calls and 98 distinct prompts.
+
 ### The maintainer PR stays compact with the LLM on
 
 Re-inferring one table with the LLM re-described every column on it, and

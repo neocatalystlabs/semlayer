@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -137,13 +138,21 @@ def run_pipeline(mode: str, llm) -> Result:
 
 
 def _ensure_layer() -> Path:
-    """Infer the layer if it is not already built. Replays from cassettes."""
+    """Infer the layer if it is not already built, replaying this repo's cassettes.
+
+    SEMLAYER_LLM_CACHE is not optional here. The CLI caches model responses in
+    the platform cache directory and deliberately never in a source tree, so
+    without this the subprocess finds nothing to replay and exits 2 on the
+    first prompt -- which is exactly what it did in CI, while passing locally,
+    because a leftover layer.yaml meant the subprocess never ran.
+    """
     out = Path(__file__).resolve().parent / "layer.yaml"
     if out.exists():
         return out
     print(f"building the semantic layer (replays from cassettes) -> {out.name}", file=sys.stderr)
     subprocess.run([sys.executable, "-m", "semlayer.cli", "infer",
-                    f"duckdb:{FIXTURE}", "-o", str(out)], check=True, cwd=ROOT)
+                    f"duckdb:{FIXTURE}", "-o", str(out)], check=True, cwd=ROOT,
+                   env={**os.environ, "SEMLAYER_LLM_CACHE": str(ROOT / "cassettes")})
     return out
 
 

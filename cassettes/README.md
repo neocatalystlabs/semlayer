@@ -24,6 +24,24 @@ pull requests from forks.
 ANTHROPIC_API_KEY= pytest -q        # the whole suite, replay-only, $0
 ```
 
+## This directory is the development cache, not the user's
+
+A `semlayer infer` run caches model responses too, but never here: the CLI
+caches in `semlayer/cassettes` under the platform cache directory, and
+deliberately not in any source checkout — these files are tracked and not
+git-ignored, so a user who cloned this repo and ran `infer` against their own
+warehouse would otherwise have `git add -A` commit descriptions of it. Both
+switches are documented in the README: `--no-llm-cache`, or
+`SEMLAYER_LLM_CACHE=off`, or `SEMLAYER_LLM_CACHE=<dir>` to put it somewhere
+else — which is also how you point a CLI run back at this directory when you
+want one to replay or record here.
+
+What the cache is worth to a run is narrower than it looks: a crashed or
+interrupted run resumes free, because unchanged data profiles to the same
+prompts. It deduplicates nothing *within* a run — measured on messy_mart, 98
+calls and 98 distinct prompts — and a re-run after any insert misses, because
+`row_count` and `n_distinct` go into the prompt.
+
 ## How a file is matched to a request
 
 The filename is `sha256(model + system_prompt + user_prompt)`, truncated. Three

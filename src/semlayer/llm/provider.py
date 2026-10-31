@@ -20,6 +20,7 @@ import hashlib
 import json
 import logging
 import os
+import sys
 import tempfile
 import threading
 from pathlib import Path
@@ -61,8 +62,30 @@ def output_budget(items: int, per_item: int, base: int = 300,
 # burst needs more attempts than a lone call did. Six retries is ~16 s of
 # backoff before giving up; the error below says what to do then.
 _MAX_RETRIES = 6
+CACHE_ENV = "SEMLAYER_LLM_CACHE"
+_OFF = ("off", "0", "false", "no")
+
+
+def user_cache_dir() -> Path:
+    """Where the response cache goes outside a source checkout.
+
+    The platform cache location, hand-rolled rather than taking a dependency
+    on platformdirs for fifteen lines. Before this existed the fallback was
+    the source tree's parent, which in a pip install resolves to the parent of
+    site-packages: a `semlayer infer` wrote model text about the user's
+    warehouse into their Python installation and left it there.
+    """
+    if os.name == "nt":
+        base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData/Local")
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library/Caches"
+    else:
+        base = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
+    return base / "semlayer" / "cassettes"
+
+
 def _cassette_dir() -> Path:
-    """Cassettes live in the repo, not the wheel — same rule as fixtures.
+    """Committed cassettes live in the repo, not the wheel — same rule as fixtures.
 
     A pip-installed package resolves __file__ into site-packages, so the repo
     copy is found via the source tree first, then the directory the user is
@@ -76,10 +99,30 @@ def _cassette_dir() -> Path:
         # left by an earlier run in the wrong directory would otherwise win.
         if d.is_dir() and any(d.glob("*.json")):
             return d
-    return src_tree / "cassettes"
+    return user_cache_dir()
 
 
 CASSETTE_DIR = _cassette_dir()
+
+
+def resolve_cache(*, repo_ok: bool) -> Path | None:
+    """The response-cache directory, or None when the cache is switched off.
+
+    `SEMLAYER_LLM_CACHE` wins either way: `off` disables record AND replay, a
+    path puts the cache there.
+
+    `repo_ok=True` is the library default and prefers a checkout's committed
+    `cassettes/` — that is what replays the recordings behind every published
+    number, and what records new ones when a prompt changes. The CLI passes
+    False. A customer run must not write into whatever repository the user
+    happens to be standing in: those files are tracked and not ignored, so a
+    clone of this repo plus `semlayer infer` plus `git add -A` would commit
+    descriptions of their warehouse.
+    """
+    v = os.environ.get(CACHE_ENV)
+    if v is not None:
+        return None if v.strip().lower() in _OFF else Path(v).expanduser()
+    return CASSETTE_DIR if repo_ok else user_cache_dir()
 
 
 @runtime_checkable
@@ -113,10 +156,22 @@ class AnthropicProvider:
     """
 
     def __init__(self, model: str = CHEAP_MODEL, cassette_dir: Path | None = None,
-                 allow_live: bool | None = None):
+                 allow_live: bool | None = None, *, cache: bool = True,
+                 repo_cache: bool = True):
+        """Build a provider, with the response cache on unless told otherwise.
+
+        `cache=False` switches the cache off for this provider: no replay, no
+        recording, nothing written to disk. `repo_cache=False` keeps the cache
+        but never puts it in a source checkout (see `resolve_cache`). An
+        explicit `cassette_dir` overrides both, which is how the tests pin a
+        temporary directory.
+        """
         self.model = model
-        self.cassette_dir = cassette_dir or CASSETTE_DIR
-        self.cassette_dir.mkdir(exist_ok=True)
+        self.cassette_dir = (
+            (cassette_dir or resolve_cache(repo_ok=repo_cache)) if cache else None
+        )
+        if self.cassette_dir is not None:
+            self.cassette_dir.mkdir(parents=True, exist_ok=True)
         self.allow_live = (
             allow_live if allow_live is not None else bool(os.environ.get("ANTHROPIC_API_KEY"))
         )
@@ -144,16 +199,19 @@ class AnthropicProvider:
 
     def complete(self, system: str, user: str, max_tokens: int = 1500) -> str:
         """Replay from cassette, or call the API and record atomically."""
-        path = self.cassette_dir / f"{self._key(system, user)}.json"
-        if path.exists():
+        path = (self.cassette_dir / f"{self._key(system, user)}.json"
+                if self.cassette_dir is not None else None)
+        if path is not None and path.exists():
             with self._lock:
                 self.calls_cached += 1
             return str(json.loads(path.read_text())["response"])
         if not self.allow_live:
             raise CassetteMiss(
                 f"no cassette for this prompt and live calls disabled "
-                f"(model={self.model}, key={path.name})",
-                hint="set ANTHROPIC_API_KEY to record, or run against committed cassettes",
+                f"(model={self.model}, key={self._key(system, user)}.json)",
+                hint="set ANTHROPIC_API_KEY, or pass --no-llm for deterministic "
+                     "mode; SEMLAYER_LLM_CACHE=<dir> points a run at recordings "
+                     "you already have",
             )
         text, usage_in, usage_out = self._call_live(system, user, max_tokens)
         with self._lock:
@@ -161,7 +219,8 @@ class AnthropicProvider:
             self.tokens_in += usage_in
             self.tokens_out += usage_out
         logger.debug("llm live call model=%s in=%d out=%d", self.model, usage_in, usage_out)
-        self._record(path, system, text, usage_in, usage_out)
+        if path is not None:
+            self._record(path, system, text, usage_in, usage_out)
         return text
 
     def _create(self, client, kwargs: dict):
