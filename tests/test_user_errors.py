@@ -43,9 +43,13 @@ def test_validate_keeps_going_after_a_missing_file(tmp_path, capsys):
 
 
 def test_an_unsupported_uri_is_a_source_error_with_a_hint():
+    """`snowflake://...` used to stand in for "unsupported" here, and that is
+    exactly what the one person who tried a real warehouse pasted. It is a
+    supported form now (tests/test_snowflake_connect.py), so this needs a URI
+    that genuinely is not one."""
     from semlayer.pipeline import open_source_from_uri
     with pytest.raises(SourceError) as e:
-        open_source_from_uri("snowflake://nope")
+        open_source_from_uri("redshift://cluster/db")
     assert e.value.hint and "duckdb" in e.value.hint
 
 
@@ -71,7 +75,7 @@ def test_the_cli_prints_error_and_hint_rather_than_a_traceback(capsys, tmp_path)
     (Path(os.environ["SEMLAYER_HOME"]) / "telemetry_notice").touch()
 
     from semlayer.cli import main
-    assert main(["infer", "snowflake://nope"]) == 2
+    assert main(["infer", "redshift://cluster/db"]) == 2
     err = capsys.readouterr().err
     assert err.startswith("error:") and "hint:" in err
     assert "Traceback" not in err
@@ -86,7 +90,7 @@ def test_a_user_mistake_is_not_recorded_as_internal(tmp_path, monkeypatch):
     from semlayer import telemetry
     importlib.reload(telemetry)
     from semlayer.cli import main
-    main(["infer", "snowflake://nope"])
+    main(["infer", "redshift://cluster/db"])
     # The spool survives because conftest blocks the send, which is also
     # what a user with no network sees.
     lines = (tmp_path / "telemetry.jsonl").read_text().splitlines()

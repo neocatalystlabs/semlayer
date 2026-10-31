@@ -19,9 +19,32 @@ inference (descriptions, decode validation, type escalation).
 pip install -e ".[warehouses]"
 semlayer init snowflake --database analytics --warehouse-name wh_xs  # run output as ACCOUNTADMIN
 export SNOWFLAKE_ACCOUNT=ORG-ACCOUNT SNOWFLAKE_READER_USER=semlayer_reader_svc \
-       SNOWFLAKE_READER_PASSWORD=... SNOWFLAKE_WAREHOUSE=wh_xs SNOWFLAKE_DATABASE=analytics
+       SNOWFLAKE_READER_PASSWORD=... SNOWFLAKE_READER_ROLE=semlayer_reader \
+       SNOWFLAKE_WAREHOUSE=wh_xs SNOWFLAKE_DATABASE=analytics
 semlayer infer snowflake -o layer.yaml
 ```
+
+`SNOWFLAKE_READER_ROLE` is required and this line used to omit it, so following
+the quickstart exactly failed with "no Snowflake session role set". The role is
+passed explicitly rather than inherited from the user's `DEFAULT_ROLE`, because
+a minimal-grant claim is about the role actually in effect; `semlayer init`
+names the role it creates.
+
+Two other spellings work, for a connection you already hold:
+
+```bash
+# a named connection from ~/.snowflake/connections.toml (Snowflake's own CLI
+# writes it; the connection must carry a role and a database)
+semlayer infer snowflake:work -o layer.yaml
+
+# a URL — parts it omits fall back to the environment, which is how the
+# password stays out of your shell history
+semlayer infer 'snowflake://me@ORG-ACCOUNT/analytics?role=semlayer_reader&warehouse=wh_xs' \
+  -o layer.yaml
+```
+
+The account may be pasted as the console shows it: `ORG-ACCOUNT`, a locator, or
+the full `abc12345.us-east-1.snowflakecomputing.com` hostname.
 
 ## BigQuery
 

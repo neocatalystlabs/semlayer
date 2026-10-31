@@ -19,6 +19,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 
 from semlayer.llm.provider import output_budget
+from semlayer.profile.run import CATALOG_DESCRIPTION_DETAILS
 
 PROMPT_VERSION = "v1"
 TABLE_TYPES = ["fact", "dimension", "denormalized", "aggregate",
@@ -127,7 +128,7 @@ def describe_source(doc: dict, stats: dict, llm, no_samples: bool = False,
                     t.setdefault("provenance", []).append(
                         {"signal": "docs", "detail": "context docs in describe evidence"})
                 _apply_parsed(t, parsed, pass_n)
-                descriptions[t["name"]] = t["description"]
+                descriptions[t["name"]] = t.get("description", "")
             continue
         # Pass boundary: every prompt in this pass reads the previous pass's
         # text, never a neighbour's result from this one. That is what makes
@@ -139,7 +140,7 @@ def describe_source(doc: dict, stats: dict, llm, no_samples: bool = False,
             if not parsed:
                 continue
             _apply_parsed(t, parsed, pass_n)
-            descriptions[t["name"]] = t["description"]
+            descriptions[t["name"]] = t.get("description", "")
     return doc
 
 
@@ -185,14 +186,24 @@ def _complete_many(llm, evidence: list[str], budgets: list[int], workers: int) -
 
 
 def _from_catalog(obj: dict) -> bool:
-    """Was this description read from the warehouse's own catalog?
+    """Was this object's DESCRIPTION read from the warehouse's own catalog?
 
     A human wrote it. Our generated sentence does not get to replace it --
     CLAUDE.md's rule for prior knowledge is "never overwritten, gaps filled,
     conflicts flagged", and this is the first place that rule is enforceable
     because native comments were not read at all until now.
+
+    The detail has to be checked, not just the signal. `catalog_prior` is also
+    what link.run writes for a DECLARED KEY, which says nothing about who
+    wrote the description: reading the signal alone meant that against any
+    warehouse declaring primary keys -- Snowflake, Postgres, BigQuery with
+    constraints -- every table looked human-written, lost its description, and
+    then raised KeyError reading it back. Columns with a declared foreign key
+    silently lost their descriptions the same way.
     """
-    return any(pv.get("signal") == "catalog_prior" for pv in (obj.get("provenance") or []))
+    return any(pv.get("signal") == "catalog_prior"
+               and pv.get("detail") in CATALOG_DESCRIPTION_DETAILS
+               for pv in (obj.get("provenance") or []))
 
 
 def _apply_parsed(t: dict, parsed: dict, pass_n: int) -> None:

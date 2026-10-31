@@ -37,7 +37,7 @@ Respond ONLY JSON: [{"id": n, "correct": bool, "useful": bool, "issue": "<=12 wo
 TABLE_TYPE_FLOORS = {"fan_trap": 0.99, "obt": 0.99, "messy_mart": 0.85}
 
 
-def _pipeline(fixture):
+def _pipeline(fixture, use_declared=False):
     import importlib
     mod = importlib.import_module(f"generators.{fixture}")
     con = duckdb.connect(":memory:")
@@ -45,7 +45,7 @@ def _pipeline(fixture):
     llm = AnthropicProvider()
     try:
         doc, stats = profile_with_stats(DuckDBSource(con), llm=llm)
-        link_source(DuckDBSource(con), doc, stats, llm=llm, use_declared=False)
+        link_source(DuckDBSource(con), doc, stats, llm=llm, use_declared=use_declared)
         describe_source(doc, stats, llm)
     except CassetteMiss as e:
         pytest.skip(str(e))
@@ -53,6 +53,57 @@ def _pipeline(fixture):
         con.close()
     doc.pop("_link_audit", None)
     return doc, stats
+
+
+def test_a_declared_key_is_not_a_human_written_description():
+    """The discriminator itself, with no model and no cassettes involved.
+
+    The integration test below replays recordings, so a regression that
+    changes a prompt shows there as a SKIP -- which passes CI. This one
+    cannot skip: it is the gate that fails if `catalog_prior` ever again
+    means "a human wrote this description" regardless of what it describes.
+    """
+    from semlayer.describe.run import _apply_parsed, _from_catalog
+    from semlayer.profile.run import _COMMENT_TABLE_DESC
+
+    keyed = {"name": "ord", "columns": [],
+             "provenance": [{"signal": "catalog_prior",
+                             "detail": "PRIMARY KEY (ord_id) declared in the warehouse "
+                                       "catalog"}]}
+    assert not _from_catalog(keyed), "a declared key says nothing about the description"
+    _apply_parsed(keyed, {"table_description": "one row per order"}, 0)
+    assert keyed["description"] == "one row per order"
+
+    commented = {"name": "cust", "columns": [],
+                 "description": "what a person wrote",
+                 "provenance": [{"signal": "catalog_prior", "detail": _COMMENT_TABLE_DESC}]}
+    assert _from_catalog(commented)
+    _apply_parsed(commented, {"table_description": "LLM guess"}, 0)
+    assert commented["description"] == "what a person wrote", "priors are never overwritten"
+
+
+def test_declared_keys_do_not_suppress_descriptions():
+    """A declared key is provenance for the KEY, never for the description.
+
+    Every other LLM-on test here runs `use_declared=False`, which was chosen
+    to avoid a paid re-record (docs/calibration.md) -- so the declared-key
+    path and the describe path were never exercised together, and `infer`
+    with the LLM on crashed with KeyError: 'description' on the first table
+    of any warehouse that declares primary keys. fan_trap declares them, and
+    its prompts are unchanged by the declarations, so this replays.
+    """
+    doc, _ = _pipeline("fan_trap", use_declared=True)
+    tables = doc["semantic_layer"]["tables"]
+    declared = [t for t in tables
+                if any(pv.get("signal") == "catalog_prior"
+                       and "PRIMARY KEY" in (pv.get("detail") or "")
+                       for pv in (t.get("provenance") or []))]
+    assert declared, "fixture no longer declares primary keys; this test is moot"
+    assert all(t.get("description") for t in declared), \
+        "a declared primary key suppressed the table description"
+    undescribed = [(t["name"], c["name"]) for t in tables
+                   for c in t["columns"] if not c.get("description")]
+    assert not undescribed, f"undescribed columns: {undescribed[:5]}"
 
 
 def test_describe_full_coverage_and_conformance():

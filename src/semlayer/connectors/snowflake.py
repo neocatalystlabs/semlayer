@@ -8,9 +8,151 @@ generates). Anything requiring more is a documented opt-in, not an assumption.
 
 from __future__ import annotations
 
+import logging
 import os
+import pathlib
 
+from semlayer.errors import SourceError
 from semlayer.source import ColumnMeta, TableMeta
+
+logger = logging.getLogger(__name__)
+
+_HOST_SUFFIX = ".snowflakecomputing.com"
+# Where the driver (and Snowflake's own CLI) keep named connections.
+_CONNECTIONS_TOML = "connections.toml"
+
+
+def _prefix(persona: str) -> str:
+    return "SNOWFLAKE_READER" if persona == "reader" else "SNOWFLAKE_ADMIN"
+
+
+def _account_id(raw: str) -> str:
+    """Accept the account spellings people actually paste.
+
+    The Snowflake UI hands out several spellings of one thing: ORG-ACCOUNT, a
+    bare locator, and a full hostname (`abc12345.us-east-1.snowflakecomputing
+    .com`, often copied with the scheme and a trailing slash). The driver wants
+    the identifier, so strip the URL clothing instead of failing on it — a
+    stranger pasting what the console showed them is the first run we lost.
+    """
+    a = raw.strip().strip("/")
+    if "://" in a:
+        a = a.split("://", 1)[1]
+    a = a.split("/", 1)[0]
+    if a.lower().endswith(_HOST_SUFFIX):
+        a = a[: -len(_HOST_SUFFIX)]
+    return a
+
+
+def _session_role(prefix: str, given: str | None = None) -> str:
+    """Return the session role, which is required, never inherited.
+
+    `given` comes from a URL or a named connection and wins over the
+    environment.
+
+    Not optional by design: semlayer passes the role explicitly rather than
+    inheriting the user's DEFAULT_ROLE, because a minimal-grant claim is about
+    the role actually in effect. An inherited role would profile under every
+    privilege the account holds and make the claim unverifiable.
+    """
+    role = given or os.environ.get(f"{prefix}_ROLE") or os.environ.get("SNOWFLAKE_ROLE")
+    if not role:
+        raise SourceError(
+            f"no Snowflake session role set: export {prefix}_ROLE "
+            "(or SNOWFLAKE_ROLE)",
+            hint="`semlayer init snowflake` generates a <prefix>_reader role; set "
+                 "that name rather than relying on the user's DEFAULT_ROLE, which "
+                 "silently profiles under whatever privileges the account holds. "
+                 "In a URL add ?role=<role>; in connections.toml add role = ...",
+        )
+    return role
+
+
+def _auth(prefix: str, password: str | None = None) -> dict:
+    """Pick the credential. `password` overrides the environment (URL form).
+
+    Password was the ONLY accepted credential, which locked out every account
+    on SSO — the common case at any company large enough to have a messy
+    warehouse, and the exact person who wants to try the CLI on their own
+    grants. `authenticator` covers SSO (externalbrowser), Okta (a URL), and
+    OAuth; a private key covers key-pair auth, which is what most service
+    accounts are moving to.
+    """
+    auth: dict = {}
+    authenticator = os.environ.get(f"{prefix}_AUTHENTICATOR") or os.environ.get(
+        "SNOWFLAKE_AUTHENTICATOR")
+    key_path = os.environ.get(f"{prefix}_PRIVATE_KEY_PATH") or os.environ.get(
+        "SNOWFLAKE_PRIVATE_KEY_PATH")
+    password = password or os.environ.get(f"{prefix}_PASSWORD")
+    if key_path:
+        auth["private_key_file"] = key_path
+        passphrase = os.environ.get(f"{prefix}_PRIVATE_KEY_PASSPHRASE") or \
+            os.environ.get("SNOWFLAKE_PRIVATE_KEY_PASSPHRASE")
+        if passphrase:
+            auth["private_key_file_pwd"] = passphrase
+    elif authenticator:
+        auth["authenticator"] = authenticator
+        # externalbrowser prompts the user and takes no password; Okta and
+        # oauth variants still need one, so pass it when it is set.
+        if password and authenticator.lower() != "externalbrowser":
+            auth["password"] = password
+    elif password:
+        auth["password"] = password
+    else:
+        raise SourceError(
+            f"no Snowflake credential: set {prefix}_PASSWORD, "
+            f"{prefix}_PRIVATE_KEY_PATH, or {prefix}_AUTHENTICATOR="
+            "externalbrowser for SSO",
+            hint="`semlayer init snowflake` prints the minimal grant; SSO and "
+                 "key-pair let you run as yourself without a new password",
+        )
+    return auth
+
+
+def _required_env(name: str, hint: str) -> str:
+    """A missing setting is the user's to fix, so it must not read as our bug.
+
+    `os.environ[...]` raised KeyError here, which cli._error_class maps by
+    TYPE to `internal` — the bucket that is supposed to mean a semlayer defect.
+    """
+    value = os.environ.get(name)
+    if not value:
+        raise SourceError(f"{name} is not set", hint=hint)
+    return value
+
+
+def _connect(**kw):
+    """One place where the driver is imported and its failures are translated.
+
+    Both matter for the first run. The import is an optional extra, so a
+    missing one must say `pip install` rather than `No module named`; and the
+    driver's own refusals (bad account, wrong password, no such warehouse,
+    expired SSO) used to reach the user raw and telemetry as `internal`.
+    """
+    try:
+        import snowflake.connector as driver
+    except ImportError as e:
+        raise SourceError(
+            "the Snowflake driver is not installed",
+            hint="pip install 'semlayer[warehouses]'",
+        ) from e
+    try:
+        from snowflake.connector.errors import Error as _DriverError
+    except Exception:            # a stub or a driver without the module
+        _DriverError = ()        # an empty tuple catches nothing
+    try:
+        return driver.connect(**kw)
+    except _DriverError as e:
+        # The driver's message names the account, the user and what it
+        # objected to, which is exactly what the person needs; it becomes the
+        # hint rather than being swallowed.
+        raise SourceError("Snowflake refused the connection", hint=str(e)) from e
+
+
+def _connections_toml() -> pathlib.Path:
+    """The file the driver and Snowflake's CLI both read."""
+    home = os.environ.get("SNOWFLAKE_HOME")
+    return (pathlib.Path(home) if home else pathlib.Path.home() / ".snowflake") / _CONNECTIONS_TOML
 
 
 class SnowflakeSource:
@@ -24,83 +166,171 @@ class SnowflakeSource:
         self.session_role: str = "unknown"
 
     @classmethod
+    def from_uri(cls, uri: str, persona: str = "reader") -> SnowflakeSource:
+        """Open whatever the person pasted after `semlayer infer`.
+
+        Three forms, because people hold a Snowflake connection in three
+        shapes and the CLI accepted only the first:
+
+          snowflake                        the environment (what `init` sets up)
+          snowflake:<name>                 a named connection from connections.toml
+          snowflake://user@account/db       a URL, with ?role= and ?warehouse=
+
+        Telemetry for the ten days after the sender went live recorded one
+        person outside the team trying a real warehouse: 14 Snowflake runs, 14
+        `connection` errors, no successes. The only Snowflake path that could
+        produce that class was the "unsupported source uri" refusal, so what
+        they pasted was almost certainly one of the last two forms — and they
+        were told to try "snowflake, bigquery, duckdb:<path>".
+        """
+        body = uri[len("snowflake"):].lstrip(":").lstrip("/").rstrip("/")
+        if not body:
+            return cls.from_env(persona=persona)
+        # A bare token is a connection NAME; anything with URL structure in it
+        # is a URL. `snowflake://acct/db` has no user and is still a URL.
+        if any(ch in body for ch in "@/?"):
+            return cls.from_url(uri, persona=persona)
+        return cls.from_connection_name(body, persona=persona)
+
+    @classmethod
     def from_env(cls, persona: str = "reader") -> SnowflakeSource:
         """persona: 'reader' (the product) or 'admin' (fixture loading only).
 
-        The SESSION ROLE is passed explicitly and is not optional. Until now it
-        was never passed at all, so the session ran under whatever the user's
-        DEFAULT_ROLE happened to be. That worked only because `semlayer init`
-        creates a service user with DEFAULT_ROLE set to the reader role it also
-        creates -- and it silently broke the moment anyone ran semlayer as
-        their own account, profiling under whatever privileges they hold. Our
-        minimal-grant claim is about the role actually in effect, so inheriting
-        one makes the claim unverifiable.
+        The SESSION ROLE is passed explicitly and is not optional -- see
+        `_session_role`. Config is validated BEFORE the driver import,
+        deliberately: the role is a cheap environment check and the driver is
+        an optional extra, so importing first meant an install without
+        `[warehouses]` reported `No module named 'snowflake'` for what is
+        actually a missing setting -- and it made the test for this rule
+        unrunnable anywhere the extra is absent, which is CI.
         """
-        from semlayer.errors import SemlayerError
-
-        # Config is validated BEFORE the driver import, deliberately. The
-        # session role is a cheap environment check and the driver is an
-        # optional extra, so importing first meant an install without
-        # `[warehouses]` reported `No module named 'snowflake'` for what is
-        # actually a missing setting -- and it made the test for this rule
-        # unrunnable anywhere the extra is absent, which is CI.
-        prefix = "SNOWFLAKE_READER" if persona == "reader" else "SNOWFLAKE_ADMIN"
-        session_role = os.environ.get(f"{prefix}_ROLE") or os.environ.get("SNOWFLAKE_ROLE")
-        if not session_role:
-            raise SemlayerError(
-                f"no Snowflake session role set: export {prefix}_ROLE "
-                "(or SNOWFLAKE_ROLE)",
-                hint="`semlayer init snowflake` generates a <prefix>_reader role; set "
-                     "that name rather than relying on the user's DEFAULT_ROLE, which "
-                     "silently profiles under whatever privileges the account holds",
-            )
-
-        import snowflake.connector
-
-        # Password was the ONLY accepted credential, which locked out every
-        # account on SSO -- the common case at any company large enough to have
-        # a messy warehouse, and the exact person who wants to try the CLI on
-        # their own grants. `authenticator` covers SSO (externalbrowser), Okta
-        # (a URL), and OAuth; a private key covers key-pair auth, which is what
-        # most service accounts are moving to.
-        auth: dict = {}
-        authenticator = os.environ.get(f"{prefix}_AUTHENTICATOR") or os.environ.get(
-            "SNOWFLAKE_AUTHENTICATOR")
-        key_path = os.environ.get(f"{prefix}_PRIVATE_KEY_PATH") or os.environ.get(
-            "SNOWFLAKE_PRIVATE_KEY_PATH")
-        password = os.environ.get(f"{prefix}_PASSWORD")
-        if key_path:
-            auth["private_key_file"] = key_path
-            passphrase = os.environ.get(f"{prefix}_PRIVATE_KEY_PASSPHRASE") or \
-                os.environ.get("SNOWFLAKE_PRIVATE_KEY_PASSPHRASE")
-            if passphrase:
-                auth["private_key_file_pwd"] = passphrase
-        elif authenticator:
-            auth["authenticator"] = authenticator
-            # externalbrowser prompts the user and takes no password; Okta and
-            # oauth variants still need one, so pass it when it is set.
-            if password and authenticator.lower() != "externalbrowser":
-                auth["password"] = password
-        elif password:
-            auth["password"] = password
-        else:
-            raise SemlayerError(
-                f"no Snowflake credential: set {prefix}_PASSWORD, "
-                f"{prefix}_PRIVATE_KEY_PATH, or {prefix}_AUTHENTICATOR="
-                "externalbrowser for SSO",
-                hint="`semlayer init snowflake` prints the minimal grant; SSO and "
-                     "key-pair let you run as yourself without a new password",
-            )
-
-        con = snowflake.connector.connect(
-            account=os.environ["SNOWFLAKE_ACCOUNT"],
-            user=os.environ[f"{prefix}_USER"],
+        prefix = _prefix(persona)
+        session_role = _session_role(prefix)
+        auth = _auth(prefix)
+        export_hint = (
+            f"export SNOWFLAKE_ACCOUNT=<org-account> {prefix}_USER=<user> "
+            f"{prefix}_ROLE=<role> SNOWFLAKE_DATABASE=<db>; "
+            "`semlayer init snowflake` prints the whole block"
+        )
+        account = _account_id(_required_env("SNOWFLAKE_ACCOUNT", export_hint))
+        user = _required_env(f"{prefix}_USER", export_hint)
+        database = os.environ.get("SNOWFLAKE_DATABASE", "SEMLAYER_TEST")
+        con = _connect(
+            account=account,
+            user=user,
             role=session_role,
             warehouse=os.environ.get("SNOWFLAKE_WAREHOUSE", "SEMLAYER_WH"),
-            database=os.environ.get("SNOWFLAKE_DATABASE", "SEMLAYER_TEST"),
+            database=database,
             **auth,
         )
-        src = cls(con, os.environ.get("SNOWFLAKE_DATABASE", "SEMLAYER_TEST"))
+        src = cls(con, database)
+        src.session_role = session_role
+        return src
+
+    @classmethod
+    def from_connection_name(cls, name: str, persona: str = "reader") -> SnowflakeSource:
+        """Open the named connection from `connections.toml`.
+
+        The file is the driver's own, shared with Snowflake's CLI, so someone
+        who already runs `snow` has their credentials here and should not have
+        to restate them as environment variables. It is read rather than left
+        entirely to the driver for one reason: the role in effect and the
+        database are recorded in the run report, and `connection_name=` alone
+        would leave both unknown to us.
+        """
+        prefix = _prefix(persona)
+        path = _connections_toml()
+        if not path.exists():
+            raise SourceError(
+                f"no Snowflake connection file at {path}",
+                hint="`snow connection add` writes it, or set SNOWFLAKE_HOME; or pass "
+                     "a URL (snowflake://user@account/db?role=..) or use the "
+                     "environment (`semlayer init snowflake`)",
+            )
+        import tomllib
+        try:
+            doc = tomllib.loads(path.read_text(encoding="utf-8"))
+        except (tomllib.TOMLDecodeError, OSError) as e:
+            raise SourceError(f"could not read {path}", hint=str(e)) from e
+        section = doc.get(name)
+        if not isinstance(section, dict):
+            known = ", ".join(sorted(k for k, v in doc.items() if isinstance(v, dict)))
+            raise SourceError(
+                f"no connection named {name!r} in {path}",
+                hint=f"connections in that file: {known}" if known
+                     else "that file defines no connections",
+            )
+        session_role = _session_role(prefix, section.get("role"))
+        database = section.get("database") or os.environ.get("SNOWFLAKE_DATABASE")
+        if not database:
+            raise SourceError(
+                f"connection {name!r} names no database",
+                hint="add `database = \"<db>\"` to it in "
+                     f"{path}, or export SNOWFLAKE_DATABASE",
+            )
+        # The driver merges connection_name with explicit kwargs, and the
+        # explicit ones win: the role we recorded is the role in effect.
+        con = _connect(connection_name=name, role=session_role, database=database)
+        src = cls(con, database)
+        src.session_role = session_role
+        return src
+
+    @classmethod
+    def from_url(cls, url: str, persona: str = "reader") -> SnowflakeSource:
+        """Open `snowflake://user[:password]@account/db[/schema][?role=&warehouse=]`.
+
+        The same shape SQLAlchemy's Snowflake dialect uses, so it is a form
+        people already hold rather than a surface we invented. Parts the URL
+        omits fall back to the environment, which is what lets a URL carry the
+        account and database while the credential stays out of shell history.
+        """
+        from urllib.parse import parse_qs, unquote, urlparse
+
+        prefix = _prefix(persona)
+        u = urlparse(url)
+        q = {k: v[0] for k, v in parse_qs(u.query).items() if v}
+        account = _account_id(unquote(u.hostname or "")) or _account_id(
+            os.environ.get("SNOWFLAKE_ACCOUNT", ""))
+        segments = [seg for seg in (u.path or "").split("/") if seg]
+        database = (unquote(segments[0]) if segments
+                    else os.environ.get("SNOWFLAKE_DATABASE", ""))
+        user = unquote(u.username or "") or os.environ.get(f"{prefix}_USER", "")
+        password = unquote(u.password) if u.password else None
+        example = ("snowflake://<user>@<org-account>/<database>"
+                   "?role=<role>&warehouse=<wh>")
+        if not account:
+            raise SourceError(f"no Snowflake account in {url}",
+                              hint=f"expected {example}")
+        if not database:
+            raise SourceError(
+                f"no database in {url}",
+                hint=f"expected {example}, or export SNOWFLAKE_DATABASE")
+        if not user:
+            raise SourceError(
+                f"no user in {url}",
+                hint=f"expected {example}, or export {prefix}_USER")
+        session_role = _session_role(prefix, q.get("role"))
+        auth = _auth(prefix, password)
+        if password:
+            # Said once, where it is actionable, and not again at every run.
+            logger.warning(
+                "the password came from the URL, so it is in your shell history: "
+                "%s_PASSWORD or connections.toml keeps it out", prefix)
+        kw: dict = {}
+        if len(segments) > 1:
+            # The driver's own session schema. Inference scope is --schema.
+            kw["schema"] = unquote(segments[1])
+        con = _connect(
+            account=account,
+            user=user,
+            role=session_role,
+            warehouse=q.get("warehouse") or os.environ.get(
+                "SNOWFLAKE_WAREHOUSE", "SEMLAYER_WH"),
+            database=database,
+            **kw,
+            **auth,
+        )
+        src = cls(con, database)
         src.session_role = session_role
         return src
 
