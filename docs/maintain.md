@@ -54,6 +54,21 @@ reasons no diff could show.
 plan, whether it applied, the merge report, and the review queue before and
 after.
 
+## On a schedule, as a pull request
+
+`examples/maintain/semlayer-maintain.yml` is a GitHub Actions workflow to
+copy into the repository that holds your layer. Nightly it runs `maintain
+--apply`; when anything changed it pushes the new layer to one standing
+branch, `semlayer/maintain`, and opens a pull request, or updates the open
+one, with the maintainer's report as the description: what changed, what was
+re-inferred, whether the LLM was used, how many review questions appeared.
+Nothing reaches your default branch until a person merges it; when nothing
+changed the job ends quietly. The PR is the gate, so there is no separate
+dry-run stage to configure: the branch is the dry run and merging is the
+decision. Measured on the messy_mart event above, the PR's diff is 72 lines
+added and 5 removed on a 5,367-line layer, every one of them the change
+itself. The README beside the template lists the secrets per warehouse.
+
 ## The replay
 
 The maintainer design recorded that this loop had been run once, by hand,
@@ -77,10 +92,11 @@ inference recording, and the targeted re-inference is deterministic.
 
 ## What is not built
 
-`maintain` is the runner, and a person or a job still has to start it. There
-is no schedule or change-feed trigger (the Snowflake DDL feed exists in the
-connector and is wired to nothing), no pull request, no policy deciding what
-merges without a human and what escalates (`--apply` is that decision, taken
-by whoever types it), and no measurement of whether the layer decays over
-many events. Those are the maintainer's remaining pieces, in that order. The
+`maintain` is the runner and the workflow template schedules it and opens
+the PR. What is not here: a change-feed trigger instead of a clock (the
+Snowflake DDL feed exists in the connector and is wired to nothing), a policy
+deciding what merges without a human and what escalates (merging the PR is
+that decision, taken by a person), a review queue ranked by consumer impact,
+and a measurement of whether the layer decays over many events. Those are
+the maintainer's remaining pieces and the shape of the hosted service. The
 policy itself is not part of this repository.

@@ -1,0 +1,125 @@
+# Keep the semantic layer true, on a schedule, as a pull request.
+#
+# Copy this file to .github/workflows/semlayer-maintain.yml in the repository
+# that holds your layer. Nightly it runs `semlayer maintain --apply`: drift is
+# detected, only the tables that changed are re-inferred, and the result is
+# merged into the layer with everything a human has reviewed or certified
+# kept. If anything changed, the new layer is pushed to one standing branch
+# and a pull request is opened, or the open one is updated, with the
+# maintainer's own report as its description. Nothing reaches your default
+# branch until a person merges that PR. When nothing changed, the job ends
+# quietly.
+#
+# The engine makes the same choices here as `semlayer infer` does on your
+# laptop: the LLM is used when ANTHROPIC_API_KEY is set as a repository
+# secret and skipped when it is not, and the PR says which it was.
+#
+# Secrets to set, by warehouse (see `semlayer init <warehouse>` for the
+# read-only service account these expect):
+#   snowflake: SNOWFLAKE_ACCOUNT SNOWFLAKE_READER_USER SNOWFLAKE_READER_PASSWORD
+#              SNOWFLAKE_WAREHOUSE SNOWFLAKE_DATABASE
+#   bigquery:  GCP_PROJECT and GOOGLE_APPLICATION_CREDENTIALS_READER_JSON
+#              (the service-account key file's contents)
+#   postgres:  PG_READER_DSN
+#   optional:  ANTHROPIC_API_KEY
+
+name: semlayer maintain
+
+on:
+  schedule:
+    - cron: "17 3 * * *"        # nightly, 03:17 UTC; pick a quiet hour for your warehouse
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  LAYER: layer.yaml             # the layer this repository holds
+  SOURCE: snowflake             # duckdb:<path> | postgresql://... | snowflake | bigquery | postgres
+  CQS: ""                       # optional: a competency-question suite to regression-check
+  BRANCH: semlayer/maintain     # one standing branch; the PR is updated, never piled up
+
+jobs:
+  maintain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install semlayer
+        run: python -m pip install --quiet "semlayer[warehouses]"
+
+      - name: BigQuery credentials file (only when the secret is set)
+        if: ${{ env.SOURCE == 'bigquery' }}
+        env:
+          KEY_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_READER_JSON }}
+        run: |
+          printf '%s' "$KEY_JSON" > "$RUNNER_TEMP/reader.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS_READER=$RUNNER_TEMP/reader.json" >> "$GITHUB_ENV"
+
+      - name: Maintain the layer
+        id: maintain
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_READER_USER: ${{ secrets.SNOWFLAKE_READER_USER }}
+          SNOWFLAKE_READER_PASSWORD: ${{ secrets.SNOWFLAKE_READER_PASSWORD }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+          SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+          GCP_PROJECT: ${{ secrets.GCP_PROJECT }}
+          PG_READER_DSN: ${{ secrets.PG_READER_DSN }}
+        run: |
+          set +e
+          args=("$LAYER" "$SOURCE" --apply --json-out maintain.json)
+          if [ -n "$CQS" ]; then args+=(--cqs "$CQS"); fi
+          semlayer maintain "${args[@]}" | tee maintain.txt
+          rc=${PIPESTATUS[0]}
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            echo "semlayer maintain exited $rc (the layer did not validate after the merge)"
+            exit "$rc"
+          fi
+          changed=$(python -c "import json; r=json.load(open('maintain.json')); print('yes' if r['events'] else 'no')")
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+
+      - name: Open or update the pull request
+        if: steps.maintain.outputs.changed == 'yes'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "semlayer maintain"
+          git config user.email "semlayer-maintain@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+          git add "$LAYER"
+          git commit -m "semlayer maintain: $(date -u +%Y-%m-%d) — $(python -c "import json; r=json.load(open('maintain.json')); print(len(r['events']), 'change(s),', len(r['plan']['reinfer']), 'table(s) re-inferred')")"
+          git push --force-with-lease origin "$BRANCH" || git push --force origin "$BRANCH"
+          {
+            echo "## semlayer maintain, $(date -u +%Y-%m-%d)"
+            echo
+            echo 'The warehouse changed and the layer was brought back in line. Only the tables named below were re-inferred; everything a person reviewed or certified is kept. Merge to accept, close to discard, or run `semlayer review '"$LAYER"'` on this branch first to answer what the engine could not.'
+            echo
+            echo '```'
+            cat maintain.txt
+            echo '```'
+            echo
+            python - <<'PY'
+          import json
+          r = json.load(open("maintain.json"))
+          q = r["review_queue"]
+          print(f"Engine: {'with the LLM' if r['plan']['with_llm'] else 'without an LLM (no ANTHROPIC_API_KEY secret)'}.")
+          print(f"Review queue: {q['before']} -> {q['after']}" + (f" (+{q['new']} new question(s))" if q["new"] else "") + ".")
+          if r["changeset"] and r["changeset"]["broken_cqs"]:
+              print(f"Competency questions flagged: {len(r['changeset']['broken_cqs'])}.")
+          PY
+          } > pr-body.md
+          if gh pr view "$BRANCH" --json number > /dev/null 2>&1; then
+            gh pr edit "$BRANCH" --body-file pr-body.md
+          else
+            gh pr create --head "$BRANCH" --title "semlayer maintain: the layer changed on $(date -u +%Y-%m-%d)" --body-file pr-body.md
+          fi
