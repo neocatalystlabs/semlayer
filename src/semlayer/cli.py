@@ -73,6 +73,12 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-llm", action="store_true", help="Deterministic dry-run (no LLM calls)")
     p.add_argument("--no-sample-egress", action="store_true",
                    help="Never include cell values in LLM prompts")
+    p.add_argument("--no-llm-cache", action="store_true",
+                   help="Do not cache model responses on disk. The cache lives in "
+                        "your platform cache directory, holds the model's text about "
+                        "your schema, and is what makes an interrupted run cheap to "
+                        "resume; SEMLAYER_LLM_CACHE=off is the same switch, and "
+                        "SEMLAYER_LLM_CACHE=<dir> moves it")
     p.add_argument("--llm-workers", type=int, default=4, metavar="N",
                    help="Concurrent LLM calls in typing escalation, foreign-key "
                         "validation and both Describe passes (default 4). "
@@ -203,6 +209,8 @@ def _add_maintain_parser(sub) -> None:
     p.add_argument("--no-llm", action="store_true",
                    help="Re-infer without the LLM (same meaning as on infer; the default, "
                         "like infer's, is the LLM when ANTHROPIC_API_KEY is set)")
+    p.add_argument("--no-llm-cache", action="store_true",
+                   help="Do not cache model responses on disk (same meaning as on infer)")
     p.add_argument("--llm-workers", type=int, default=4, metavar="N")
     p.add_argument("--query-workers", type=int, default=None, metavar="N")
     p.add_argument("--manifest", help="dbt manifest.json, as on infer")
@@ -236,7 +244,7 @@ def _cmd_maintain(args: argparse.Namespace) -> int:
         llm = None
         if with_llm:
             from semlayer.llm.provider import AnthropicProvider
-            llm = AnthropicProvider()
+            llm = AnthropicProvider(cache=not args.no_llm_cache, repo_cache=False)
         lineage = None
         if args.manifest:
             from semlayer.lineage import load_dbt_manifest
@@ -358,7 +366,7 @@ def _cmd_infer(args: argparse.Namespace) -> int:
     if not args.no_llm:
         from semlayer.llm.provider import AnthropicProvider
 
-        llm = AnthropicProvider()
+        llm = AnthropicProvider(cache=not args.no_llm_cache, repo_cache=False)
     state = None
     if args.state:
         from semlayer.incremental import LocalStateStore
