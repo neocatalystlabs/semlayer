@@ -22,7 +22,10 @@ moves it. README "Cost & privacy" says what the cache holds and where.
 
 Unchanged: the committed cassettes still back `pytest` and
 `python -m semlayer.benchmark`, so every published number reproduces keylessly
-exactly as before. What the cache is worth to a run is one thing only — an
+exactly as before. `examples/agent_pipeline` shells out to the CLI to build its
+layer and so now passes `SEMLAYER_LLM_CACHE` explicitly; CI caught that and a
+local run did not, because a leftover `layer.yaml` makes the example skip the
+subprocess entirely. What the cache is worth to a run is one thing only — an
 interrupted whole-warehouse run resumes for free, since unchanged data profiles
 to the same prompts. It deduplicates nothing within a single run: measured on
 messy_mart, 98 calls and 98 distinct prompts.

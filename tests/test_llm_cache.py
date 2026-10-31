@@ -128,6 +128,15 @@ def test_keyless_with_the_cache_off_fails_loudly(monkeypatch):
     assert "no cassette" in str(e.value)
 
 
+def test_the_agent_pipeline_example_points_its_cli_subprocess_at_the_cassettes():
+    """CI caught this and a local run did not: `_ensure_layer` skips the
+    subprocess when a leftover layer.yaml exists, so the only run that
+    exercises it is a clean checkout's."""
+    src = (REPO / "examples" / "agent_pipeline" / "pipeline.py").read_text()
+    assert "semlayer.cli" in src, "the example stopped shelling out; drop this test"
+    assert 'SEMLAYER_LLM_CACHE": str(ROOT / "cassettes")' in src
+
+
 def test_both_cli_entry_points_opt_out_of_the_repo_cache():
     """A new `AnthropicProvider()` in the CLI would reintroduce the git trap,
     and no runtime test would notice: the repo cache works, that is the bug."""
