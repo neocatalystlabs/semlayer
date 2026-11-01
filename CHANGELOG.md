@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+### Telemetry: whether an MCP session used the server, and a stop to double counting
+
+Two changes, one schema bump.
+
+**`tools`** on `mcp` events: which of our own MCP tools a session called,
+deduped and sorted. Tool names only — never their arguments, which carry your
+query text and table names. A session that connected and called nothing has no
+`tools` key at all, which is the point: `host` says who connected, and this
+says whether they did anything. Those are different questions, and a launch
+count answers neither.
+
+**`event_id`** on every event, with the receiver dropping a replay rather than
+storing it again. The sender truncates its spool only after a success, and it
+abandoned its thread on the same deadline the request itself used — so a
+response that arrived a moment late left events spooled that had already been
+stored, and the next command sent them again. Our own figures for how often a
+command runs were about 53% high because of it. The client still retries, which
+is correct: it cannot tell a lost response from a slow one. The fix is that a
+retry is now recognisable as one. A send also stops clearing the whole spool
+and removes only what it sent, so an event recorded while a request was in
+flight is no longer discarded unsent.
+
+Event schema version is now `3`. Disclosure for both fields is in
+[docs/telemetry.md](docs/telemetry.md), in the same release as the fields.
+
 ### Telemetry: which MCP client launched the server
 
 `mcp` events now carry a `host` field, read from the MCP `initialize`
@@ -15,8 +40,8 @@ Why: launches are by far the most common thing anyone does with semlayer, and
 an anonymous launch count cannot tell a person in an editor from a script in a
 container. `host` is the smallest field that separates them.
 
-Event schema version is now `2`. Disclosure is in
-[docs/telemetry.md](docs/telemetry.md), as always in the same release as the
+Event schema version was `2` for this field; see above for `3`. Disclosure is
+in [docs/telemetry.md](docs/telemetry.md), as always in the same release as the
 field. Telemetry remains opt-out via `semlayer telemetry --off` or
 `SEMLAYER_TELEMETRY=off`.
 

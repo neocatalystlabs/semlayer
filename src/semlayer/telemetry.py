@@ -47,6 +47,13 @@ MAX_SPOOL_EVENTS = 200
 MAX_SPOOL_AGE_S = 30 * 24 * 3600
 SEND_TIMEOUT_S = 1.5
 
+# The POST gives up slightly before the thread is abandoned. Same cause as
+# the duplicate sends `event_id` exists for: the sender used the same 1.5s
+# for both, so a response arriving at 1.49s left no time to truncate the
+# spool and the events went out again next run. The grace costs the user
+# nothing -- the join deadline, which is what they wait on, is unchanged.
+POST_TIMEOUT_S = SEND_TIMEOUT_S - 0.2
+
 _log = logging.getLogger(__name__)
 
 
@@ -160,6 +167,12 @@ def record(event: str, t: int | None = None, **props) -> None:
             "schema": telemetry_schema.SCHEMA,
             "t": int(t if t is not None else time.time()),
             "anon": _anon_id(),
+            # The dedupe key. Not derived from the event's contents: two
+            # identical commands a second apart are two events, and hashing
+            # the fields would silently merge them. Random per event, so a
+            # replay of the same spool line is recognisable as a replay and
+            # a genuine repeat is not.
+            "event_id": uuid.uuid4().hex,
             # _environment() last: machine facts are ours to state, not a
             # caller's to override.
             # _pending first so an explicit argument wins, _environment()
@@ -177,8 +190,11 @@ def record(event: str, t: int | None = None, **props) -> None:
 # ---------------------------------------------------------------- sending
 
 
-def _readable_spool() -> list[dict]:
-    """Parse the spool, dropping what is too old, malformed, or excess.
+def _fresh_lines() -> list[tuple[str, dict]]:
+    """Spool lines worth sending, each paired with its parsed row.
+
+    Lines as well as rows, because a successful send has to remove exactly
+    what it sent and nothing else -- see `_drop`.
 
     Oldest-first truncation: a machine that has been offline for a year
     should send what it did yesterday, not what it did last January.
@@ -195,8 +211,45 @@ def _readable_spool() -> list[dict]:
         except ValueError:
             continue                       # a partial write; skip, never fail
         if isinstance(row, dict) and row.get("t", 0) >= cutoff:
-            out.append(row)
+            out.append((line, row))
     return out[-MAX_SPOOL_EVENTS:]
+
+
+def _readable_spool() -> list[dict]:
+    """The rows a flush would send, in order."""
+    return [row for _, row in _fresh_lines()]
+
+
+def _drop(sent: set[str]) -> None:
+    """Remove exactly the lines the receiver accepted; keep the rest.
+
+    This used to be `write_text("")`, which destroyed two things that were
+    not the send's to destroy: events appended while the POST was in flight,
+    and events the batch left behind because MAX_SPOOL_EVENTS capped it. A
+    busy machine could lose a command for every command it reported.
+
+    Stale and malformed lines are pruned here as well, so the spool is still
+    bounded without relying on a successful send to clear the whole file.
+    """
+    try:
+        lines = _SPOOL.read_text().splitlines()
+    except OSError:
+        return
+    cutoff = time.time() - MAX_SPOOL_AGE_S
+    keep = []
+    for line in lines:
+        if line in sent:
+            continue
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(row, dict) and row.get("t", 0) >= cutoff:
+            keep.append(line)
+    try:
+        _SPOOL.write_text("".join(x + "\n" for x in keep))
+    except OSError:
+        pass                               # telemetry must never break the tool
 
 
 def _post(batch: list[dict]) -> bool:
@@ -211,16 +264,16 @@ def _post(batch: list[dict]) -> bool:
         ENDPOINT, data=body, method="POST",
         headers={"content-type": "application/json",
                  "content-length": str(len(body))})
-    with urllib.request.urlopen(req, timeout=SEND_TIMEOUT_S) as r:
+    with urllib.request.urlopen(req, timeout=POST_TIMEOUT_S) as r:
         return 200 <= r.status < 300
 
 
 def _send() -> None:
     """Body of the sender thread. Swallows everything."""
     try:
-        batch = _readable_spool()
-        if batch and _post(batch):
-            _SPOOL.write_text("")          # truncate only on success
+        fresh = _fresh_lines()
+        if fresh and _post([row for _, row in fresh]):
+            _drop({line for line, _ in fresh})   # only on success, only these
     except Exception as e:
         # Telemetry must never affect the command the user actually ran, so
         # every failure is invisible unless they asked for detail.

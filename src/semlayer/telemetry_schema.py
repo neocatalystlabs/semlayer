@@ -21,7 +21,7 @@ parks the rest rather than rejecting a batch it does not fully understand.
 
 from __future__ import annotations
 
-SCHEMA = 2
+SCHEMA = 3
 
 # (lower_bound, label), highest first. A value is labelled by the first bound
 # it reaches.
@@ -42,6 +42,20 @@ OSES = {"linux", "darwin", "windows", "other"}
 ARCHES = {"x86_64", "arm64", "other"}
 FLAGS = {"no_llm", "no_sample_egress", "no_declared_constraints", "apply",
          "json", "share"}
+
+# Which MCP tools a session actually called. These are OUR names -- the ones
+# registered in `mcp_server.build_server` -- so unlike HOSTS this is a
+# pass-through vocabulary, not a classifier over someone else's text.
+#
+# "other" is here, and unknown names map to it rather than being dropped,
+# which is the one place this differs from FLAGS. A dropped name would make
+# "a tool we forgot to declare" and "no tool call at all" the same row, and
+# those mean opposite things: the first is our bookkeeping falling behind a
+# renamed tool, the second is the probe-versus-person question this field
+# exists to answer.
+TOOLS = {"semantic_search", "get_domains", "get_tables", "table_detail",
+         "get_metrics", "route_intent", "check_sql", "compile_metric",
+         "other"}
 
 # Which MCP client launched the server. NOT a pass-through enum like the
 # others: a client name is arbitrary vendor text, so `_host` CLASSIFIES it
@@ -130,6 +144,22 @@ def _flags(v: object) -> list[str] | None:
     return out or None
 
 
+def _tools(v: object) -> list[str] | None:
+    """Which MCP tools were called: deduped, sorted, never their arguments.
+
+    A set, not a sequence of calls: the order and the repetition are the
+    shape of someone's session, and we only need to know whether the server
+    was used at all and for what. Absent rather than empty when nothing was
+    called, so "launched and did nothing" is the absence of a key rather
+    than a value that has to be spelled the same way everywhere.
+    """
+    if not isinstance(v, (list, tuple, set)):
+        return None
+    out = sorted({t if t in TOOLS else "other"
+                  for t in v if isinstance(t, str) and t})
+    return out or None
+
+
 def _stage_times(v: object) -> dict[str, int] | None:
     """Stage name -> whole seconds.
 
@@ -192,6 +222,7 @@ FIELDS = {
     "ci":          _bool,
     "flags":       _flags,
     "host":        _host,
+    "tools":       _tools,
     "stages":      _stage_times,
     "probe":       _probe,
     "tables":      lambda v: _bucket(_TABLE_BUCKETS, v),
@@ -200,8 +231,15 @@ FIELDS = {
 }
 
 # Set by record(), not by callers, and so deliberately absent from FIELDS:
-# schema, t, anon.
-RESERVED = {"schema", "t", "anon"}
+# schema, t, anon, event_id.
+#
+# `event_id` is what makes a re-sent batch harmless. The spool is truncated
+# only after a 2xx, so a response that arrives after the sender's deadline
+# leaves events spooled that the receiver already committed, and every later
+# command re-posts them. An id per event lets the receiver recognise the
+# replay instead of inserting it again -- the client stays simple and keeps
+# retrying, and the count stops being wrong.
+RESERVED = {"schema", "t", "anon", "event_id"}
 
 
 def serialize(props: dict) -> dict:

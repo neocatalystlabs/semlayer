@@ -46,9 +46,10 @@ reads your IP address, and no geolocation is performed.
 
 | Field | Example | Notes |
 |---|---|---|
-| `schema` | `2` | version of this field set |
+| `schema` | `3` | version of this field set |
 | `t` | `1760600000` | when the command started, whole seconds |
 | `anon` | `3f9a1c…` | 32 random hex characters, generated once per machine in `~/.semlayer/anon_id`. Not derived from anything about you or your hardware — delete the file and you become a different machine |
+| `event_id` | `8c1d4b…` | 32 random hex characters, generated per event. A dedupe key and nothing else: it lets the receiver recognise a batch that was sent twice after a slow network, instead of counting it twice. Not derived from the event's contents, and it links nothing to anything — a fresh one per event is the opposite of a tracking identifier |
 | `version` | `0.6.0` | semlayer version |
 | `python` | `3.12` | major.minor only |
 | `os` | `linux` | one of linux, darwin, windows, other. No kernel release, no distribution |
@@ -67,13 +68,14 @@ reads your IP address, and no geolocation is performed.
 | `probe` | `{"grade": "B", …}` | grades and ratios from `semlayer probe` |
 | `stages` | `{"profile": 12, …}` | seconds per pipeline stage |
 | `host` | `cursor` | on `mcp` events only: which MCP client connected, from the `initialize` handshake, classified into a fixed list — claude-desktop, claude-code, cursor, vscode, inspector, sdk, other. **Never the client's own name string** and never its version: the classifier cannot return its input, so a client calling itself anything at all still arrives as one of those seven words |
+| `tools` | `["semantic_search", "table_detail"]` | on `mcp` events only: which of our MCP tools the session called, deduped and sorted. The tool **names** only — never their arguments, which carry your query text and table names. A session that called nothing has no `tools` key at all |
 
 ## What is never in an event
 
 Table names, column names, schema names, database names, warehouse
-identifiers, hostnames, connection URIs, credentials, SQL, cell values,
-file paths, environment variables, email addresses, usernames, MCP client
-name strings.
+identifiers, hostnames, connection URIs, credentials, SQL, cell values, file
+paths, environment variables, email addresses, usernames, MCP client name
+strings, MCP tool arguments.
 
 This is enforced, not promised. Every field passes through a whitelist, and
 a caller cannot send an undeclared key because the serializer has no path

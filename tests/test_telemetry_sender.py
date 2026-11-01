@@ -116,3 +116,83 @@ def test_the_first_run_discards_everything_collected_before_it(tele, tmp_path):
     tele.mark_notice_shown()
     assert tele._readable_spool() == []
     assert not tele.notice_pending()
+
+
+# --- a replay must be recognisable, and a send must not take bystanders ----
+
+def test_every_event_carries_its_own_id(tele):
+    """The dedupe key. Random per event rather than derived from the fields:
+    two identical commands a second apart are two events, and a content hash
+    would silently merge them."""
+    _spool(tele, 3)
+    ids = [r["event_id"] for r in tele._readable_spool()]
+    assert len(set(ids)) == 3
+    assert all(len(i) == 32 for i in ids)
+
+
+def test_a_resend_carries_the_same_ids(tele, monkeypatch):
+    """What makes the receiver able to tell a replay from new usage.
+
+    This is the defect's actual shape: the spool is truncated only after a
+    2xx, so a response that arrives after the sender's deadline leaves events
+    spooled that the receiver already committed. The client is right to retry
+    -- it cannot know -- so the ids have to survive the retry unchanged.
+    """
+    sent = []
+    monkeypatch.setattr(tele, "_post", lambda batch: sent.append(batch) or False)
+    _spool(tele, 2)
+    tele.flush()
+    tele.flush()
+    assert len(sent) == 2
+    assert [r["event_id"] for r in sent[0]] == [r["event_id"] for r in sent[1]]
+
+
+def test_a_send_removes_only_what_it_sent(tele, monkeypatch, tmp_path):
+    """An event recorded while the POST was in flight must survive it.
+
+    The old code truncated the whole file on success, so a busy machine could
+    lose a command for every command it reported. Simulated by recording from
+    inside `_post`, which is exactly when the race happens.
+    """
+    def post_then_record(batch):
+        tele.record("cli", command="probe", outcome="ok")
+        return True
+
+    monkeypatch.setattr(tele, "_post", post_then_record)
+    _spool(tele, 2)
+    tele.flush()
+
+    left = tele._readable_spool()
+    assert [r["command"] for r in left] == ["probe"]
+
+
+def test_events_beyond_the_batch_cap_are_not_destroyed(tele, monkeypatch):
+    """The batch is capped at MAX_SPOOL_EVENTS; the file is not. Truncating
+    everything on a successful send threw away what the cap excluded."""
+    monkeypatch.setattr(tele, "MAX_SPOOL_EVENTS", 2)
+    monkeypatch.setattr(tele, "_post", lambda batch: True)
+    _spool(tele, 5)
+    tele.flush()
+    # Counted on disk, not through `_readable_spool`, which applies the same
+    # cap and would report 2 however many were kept.
+    assert len(tele._SPOOL.read_text().splitlines()) == 3
+
+
+def test_a_successful_send_still_prunes_stale_events(tele, monkeypatch):
+    """Pruning used to be a side effect of clearing the file. Now that a send
+    removes only its own lines, the stale cutoff has to be applied in the
+    rewrite as well, or an old event would sit in the spool forever."""
+    monkeypatch.setattr(tele, "_post", lambda batch: True)
+    old = int(time.time()) - tele.MAX_SPOOL_AGE_S - 60
+    tele.record("cli", t=old, command="validate", outcome="ok")
+    _spool(tele, 1)
+    assert len(tele._SPOOL.read_text().splitlines()) == 2    # both on disk
+    tele.flush()
+    assert tele._SPOOL.read_text().strip() == ""
+
+
+def test_the_post_gives_up_before_the_thread_is_abandoned(tele):
+    """Same cause as the duplicate sends: one deadline for both meant a
+    response arriving at 1.49s left no time to truncate the spool, and the
+    events went out again next run."""
+    assert tele.POST_TIMEOUT_S < tele.SEND_TIMEOUT_S
