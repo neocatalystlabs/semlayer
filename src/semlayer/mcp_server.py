@@ -262,6 +262,42 @@ def _note_host(srv) -> None:
         pass
 
 
+# Which tools this process has served. Process-scoped and never reset, the
+# same shape as `telemetry._pending` and for the same reason: one server
+# process serves one session, and the `mcp` event is written once at exit.
+#
+# Bounded, because the set is keyed on whatever a client asks for and a
+# client is not ours to trust. Past the cap we stop collecting rather than
+# classify here -- `telemetry_schema._tools` decides what an unknown name
+# becomes, and keeping that decision in one place is worth more than
+# recording the 33rd distinct tool name of a session that is clearly not a
+# person using eight tools.
+_TOOLS_SEEN: set[str] = set()
+_TOOLS_CAP = 32
+
+
+def _note_tool(name: object) -> None:
+    """Note that a tool was called, for the `mcp` telemetry event.
+
+    The name only -- never the arguments, which carry the user's query text
+    and table names. Deposited as the whole set on every call because
+    `telemetry.note` replaces a field rather than appending to it.
+
+    This is the half of the MCP picture `host` cannot give: `host` says who
+    connected, and a launch that connects and calls nothing is a probe
+    whatever client it claims to be.
+    """
+    try:
+        if isinstance(name, str) and name and len(_TOOLS_SEEN) < _TOOLS_CAP:
+            _TOOLS_SEEN.add(name)
+        if _TOOLS_SEEN:
+            from semlayer import telemetry
+            telemetry.note(tools=sorted(_TOOLS_SEEN))
+    except Exception:
+        # Bare, deliberately: a telemetry note may never break a tool call.
+        pass
+
+
 def _server_class():
     """FastMCP subclassed to note which client connected.
 
@@ -285,9 +321,11 @@ def _server_class():
         population this field exists to identify, since a launch that
         ends in under a second never reaches one. `call_tool` is covered
         too, for a client that
-        cached the tool list and calls straight in. Signatures match the
-        base exactly, because the SDK inspects them to decide whether a
-        handler takes the request object.
+        cached the tool list and calls straight in -- and it is the only
+        hook that can carry `tools`, since listing the tools says nothing
+        about using them. Signatures match the base exactly, because the
+        SDK inspects them to decide whether a handler takes the request
+        object.
         """
 
         async def list_tools(self):
@@ -296,6 +334,7 @@ def _server_class():
 
         async def call_tool(self, name, arguments):
             _note_host(self)
+            _note_tool(name)
             return await super().call_tool(name, arguments)
 
     return _Server

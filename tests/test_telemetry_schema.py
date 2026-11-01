@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import pathlib
 
 import pytest
 
@@ -262,3 +263,82 @@ def test_host_arrived_with_a_schema_bump():
     new column in `misc` and prune it after 30 days."""
     assert "host" in ts.FIELDS
     assert ts.SCHEMA >= 2
+
+
+# --- tools: which MCP tools a session called -------------------------------
+
+def test_tool_names_pass_through_deduped_and_sorted():
+    """Our own vocabulary, so unlike `host` these are not classified away.
+
+    A set rather than a call sequence: the order and the repetition are the
+    shape of someone's session, and the question is only whether the server
+    was used and for what.
+    """
+    out = ts.serialize({"tools": ["table_detail", "semantic_search",
+                                  "table_detail"]})
+    assert out == {"tools": ["semantic_search", "table_detail"]}
+
+
+def test_an_undeclared_tool_name_becomes_other_rather_than_vanishing():
+    """The one place this differs from `flags`, deliberately.
+
+    If a renamed tool were dropped, "we forgot to declare it" and "nothing
+    was called" would be the same row -- and those mean opposite things.
+    """
+    assert ts.serialize({"tools": ["get_tables", "brand_new_tool"]}) == {
+        "tools": ["get_tables", "other"]}
+
+
+def test_a_session_that_called_nothing_has_no_tools_key():
+    """Absent, not empty. A launch that did nothing is the probe-versus-person
+    signal, and it should not depend on an empty list being spelled the same
+    way by every reader."""
+    assert ts.serialize({"tools": []}) == {}
+    assert ts.serialize({"tools": None}) == {}
+    assert ts.serialize({"tools": "semantic_search"}) == {}   # a str is not a list
+    assert ts.serialize({"tools": [None, 7, ""]}) == {}
+
+
+def test_tool_arguments_have_no_path_to_an_event():
+    """`_note_tool` passes names only, and the serializer could not carry an
+    argument even if it were handed one.
+
+    Two different outcomes, both safe. A non-string -- an arguments dict
+    handed over by mistake -- is dropped outright, because it is not a name
+    at all. A string we do not recognise becomes "other", so an unknown
+    name is counted without being echoed.
+    """
+    out = ts.serialize({"tools": [{"name": "check_sql", "sql": "select 1"}]})
+    assert out == {}
+
+    out = ts.serialize({"tools": ["check_sql('select * from payroll')"]})
+    assert out == {"tools": ["other"]}
+    assert "payroll" not in json.dumps(out)
+
+
+def test_every_registered_mcp_tool_is_declared():
+    """TOOLS must cover what the server actually registers, or a real session
+    reports `other` and the field stops distinguishing anything.
+
+    Reads the registry rather than a copy of the list: this test is the thing
+    that fails when a tool is added without updating the vocabulary.
+    """
+    import re
+    src = (pathlib.Path(__file__).parent.parent
+           / "src" / "semlayer" / "mcp_server.py").read_text()
+    registered = set(re.findall(r"@srv\.tool\(\)\s*\n\s*def (\w+)", src))
+    assert registered, "found no @srv.tool() registrations -- the regex is stale"
+    assert registered <= ts.TOOLS
+
+
+def test_tools_and_event_id_arrived_with_a_schema_bump():
+    assert "tools" in ts.FIELDS
+    assert ts.SCHEMA >= 3
+
+
+def test_event_id_is_reserved_rather_than_a_field():
+    """Set by `record()`, so a caller cannot supply or forge one -- the same
+    treatment as anon and t."""
+    assert "event_id" in ts.RESERVED
+    assert "event_id" not in ts.FIELDS
+    assert ts.serialize({"event_id": "deadbeef"}) == {}
