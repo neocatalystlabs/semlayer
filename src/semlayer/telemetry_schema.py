@@ -21,7 +21,7 @@ parks the rest rather than rejecting a batch it does not fully understand.
 
 from __future__ import annotations
 
-SCHEMA = 1
+SCHEMA = 2
 
 # (lower_bound, label), highest first. A value is labelled by the first bound
 # it reaches.
@@ -42,6 +42,50 @@ OSES = {"linux", "darwin", "windows", "other"}
 ARCHES = {"x86_64", "arm64", "other"}
 FLAGS = {"no_llm", "no_sample_egress", "no_declared_constraints", "apply",
          "json", "share"}
+
+# Which MCP client launched the server. NOT a pass-through enum like the
+# others: a client name is arbitrary vendor text, so `_host` CLASSIFIES it
+# and can only ever return one of these labels -- the raw string has no path
+# to an event even if a client calls itself "claude-desktop".
+#
+# "sdk" is the bare Python/TypeScript SDK default, which is what a script or
+# an automated probe presents. It is a separate label from "other" because
+# telling a scripted launch from an unrecognised real client is the whole
+# reason this field exists -- a launch count alone cannot separate a person
+# in an editor from a script in a container, and folding the two into
+# "other" would merge exactly what the field is for.
+HOSTS = {"claude-desktop", "claude-code", "cursor", "vscode", "inspector",
+         "sdk", "other"}
+
+# Checked in order: the first match wins. "claude-code" before "claude"
+# because the former contains the latter; "cursor" before "vscode" because
+# Cursor identifies itself as "cursor-vscode"; "inspector" before the SDK
+# rules because the inspector ships as an mcp-* package.
+_HOST_RULES = [
+    (("claude-code", "claude code"),            "claude-code"),
+    (("claude",),                               "claude-desktop"),
+    (("cursor",),                               "cursor"),
+    (("inspector",),                            "inspector"),
+    (("vscode", "visual studio code", "code"),  "vscode"),
+    (("mcp", "sdk"),                            "sdk"),
+]
+
+
+def _host(v: object) -> str | None:
+    """Classify an MCP client name into HOSTS, never echoing the name.
+
+    Returns None for a non-string or an empty one, so a client that sends no
+    clientInfo is absent from the event rather than guessed at.
+    """
+    if not isinstance(v, str):
+        return None
+    name = v.strip().lower()
+    if not name:
+        return None
+    for needles, label in _HOST_RULES:
+        if any(n in name for n in needles):
+            return label
+    return "other"
 
 
 def _bucket(buckets: list[tuple[int, str]], v: object) -> str | None:
@@ -147,6 +191,7 @@ FIELDS = {
     "duration_s":  _int,
     "ci":          _bool,
     "flags":       _flags,
+    "host":        _host,
     "stages":      _stage_times,
     "probe":       _probe,
     "tables":      lambda v: _bucket(_TABLE_BUCKETS, v),

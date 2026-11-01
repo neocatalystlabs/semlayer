@@ -46,7 +46,7 @@ reads your IP address, and no geolocation is performed.
 
 | Field | Example | Notes |
 |---|---|---|
-| `schema` | `1` | version of this field set |
+| `schema` | `2` | version of this field set |
 | `t` | `1760600000` | when the command started, whole seconds |
 | `anon` | `3f9a1c…` | 32 random hex characters, generated once per machine in `~/.semlayer/anon_id`. Not derived from anything about you or your hardware — delete the file and you become a different machine |
 | `version` | `0.6.0` | semlayer version |
@@ -66,12 +66,14 @@ reads your IP address, and no geolocation is performed.
 | `flags` | `["no_sample_egress"]` | which boolean flags were set. Never their values |
 | `probe` | `{"grade": "B", …}` | grades and ratios from `semlayer probe` |
 | `stages` | `{"profile": 12, …}` | seconds per pipeline stage |
+| `host` | `cursor` | on `mcp` events only: which MCP client connected, from the `initialize` handshake, classified into a fixed list — claude-desktop, claude-code, cursor, vscode, inspector, sdk, other. **Never the client's own name string** and never its version: the classifier cannot return its input, so a client calling itself anything at all still arrives as one of those seven words |
 
 ## What is never in an event
 
 Table names, column names, schema names, database names, warehouse
 identifiers, hostnames, connection URIs, credentials, SQL, cell values,
-file paths, environment variables, email addresses, usernames.
+file paths, environment variables, email addresses, usernames, MCP client
+name strings.
 
 This is enforced, not promised. Every field passes through a whitelist, and
 a caller cannot send an undeclared key because the serializer has no path

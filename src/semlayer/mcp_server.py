@@ -241,10 +241,69 @@ def routing(doc: dict, intent: str | None = None) -> list[dict]:
 
 # ------------------------------------------------------------- MCP wiring --
 
+def _note_host(srv) -> None:
+    """Note which MCP client launched us, for the `mcp` telemetry event.
+
+    The raw client name is passed to `telemetry.note` and classified by
+    `telemetry_schema._host` on the way out, which can only return one of a
+    fixed set of labels -- the name itself has no path to an event. That is
+    the same division of labour as every other field: call sites deposit,
+    the serializer decides.
+
+    Guarded whole and silent. Telemetry must never affect the server a
+    client is talking to, and `get_context()` is valid only inside a
+    request -- the in-process tests build a server with no request at all.
+    """
+    try:
+        from semlayer import telemetry
+        telemetry.note(host=srv.get_context().session.client_params.clientInfo.name)
+    except Exception:
+        # Bare, deliberately: a telemetry note may never break a tool call.
+        pass
+
+
+def _server_class():
+    """FastMCP subclassed to note which client connected.
+
+    A function rather than a module-level class because the `mcp` import
+    has to stay optional -- and rather than a class statement inside
+    `build_server`, which pushed that function past the complexity limit.
+    """
+    from mcp.server.fastmcp import FastMCP
+
+    class _Server(FastMCP):
+        """FastMCP, plus a note of which client connected.
+
+        Overriding the handlers rather than wrapping them after the fact:
+        FastMCP binds `self.list_tools` and `self.call_tool` into the
+        low-level server during construction, so an attribute assigned
+        afterwards is never called.
+
+        `list_tools` is the hook that matters. It is the first request a
+        client makes after `initialize`, so it fires even for a session that
+        disconnects without calling a tool -- which is most of the
+        population this field exists to identify, since a launch that
+        ends in under a second never reaches one. `call_tool` is covered
+        too, for a client that
+        cached the tool list and calls straight in. Signatures match the
+        base exactly, because the SDK inspects them to decide whether a
+        handler takes the request object.
+        """
+
+        async def list_tools(self):
+            _note_host(self)
+            return await super().list_tools()
+
+        async def call_tool(self, name, arguments):
+            _note_host(self)
+            return await super().call_tool(name, arguments)
+
+    return _Server
+
+
 def build_server(doc: dict):
     """Wire the pure query functions above as MCP tools on a FastMCP server."""
-    from mcp.server.fastmcp import FastMCP
-    srv = FastMCP("semlayer",
+    srv = _server_class()("semlayer",
                   instructions="Semantic layer for this warehouse. Start with "
                                "semantic_search or list_domains; use get_table before writing SQL. "
                                "ALWAYS apply required_filters; never use UNUSABLE objects; run "

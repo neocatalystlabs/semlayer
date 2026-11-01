@@ -203,3 +203,62 @@ def test_no_exact_count_survives_anywhere_in_an_event():
                         "probe": {"tables": 36, "columns": 198}})
     flat = json.dumps(out)
     assert "36" not in flat and "198" not in flat
+
+
+# --- host: which MCP client launched the server ------------------------
+#
+# Unlike every other enum field, the input here is arbitrary vendor text,
+# so `_host` classifies rather than passes through. These tests are the
+# reason that distinction can be relied on.
+
+@pytest.mark.parametrize(("raw", "want"), [
+    ("claude-ai",             "claude-desktop"),
+    ("Claude Desktop",        "claude-desktop"),
+    ("claude-code",           "claude-code"),
+    ("Claude Code",           "claude-code"),
+    ("cursor-vscode",         "cursor"),        # Cursor says both; cursor wins
+    ("Cursor",                "cursor"),
+    ("Visual Studio Code",    "vscode"),
+    ("vscode-mcp",            "vscode"),        # vscode before the sdk rule
+    ("mcp-inspector",         "inspector"),     # inspector before the sdk rule
+    ("mcp",                   "sdk"),           # the bare SDK default
+    ("mcp-python-sdk",        "sdk"),
+    ("some-agent-framework",  "other"),
+])
+def test_host_classifies_known_clients(raw, want):
+    assert ts.serialize({"host": raw}) == {"host": want}
+
+
+def test_an_absent_or_blank_client_name_is_not_guessed_at():
+    """A client that sends no clientInfo is absent from the event, not "other"."""
+    assert ts.serialize({"host": ""}) == {}
+    assert ts.serialize({"host": "   "}) == {}
+    assert ts.serialize({"host": None}) == {}
+    assert ts.serialize({"host": 7}) == {}
+
+
+def test_the_raw_client_name_can_never_reach_an_event():
+    """The point of classifying instead of passing through.
+
+    A client may call itself anything -- including something that names a
+    company, a host or a person -- and `_host` has no path that returns its
+    input, so no part of the name survives serialization.
+    """
+    out = ts.serialize({"host": "acme-prod-warehouse-bot/3.2 (sre@acme.example)"})
+    assert out == {"host": "other"}
+    assert "acme" not in json.dumps(out)
+
+
+def test_every_host_label_is_declared():
+    """A rule that returns a label absent from HOSTS would be unreadable to
+    the receiver's column map."""
+    labels = {label for _, label in ts._HOST_RULES} | {"other"}
+    assert labels <= ts.HOSTS
+
+
+def test_host_arrived_with_a_schema_bump():
+    """Adding a field without bumping SCHEMA is the mistake the docstring
+    at the top of telemetry_schema warns about: the receiver would park the
+    new column in `misc` and prune it after 30 days."""
+    assert "host" in ts.FIELDS
+    assert ts.SCHEMA >= 2
