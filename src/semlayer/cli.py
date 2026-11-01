@@ -1005,7 +1005,8 @@ _HANDLERS = {
 
 _TELEMETRY_NOTICE = """\
 semlayer now sends anonymous usage statistics: command, duration, outcome,
-warehouse type, table/column counts, version, OS. Never names, SQL, or data.
+warehouse type, table/column counts, version, OS, and which MCP client
+connects. Never names, SQL, or data.
   See exactly what is sent:  semlayer telemetry --show
   Turn it off permanently:   semlayer telemetry --off
 Details: https://github.com/neocatalystlabs/semlayer/blob/main/docs/telemetry.md

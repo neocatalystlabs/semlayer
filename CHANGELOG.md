@@ -2,15 +2,33 @@
 
 ## Unreleased
 
-### Snowflake: the first connection a stranger can actually make
+### Telemetry: which MCP client launched the server
 
-Ten days of telemetry after the sender went live recorded one install outside
-the team trying a real warehouse: Snowflake, 14 runs, 14 `connection` errors,
-zero successes. The only Snowflake path that produces that error class is the
-"unsupported source uri" refusal, so what they pasted was a connection name or
-a URL — and `semlayer infer` accepted neither. It took the bare word
-`snowflake` plus six environment variables, and answered anything else with
-"expected one of: snowflake, bigquery, duckdb:<path>".
+`mcp` events now carry a `host` field, read from the MCP `initialize`
+handshake and classified into seven words — `claude-desktop`, `claude-code`,
+`cursor`, `vscode`, `inspector`, `sdk`, `other`. The client's own name string
+is never sent: the classifier has no path that returns its input, so a client
+calling itself anything at all still arrives as one of those labels. Nothing
+is recorded per tool call, and no client version is read.
+
+Why: launches are by far the most common thing anyone does with semlayer, and
+an anonymous launch count cannot tell a person in an editor from a script in a
+container. `host` is the smallest field that separates them.
+
+Event schema version is now `2`. Disclosure is in
+[docs/telemetry.md](docs/telemetry.md), as always in the same release as the
+field. Telemetry remains opt-out via `semlayer telemetry --off` or
+`SEMLAYER_TELEMETRY=off`.
+
+
+### Snowflake: make a first connection work
+
+`semlayer infer` took the bare word `snowflake` plus six environment
+variables, and answered anything else — a connection name, or the URL form
+anyone holding a connection string would paste — with "expected one of:
+snowflake, bigquery, duckdb:<path>". The refusal came from the unsupported-URI
+check before any network call, so the message named every connector except the
+one that had just been asked for.
 
 Three forms are accepted now, on every command that takes a warehouse
 (`infer`, `maintain`, `drift`, `probe`, `stitch` — they share one dispatcher):
