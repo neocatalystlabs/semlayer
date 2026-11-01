@@ -2,6 +2,48 @@
 
 ## Unreleased
 
+### Connectors: run as yourself, and failures that stop reading as our bug
+
+**Snowflake no longer refuses to connect without a role.** `SNOWFLAKE_READER_ROLE`
+was required, so a first run was impossible for anyone who had not already had a
+role created for them — and the reason given for requiring it did not hold up.
+The point was that a minimal-grant claim is about the role actually in effect,
+but the run report recorded the role we had been *handed*, which cannot
+disagree with itself. It now asks the session: `access.session_role` comes from
+`CURRENT_ROLE()`, on every path. So running as yourself is as accountable as
+running as a service account, and when the role in effect differs from the one
+requested — a secondary role, an ownership rule — the run says so instead of
+reporting the request as though it were the outcome. An account with no role at
+all is still refused, which is the case the old refusal was right about.
+
+The same change on Postgres: `current_role` is recorded whether or not `PG_ROLE`
+is set, rather than the literal string `unknown`.
+
+**`semlayer infer bigquery:my-project`** works. Only the bare word `bigquery` was
+accepted, so the obvious spelling hit the unsupported-URI refusal — whose message
+then listed every connector except the one just asked for. `bigquery://my-project`
+is accepted too, for anyone who has just read about the `snowflake://` form.
+
+**Driver and credential failures record as `connection` instead of `internal` or
+`other`.** They were reaching users as raw tracebacks and reaching us filed as
+semlayer defects:
+
+| what happens | before | now |
+|---|---|---|
+| BigQuery without `[warehouses]` | `No module named 'google.cloud'` | "the BigQuery driver is not installed" + `pip install` |
+| unreadable BigQuery key file | whatever `google.oauth2` raised | names the file and the variable that points at it |
+| no BigQuery credentials | recorded as `other` | recorded as `connection` |
+| wrong BigQuery project | bare `bigquery.Client()` failure | names the project, keeps the driver's message as the hint |
+| refused Postgres login | raw `psycopg.OperationalError` | "Postgres refused the connection" + the driver's message |
+| nonexistent `PG_ROLE` | raw driver error mid-run | names the role, and closes the connection rather than leaking it |
+
+**`SET ROLE` is composed, not interpolated.** `PG_ROLE` went into SQL as
+`SET ROLE "{role}"`, so a role name containing a double quote broke out of the
+identifier and failed with a syntax error that blamed the SQL rather than the
+name. It now goes through `psycopg.sql.Identifier`. Not a privilege boundary —
+the value is the caller's own environment — but a confusing failure on a legal
+role name.
+
 ### Telemetry: whether an MCP session used the server, and a stop to double counting
 
 Two changes, one schema bump.

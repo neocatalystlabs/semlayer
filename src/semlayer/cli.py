@@ -29,7 +29,8 @@ def _add_stitch_parser(sub) -> None:
                         "an edge whose end disappeared becomes orphaned.")
     p.add_argument("--via", metavar="SOURCE", default=None,
                    help="connection the inclusion tests run through, with YOUR grants: "
-                        "duckdb:<path> | postgresql://... | snowflake | bigquery. Default: "
+                        "duckdb:<path> | postgresql://... | snowflake[:conn] | bigquery[:project]. "
+                        "Default: "
                         "snowflake or bigquery when every member records that warehouse; "
                         "otherwise names-only proposals at low confidence.")
     p.add_argument("--no-queries", action="store_true",
@@ -56,7 +57,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("infer", help="Infer a semantic layer from a warehouse")
     p.add_argument("source",
-                   help="duckdb:<path> | postgresql://... | snowflake | bigquery | postgres")
+                   help="duckdb:<path> | postgresql://... | "
+                        "snowflake[:conn|://url] | bigquery[:project]")
     p.add_argument("-o", "--out", default=None,
                    help="Output path. Default: <name>.yaml, where the name is --name, else the "
                         "schema(s) given to --schema, else the warehouse (database, project "
@@ -144,7 +146,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("probe", help="What evidence does this warehouse offer, "
                                      "and what accuracy follows from it?")
     p.add_argument("source",
-                   help="duckdb:<path> | postgresql://... | snowflake | bigquery | postgres")
+                   help="duckdb:<path> | postgresql://... | "
+                        "snowflake[:conn|://url] | bigquery[:project]")
     p.add_argument("--manifest", metavar="PATH",
                    help="dbt target/manifest.json, if there is one")
     p.add_argument("--sample", action="store_true",
@@ -161,7 +164,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("drift", help="Detect warehouse drift vs a semantic layer")
     p.add_argument("doc", help="semantic layer YAML path")
     p.add_argument("source",
-                   help="duckdb:<path> | postgresql://... | snowflake | bigquery | postgres")
+                   help="duckdb:<path> | postgresql://... | "
+                        "snowflake[:conn|://url] | bigquery[:project]")
     p.add_argument("--apply", action="store_true",
                    help="Apply orphaning/conflicts to the doc (writes in place)")
     p.add_argument("--cqs", help="CQ suite YAML to regression-check")
@@ -198,7 +202,8 @@ def _add_maintain_parser(sub) -> None:
                             "and with --apply do it (dry run by default)")
     p.add_argument("doc", help="semantic layer YAML path")
     p.add_argument("source",
-                   help="duckdb:<path> | postgresql://... | snowflake | bigquery | postgres")
+                   help="duckdb:<path> | postgresql://... | "
+                        "snowflake[:conn|://url] | bigquery[:project]")
     p.add_argument("--apply", action="store_true",
                    help="Re-infer the tables the changeset names and merge them into DOC")
     p.add_argument("--cqs", help="CQ suite YAML to regression-check (DuckDB sources)")

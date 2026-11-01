@@ -209,7 +209,7 @@ def _duckdb_args(path: str) -> tuple:
 
 
 def open_source_from_uri(uri: str):
-    """duckdb:<path> | snowflake[:<name>|://<url>] | postgresql://... | bigquery | postgres."""
+    """duckdb:<path> | snowflake[:<name>|://<url>] | bigquery[:<project>] | postgres[ql]://... ."""
     if uri.startswith("duckdb:"):
         import duckdb
 
@@ -222,9 +222,12 @@ def open_source_from_uri(uri: str):
     if uri == "snowflake" or uri.startswith("snowflake:"):
         from semlayer.connectors.snowflake import SnowflakeSource
         return SnowflakeSource.from_uri(uri, persona="reader")
-    if uri == "bigquery":
+    # BigQuery takes the project inline as well as from the environment: a
+    # project id is the only identifier it has, and `bigquery:my-project` was
+    # being refused by the message that then listed every other connector.
+    if uri == "bigquery" or uri.startswith("bigquery:"):
         from semlayer.connectors.bigquery import BigQuerySource
-        return BigQuerySource.from_env(persona="reader")
+        return BigQuerySource.from_uri(uri, persona="reader")
     # Postgres accepts a DSN inline as well as via the environment: unlike the
     # cloud warehouses, a connection string is the normal way people hold one.
     if uri.startswith(("postgresql://", "postgres://")):
@@ -240,5 +243,5 @@ def open_source_from_uri(uri: str):
     raise SourceError(
         f"unsupported source uri: {uri}",
         hint="expected one of: snowflake, snowflake:<connection>, "
-             "snowflake://<user>@<account>/<db>, bigquery, duckdb:<path>, "
-             "postgres, postgresql://<dsn>")
+             "snowflake://<user>@<account>/<db>, bigquery, bigquery:<project>, "
+             "duckdb:<path>, postgres, postgresql://<dsn>")
