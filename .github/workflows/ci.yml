@@ -5,6 +5,19 @@ on:
   push:
     branches: [main]
 
+# Our own CI does not send telemetry. Every job was a fresh machine to the
+# spool, so each run arrived as a brand new install and inflated the only
+# number telemetry exists to produce. The receiver cannot filter this for
+# us: a `ci` flag from a user's pipeline looks exactly the same, and that
+# is a signal worth keeping.
+#
+# Set here rather than per job so a new job inherits it. Tests that need
+# telemetry ON clear the variable themselves, which is why this does not
+# hollow out the telemetry suite -- verified by running it with the switch
+# set.
+env:
+  SEMLAYER_TELEMETRY: "off"
+
 jobs:
   quality:
     runs-on: ubuntu-latest

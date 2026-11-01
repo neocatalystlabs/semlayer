@@ -5,6 +5,10 @@ on:
     types: [published]
   workflow_dispatch: {}
 
+# Our own CI does not send telemetry; see ci.yml for why.
+env:
+  SEMLAYER_TELEMETRY: "off"
+
 jobs:
   pypi:
     runs-on: ubuntu-latest
