@@ -16,6 +16,7 @@ the same property that makes python-oracledb's thin mode attractive.
 
 from __future__ import annotations
 
+import logging
 import os
 
 from semlayer.source import (
@@ -35,6 +36,36 @@ SKIP_SCHEMAS_SQL = "n.nspname <> 'information_schema' AND n.nspname NOT LIKE 'pg
 SKIP_SCHEMAS_ISO = (
     "c.table_schema <> 'information_schema' AND c.table_schema NOT LIKE 'pg\\_%'"
 )
+
+logger = logging.getLogger(__name__)
+
+
+def _effective_role(con, asked: str | None) -> str:
+    """The role the session is actually running as, from Postgres itself.
+
+    The same reasoning as the Snowflake connector: `session_role` reached the
+    run report as whatever the caller passed in, or the literal string
+    "unknown" when they passed nothing -- and a minimal-grant claim that
+    quotes the caller's own input back at them has checked nothing.
+
+    Guarded, and never fatal. We are already connected; a failed metadata
+    query is a poor reason to abandon a working connection, so the honest
+    answer is what we asked for, or "unknown".
+    """
+    try:
+        row = con.execute("SELECT current_role").fetchone()
+        effective = (row[0] if row else "") or ""
+    except Exception as e:
+        logger.warning("could not read current_role: %s", e)
+        return asked or "unknown"
+    effective = str(effective).strip()
+    if not effective:
+        return asked or "unknown"
+    if asked and effective != asked:
+        logger.warning(
+            "asked for role %s but the session is running as %s; the run "
+            "report records %s", asked, effective, effective)
+    return effective
 
 
 class PostgresSource:
@@ -74,14 +105,53 @@ class PostgresSource:
         first statement and holds it for the whole scan, which pins the
         oldest-xmin and blocks vacuum on a production replica for as long as
         inference runs. We only read, so there is nothing to commit.
-        """
-        import psycopg
 
-        con = psycopg.connect(dsn, autocommit=True)
+        Every failure here is translated. `psycopg.connect` and the `SET ROLE`
+        were both bare, so a refused login, an unreachable host, a malformed
+        DSN or a nonexistent role reached the user as a raw traceback and
+        reached telemetry as `internal` -- the class that is supposed to mean
+        a defect in semlayer. None of those are our bug, and a connection
+        problem that files itself as a crash is a connection problem nobody
+        goes looking for.
+        """
+        from semlayer.errors import SourceError
+        try:
+            import psycopg
+        except ImportError as e:
+            raise SourceError(
+                "the Postgres driver is not installed",
+                hint="pip install 'semlayer[warehouses]'",
+            ) from e
+
+        try:
+            con = psycopg.connect(dsn, autocommit=True)
+        except psycopg.Error as e:
+            # The driver's message names the host, the database and what it
+            # objected to; that is what the person needs, so it becomes the
+            # hint rather than being swallowed.
+            raise SourceError("Postgres refused the connection",
+                              hint=str(e).strip()) from e
         src = cls(con, os.environ.get("PGDATABASE", ""))
         if role:
-            con.execute(f'SET ROLE "{role}"')
-            src.session_role = role
+            # Composed, not interpolated. `SET ROLE "{role}"` put an
+            # environment variable straight into SQL -- not a privilege
+            # boundary, since it is the caller's own environment, but a role
+            # name containing a quote broke out of the identifier and failed
+            # with a syntax error that blamed the SQL rather than the name.
+            from psycopg import sql
+            try:
+                con.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(role)))
+            except psycopg.Error as e:
+                con.close()
+                raise SourceError(
+                    f"could not assume Postgres role {role!r}",
+                    hint=f"{str(e).strip()} -- the role must exist and your "
+                         "user must be a member of it; PG_ROLE is optional, "
+                         "and without it the run uses the DSN's own user",
+                ) from e
+        # Asked for or inherited, the report gets what the session is really
+        # running as -- see `_effective_role`.
+        src.session_role = _effective_role(con, role)
         return src
 
     def row_cap_clause(self, n: int) -> str:

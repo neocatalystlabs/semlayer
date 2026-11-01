@@ -15,8 +15,34 @@ inference (descriptions, decode validation, type escalation).
 
 ## Snowflake
 
+### As yourself, with no setup
+
+Nothing to create, no role to make, no key to issue. Use the account you
+already have:
+
 ```bash
 pip install -e ".[warehouses]"
+export SNOWFLAKE_ACCOUNT=ORG-ACCOUNT SNOWFLAKE_READER_USER=me \
+       SNOWFLAKE_READER_AUTHENTICATOR=externalbrowser \
+       SNOWFLAKE_WAREHOUSE=wh_xs SNOWFLAKE_DATABASE=analytics
+semlayer infer snowflake -o layer.yaml
+```
+
+The run uses whatever role you log in with, and the run report records which
+one it turned out to be — `access.session_role` comes from `CURRENT_ROLE()`,
+asked of the session rather than taken from your own input. So a run as
+yourself is as accountable as a run as a service account; it just profiles
+under your privileges instead of a minimal set.
+
+This is the right way to evaluate semlayer. It is **not** the right way to run
+it on a schedule: a personal role drifts as your access changes, and a browser
+login cannot run unattended.
+
+### As a dedicated reader role
+
+For anything repeated, give it a role whose grants you control:
+
+```bash
 semlayer init snowflake --database analytics --warehouse-name wh_xs  # run output as ACCOUNTADMIN
 export SNOWFLAKE_ACCOUNT=ORG-ACCOUNT SNOWFLAKE_READER_USER=semlayer_reader_svc \
        SNOWFLAKE_READER_PASSWORD=... SNOWFLAKE_READER_ROLE=semlayer_reader \
@@ -24,17 +50,17 @@ export SNOWFLAKE_ACCOUNT=ORG-ACCOUNT SNOWFLAKE_READER_USER=semlayer_reader_svc \
 semlayer infer snowflake -o layer.yaml
 ```
 
-`SNOWFLAKE_READER_ROLE` is required and this line used to omit it, so following
-the quickstart exactly failed with "no Snowflake session role set". The role is
-passed explicitly rather than inherited from the user's `DEFAULT_ROLE`, because
-a minimal-grant claim is about the role actually in effect; `semlayer init`
-names the role it creates.
+`SNOWFLAKE_READER_ROLE` is optional but recommended here: naming it is what
+makes the minimal-grant claim mean something, because the report can then show
+the role you asked for and the role that was in effect agreeing. If they ever
+disagree — a secondary role, an ownership rule — the run warns and records what
+actually ran.
 
 Two other spellings work, for a connection you already hold:
 
 ```bash
 # a named connection from ~/.snowflake/connections.toml (Snowflake's own CLI
-# writes it; the connection must carry a role and a database)
+# writes it; it must carry a database, and a role only if you want one)
 semlayer infer snowflake:work -o layer.yaml
 
 # a URL — parts it omits fall back to the environment, which is how the
@@ -56,6 +82,18 @@ export GCP_PROJECT=my-project \
 semlayer infer bigquery -o layer.yaml
 ```
 
+Or name the project as the source and skip `GCP_PROJECT` entirely:
+
+```bash
+semlayer infer bigquery:my-project -o layer.yaml
+```
+
+With no key file, credentials come from Application Default Credentials —
+`gcloud auth application-default login`, a workload identity, or
+`GOOGLE_APPLICATION_CREDENTIALS`. As on Snowflake, that runs the inference as
+**you**, inheriting your own IAM bindings, which is the quickest way to try it
+and not what you want on a schedule.
+
 ## PostgreSQL
 
 Also covers Redshift and other Postgres-protocol engines, though their catalogs
@@ -74,6 +112,9 @@ how most people already hold a Postgres credential:
 ```bash
 semlayer infer postgresql://user:pass@host:5432/analytics -o layer.yaml
 ```
+
+`PG_ROLE` is optional. Without it the run uses the DSN's own user, and either
+way the report records `current_role` as the session reports it.
 
 The grants `init` prints are the whole requirement — in particular **not**
 `pg_read_all_stats`. `pg_stats` already filters its rows to tables the caller

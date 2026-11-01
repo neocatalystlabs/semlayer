@@ -44,28 +44,77 @@ def _account_id(raw: str) -> str:
     return a
 
 
-def _session_role(prefix: str, given: str | None = None) -> str:
-    """Return the session role, which is required, never inherited.
+def _asked_role(prefix: str, given: str | None = None) -> str | None:
+    """The role the caller asked for, or None to run as whoever they are.
 
     `given` comes from a URL or a named connection and wins over the
     environment.
 
-    Not optional by design: semlayer passes the role explicitly rather than
-    inheriting the user's DEFAULT_ROLE, because a minimal-grant claim is about
-    the role actually in effect. An inherited role would profile under every
-    privilege the account holds and make the claim unverifiable.
+    This used to refuse to connect without a role, on the grounds that a
+    minimal-grant claim is about the role actually in effect and an inherited
+    DEFAULT_ROLE would profile under every privilege the account holds. The
+    reasoning was right and the remedy was wrong: refusing made a first run
+    impossible for anyone who had not already created a role, while the run
+    report still recorded the role we ASKED for rather than the one in
+    effect -- so the claim it was protecting was never actually checked.
+
+    `_effective_role` checks it instead, by asking the session. That makes
+    running as yourself safe to allow: whatever privileges you hold, the
+    report names them, and a divergence between asked-for and in-effect is
+    reported rather than assumed away.
     """
-    role = given or os.environ.get(f"{prefix}_ROLE") or os.environ.get("SNOWFLAKE_ROLE")
-    if not role:
+    return given or os.environ.get(f"{prefix}_ROLE") or os.environ.get("SNOWFLAKE_ROLE")
+
+
+def _effective_role(con, asked: str | None, prefix: str) -> str:
+    """The role the session is ACTUALLY running as, from Snowflake itself.
+
+    One extra metadata query per run, and the only thing that makes the run
+    report's `access.session_role` mean anything: before this it recorded the
+    caller's own input, which cannot disagree with itself.
+
+    Three outcomes, deliberately different:
+
+      * no role in effect -- raised. Snowflake returns no current role when
+        the user has no default and none was passed, and nothing downstream
+        works without one, so this is the old refusal kept for the case that
+        actually warranted it.
+      * asked for one and got another -- warned, not raised. Snowflake has
+        applied a secondary role or an ownership rule, and the run is still
+        valid; what matters is that the report names what ran, and that the
+        difference is visible rather than silent.
+      * could not ask -- warned, and we fall back to what was asked for or
+        say "unknown". A failed metadata query is a poor reason to abandon a
+        connection that otherwise works, and "unknown" is honest.
+    """
+    try:
+        cur = con.cursor()
+        try:
+            cur.execute("select current_role()")
+            row = cur.fetchone()
+        finally:
+            cur.close()
+        effective = (row[0] if row else "") or ""
+    except Exception as e:                      # a stub, or a driver quirk
+        logger.warning("could not read CURRENT_ROLE(): %s", e)
+        return asked or "unknown"
+
+    effective = effective.strip()
+    if not effective or effective.upper() == "NULL":
         raise SourceError(
-            f"no Snowflake session role set: export {prefix}_ROLE "
-            "(or SNOWFLAKE_ROLE)",
-            hint="`semlayer init snowflake` generates a <prefix>_reader role; set "
-                 "that name rather than relying on the user's DEFAULT_ROLE, which "
-                 "silently profiles under whatever privileges the account holds. "
-                 "In a URL add ?role=<role>; in connections.toml add role = ...",
+            "no Snowflake role is in effect for this session",
+            hint=f"the account has no DEFAULT_ROLE, so pass one: export "
+                 f"{prefix}_ROLE (or SNOWFLAKE_ROLE), add ?role=<role> to a "
+                 "URL, or `role = ...` in connections.toml. "
+                 "`semlayer init snowflake` generates a minimal reader role.",
         )
-    return role
+    if asked and effective.upper() != asked.upper():
+        # Not an error: Snowflake decides what a session runs as, and the
+        # report is about what ran.
+        logger.warning(
+            "asked for role %s but the session is running as %s; the run "
+            "report records %s", asked, effective, effective)
+    return effective
 
 
 def _auth(prefix: str, password: str | None = None) -> dict:
@@ -196,8 +245,9 @@ class SnowflakeSource:
     def from_env(cls, persona: str = "reader") -> SnowflakeSource:
         """persona: 'reader' (the product) or 'admin' (fixture loading only).
 
-        The SESSION ROLE is passed explicitly and is not optional -- see
-        `_session_role`. Config is validated BEFORE the driver import,
+        The session role is passed when one is set and inherited when it is
+        not -- see `_asked_role` and `_effective_role`. Config is validated
+        BEFORE the driver import,
         deliberately: the role is a cheap environment check and the driver is
         an optional extra, so importing first meant an install without
         `[warehouses]` reported `No module named 'snowflake'` for what is
@@ -205,11 +255,12 @@ class SnowflakeSource:
         unrunnable anywhere the extra is absent, which is CI.
         """
         prefix = _prefix(persona)
-        session_role = _session_role(prefix)
+        asked = _asked_role(prefix)
         auth = _auth(prefix)
         export_hint = (
             f"export SNOWFLAKE_ACCOUNT=<org-account> {prefix}_USER=<user> "
-            f"{prefix}_ROLE=<role> SNOWFLAKE_DATABASE=<db>; "
+            f"SNOWFLAKE_DATABASE=<db>; {prefix}_ROLE is optional -- without "
+            "it the run uses your own default role and reports which one. "
             "`semlayer init snowflake` prints the whole block"
         )
         account = _account_id(_required_env("SNOWFLAKE_ACCOUNT", export_hint))
@@ -218,13 +269,15 @@ class SnowflakeSource:
         con = _connect(
             account=account,
             user=user,
-            role=session_role,
+            # Omitted entirely when unset: passing role=None makes the driver
+            # send a null role rather than leaving the session default alone.
+            **({"role": asked} if asked else {}),
             warehouse=os.environ.get("SNOWFLAKE_WAREHOUSE", "SEMLAYER_WH"),
             database=database,
             **auth,
         )
         src = cls(con, database)
-        src.session_role = session_role
+        src.session_role = _effective_role(con, asked, prefix)
         return src
 
     @classmethod
@@ -260,7 +313,7 @@ class SnowflakeSource:
                 hint=f"connections in that file: {known}" if known
                      else "that file defines no connections",
             )
-        session_role = _session_role(prefix, section.get("role"))
+        asked = _asked_role(prefix, section.get("role"))
         database = section.get("database") or os.environ.get("SNOWFLAKE_DATABASE")
         if not database:
             raise SourceError(
@@ -270,9 +323,10 @@ class SnowflakeSource:
             )
         # The driver merges connection_name with explicit kwargs, and the
         # explicit ones win: the role we recorded is the role in effect.
-        con = _connect(connection_name=name, role=session_role, database=database)
+        con = _connect(connection_name=name, database=database,
+                       **({"role": asked} if asked else {}))
         src = cls(con, database)
-        src.session_role = session_role
+        src.session_role = _effective_role(con, asked, prefix)
         return src
 
     @classmethod
@@ -309,7 +363,7 @@ class SnowflakeSource:
             raise SourceError(
                 f"no user in {url}",
                 hint=f"expected {example}, or export {prefix}_USER")
-        session_role = _session_role(prefix, q.get("role"))
+        asked = _asked_role(prefix, q.get("role"))
         auth = _auth(prefix, password)
         if password:
             # Said once, where it is actionable, and not again at every run.
@@ -323,7 +377,7 @@ class SnowflakeSource:
         con = _connect(
             account=account,
             user=user,
-            role=session_role,
+            **({"role": asked} if asked else {}),
             warehouse=q.get("warehouse") or os.environ.get(
                 "SNOWFLAKE_WAREHOUSE", "SEMLAYER_WH"),
             database=database,
@@ -331,7 +385,7 @@ class SnowflakeSource:
             **auth,
         )
         src = cls(con, database)
-        src.session_role = session_role
+        src.session_role = _effective_role(con, asked, prefix)
         return src
 
     def list_comments(self) -> dict[tuple[str, str, str | None], str]:

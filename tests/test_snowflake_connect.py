@@ -26,7 +26,37 @@ class _FakeDriverError(Exception):
     """Stands in for snowflake.connector.errors.Error."""
 
 
-def _stub_driver(monkeypatch, captured: dict, raises: Exception | None = None):
+class _FakeCursor:
+    """Answers `select current_role()` and nothing else.
+
+    `_effective_role` asks the session what it is running as, so the stub has
+    to be able to answer -- otherwise every test would exercise the
+    could-not-ask fallback rather than the path being tested.
+    """
+
+    def __init__(self, current_role):
+        self._current_role = current_role
+        self.executed: list[str] = []
+        self._row = None
+
+    def execute(self, sql):
+        self.executed.append(sql)
+        if "current_role" in sql.lower():
+            self._row = (self._current_role,)
+        return self
+
+    def fetchone(self):
+        return self._row
+
+    def fetchall(self):
+        return [self._row] if self._row else []
+
+    def close(self):
+        pass
+
+
+def _stub_driver(monkeypatch, captured: dict, raises: Exception | None = None,
+                 current_role: str = "WHATEVER_ROLE"):
     mod = types.ModuleType("snowflake")
     conn = types.ModuleType("snowflake.connector")
     errors = types.ModuleType("snowflake.connector.errors")
@@ -36,7 +66,8 @@ def _stub_driver(monkeypatch, captured: dict, raises: Exception | None = None):
         captured.update(kw)
         if raises is not None:
             raise raises
-        return types.SimpleNamespace(cursor=lambda: None, close=lambda: None)
+        return types.SimpleNamespace(
+            cursor=lambda: _FakeCursor(current_role), close=lambda: None)
 
     conn.connect = connect
     conn.errors = errors
@@ -67,7 +98,7 @@ def _open(uri):
 
 def test_a_url_carries_account_user_database_role_and_warehouse(monkeypatch):
     captured: dict = {}
-    _stub_driver(monkeypatch, captured)
+    _stub_driver(monkeypatch, captured, current_role="reader_role")
     monkeypatch.setenv("SNOWFLAKE_READER_PASSWORD", "pw")
     src = _open("snowflake://me@my-org-acct/analytics?role=reader_role&warehouse=wh_xs")
     assert captured["account"] == "my-org-acct"
@@ -105,13 +136,22 @@ def test_a_url_schema_segment_reaches_the_driver(monkeypatch):
     assert captured["database"] == "db" and captured["schema"] == "finance"
 
 
-def test_a_url_without_a_role_says_how_to_add_one(monkeypatch):
-    _stub_driver(monkeypatch, {})
+def test_a_url_without_a_role_runs_as_the_user(monkeypatch):
+    """This used to be refused outright.
+
+    The refusal was protecting a minimal-grant claim, but the claim was never
+    checked -- the report recorded the role we had been handed. Now no role
+    is sent, the session keeps whatever default it has, and the report says
+    what that turned out to be.
+    """
+    captured: dict = {}
+    _stub_driver(monkeypatch, captured, current_role="ANALYST")
     monkeypatch.setenv("SNOWFLAKE_READER_PASSWORD", "pw")
-    with pytest.raises(SourceError) as e:
-        _open("snowflake://me@acct/db")
-    assert "session role" in str(e.value)
-    assert "?role=" in e.value.hint
+    src = _open("snowflake://me@acct/db")
+    assert "role" not in captured, (
+        "passing role=None makes the driver send a null role rather than "
+        "leaving the session default alone")
+    assert src.session_role == "ANALYST"
 
 
 def test_a_url_missing_a_part_names_that_part(monkeypatch):
@@ -130,7 +170,7 @@ def _write_connections(tmp_path, monkeypatch, body):
 
 def test_a_named_connection_is_opened_through_the_driver(monkeypatch, tmp_path):
     captured: dict = {}
-    _stub_driver(monkeypatch, captured)
+    _stub_driver(monkeypatch, captured, current_role="reader_role")
     _write_connections(tmp_path, monkeypatch, """
 [work]
 account = "my-org-acct"
@@ -147,7 +187,7 @@ database = "analytics"
 
 def test_the_slashed_spelling_is_the_same_named_connection(monkeypatch, tmp_path):
     captured: dict = {}
-    _stub_driver(monkeypatch, captured)
+    _stub_driver(monkeypatch, captured, current_role="r")
     _write_connections(tmp_path, monkeypatch, """
 [work]
 role = "r"
@@ -157,11 +197,14 @@ database = "db"
     assert captured["connection_name"] == "work"
 
 
-def test_a_named_connection_without_a_role_is_refused(monkeypatch, tmp_path):
-    _stub_driver(monkeypatch, {})
+def test_a_named_connection_without_a_role_runs_as_the_user(monkeypatch, tmp_path):
+    """A `snow` user whose connection carries no role is not turned away."""
+    captured: dict = {}
+    _stub_driver(monkeypatch, captured, current_role="ANALYST")
     _write_connections(tmp_path, monkeypatch, '[work]\ndatabase = "db"\n')
-    with pytest.raises(SourceError, match="session role"):
-        _open("snowflake:work")
+    src = _open("snowflake:work")
+    assert "role" not in captured
+    assert src.session_role == "ANALYST"
 
 
 def test_an_unknown_connection_name_lists_the_known_ones(monkeypatch, tmp_path):
@@ -209,3 +252,92 @@ def test_a_truly_unsupported_uri_still_lists_the_forms():
     with pytest.raises(SourceError) as e:
         _open("redshift://cluster/db")
     assert "snowflake://" in e.value.hint and "duckdb" in e.value.hint
+
+
+# --- the role in effect, not the role asked for ---------------------------
+
+def test_the_report_records_the_role_the_session_is_actually_running_as(monkeypatch):
+    """The whole point of asking CURRENT_ROLE().
+
+    Snowflake decides what a session runs as; a secondary role or an
+    ownership rule can leave it running as something other than what was
+    requested. The run report has to name what ran, because that is what the
+    minimal-grant claim is about.
+    """
+    captured: dict = {}
+    _stub_driver(monkeypatch, captured, current_role="SOMETHING_ELSE")
+    monkeypatch.setenv("SNOWFLAKE_READER_PASSWORD", "pw")
+    src = _open("snowflake://me@acct/db?role=asked_for")
+    assert captured["role"] == "asked_for", "we still ask for what we were told to"
+    assert src.session_role == "SOMETHING_ELSE", "but we record what we got"
+
+
+def test_a_role_that_is_not_the_one_asked_for_is_said_out_loud(monkeypatch, caplog):
+    """Warned, not raised: the run is valid, the difference just must not be
+    silent."""
+    _stub_driver(monkeypatch, {}, current_role="SOMETHING_ELSE")
+    monkeypatch.setenv("SNOWFLAKE_READER_PASSWORD", "pw")
+    with caplog.at_level("WARNING"):
+        _open("snowflake://me@acct/db?role=asked_for")
+    assert "asked_for" in caplog.text and "SOMETHING_ELSE" in caplog.text
+
+
+def test_agreement_is_not_announced(monkeypatch, caplog):
+    """A warning on every ordinary run is a warning nobody reads."""
+    _stub_driver(monkeypatch, {}, current_role="reader_role")
+    monkeypatch.setenv("SNOWFLAKE_READER_PASSWORD", "pw")
+    with caplog.at_level("WARNING"):
+        _open("snowflake://me@acct/db?role=reader_role")
+    assert "running as" not in caplog.text
+
+
+@pytest.mark.parametrize("answer", ["", "   ", "NULL", None])
+def test_no_role_in_effect_at_all_is_still_refused(monkeypatch, answer):
+    """The one case the old refusal was right about.
+
+    An account with no DEFAULT_ROLE and no role passed has no privileges, so
+    nothing downstream works. This is the old message, kept for the situation
+    that actually warranted it rather than applied to everyone.
+    """
+    _stub_driver(monkeypatch, {}, current_role=answer)
+    monkeypatch.setenv("SNOWFLAKE_READER_PASSWORD", "pw")
+    with pytest.raises(SourceError) as e:
+        _open("snowflake://me@acct/db")
+    assert "no Snowflake role is in effect" in str(e.value)
+    assert "SNOWFLAKE_READER_ROLE" in e.value.hint
+    assert "?role=" in e.value.hint and "connections.toml" in e.value.hint
+
+
+def test_a_session_that_cannot_be_asked_falls_back_rather_than_failing(monkeypatch, caplog):
+    """A failed metadata query is a poor reason to abandon a working
+    connection. We say we could not tell, and carry on."""
+    import types as _types
+
+    captured: dict = {}
+    _stub_driver(monkeypatch, captured, current_role="ignored")
+    monkeypatch.setenv("SNOWFLAKE_READER_PASSWORD", "pw")
+
+    import snowflake.connector as driver  # the stub installed above
+
+    def broken_connect(**kw):
+        captured.update(kw)
+        return _types.SimpleNamespace(cursor=lambda: None, close=lambda: None)
+
+    monkeypatch.setattr(driver, "connect", broken_connect)
+    with caplog.at_level("WARNING"):
+        src = _open("snowflake://me@acct/db?role=asked_for")
+    assert src.session_role == "asked_for", "fall back to what we asked for"
+    assert "CURRENT_ROLE()" in caplog.text
+
+
+def test_running_as_yourself_needs_no_role_anywhere(monkeypatch):
+    """The environment form, which is what `semlayer init` sets up -- and the
+    path a first run takes before anyone has created a role."""
+    captured: dict = {}
+    _stub_driver(monkeypatch, captured, current_role="ANALYST")
+    monkeypatch.setenv("SNOWFLAKE_ACCOUNT", "my-org-acct")
+    monkeypatch.setenv("SNOWFLAKE_READER_USER", "me")
+    monkeypatch.setenv("SNOWFLAKE_READER_PASSWORD", "pw")
+    src = _open("snowflake")
+    assert "role" not in captured
+    assert src.session_role == "ANALYST"
