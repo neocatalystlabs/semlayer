@@ -21,7 +21,7 @@ parks the rest rather than rejecting a batch it does not fully understand.
 
 from __future__ import annotations
 
-SCHEMA = 3
+SCHEMA = 4
 
 # (lower_bound, label), highest first. A value is labelled by the first bound
 # it reaches.
@@ -55,7 +55,73 @@ FLAGS = {"no_llm", "no_sample_egress", "no_declared_constraints", "apply",
 # exists to answer.
 TOOLS = {"semantic_search", "get_domains", "get_tables", "table_detail",
          "get_metrics", "route_intent", "check_sql", "compile_metric",
+         # The three that work with no layer loaded. Worth telling apart from
+         # the rest: a session that called `status` and nothing else is one
+         # that asked what we had and was told "nothing yet", which is the
+         # onboarding failure we are trying to measure. `load_layer` says the
+         # opposite -- a layer from a previous day was found and used.
+         "status", "discover_connections", "load_layer",
          "other"}
+
+# Which front door an `infer` came through: the CLI, or the MCP server's own
+# infer tool. A two-value enum rather than a boolean because a third door is
+# already foreseeable (the browser page), and because `via=cli` reads as a
+# fact where `from_mcp=false` reads as an absence.
+#
+# This is the measurement that decides whether MCP-first onboarding worked.
+# Today every install that launches the server and stops is indistinguishable
+# from one that was never going to infer anything; once inference can start
+# from inside a session, `via` is what separates "they found it" from "they
+# went to a terminal and read the docs".
+VIA = {"cli", "mcp"}
+
+# Which warehouse a person named that we cannot open. NOT a pass-through
+# enum: the input is whatever they said out loud ("our iceberg tables in
+# s3", "databricks sql warehouse"), so `_requested` CLASSIFIES it and can
+# only return one of these labels. The raw words have no path to an event.
+#
+# This is the only measurement that exists for demand we are currently
+# failing. A person whose warehouse we cannot open leaves no trace today:
+# they launch the server, read that we support four things, and go. Counting
+# them by engine is how the fifth connector gets chosen by evidence rather
+# than by whoever asked loudest in an issue.
+REQUESTED = {"databricks", "trino", "athena", "redshift", "mssql", "oracle",
+             "clickhouse", "iceberg", "spark", "other"}
+
+# Checked as substrings, in this order, first match wins. The order matters
+# where one name contains another and where a vendor has several words for
+# the same engine: "unity catalog" and "delta lake" are Databricks;
+# "presto" is Trino; "glue" is how people say Athena's catalog.
+_REQUESTED_RULES = [
+    (("databricks", "unity catalog", "delta lake"), "databricks"),
+    (("redshift",),                                 "redshift"),
+    (("trino", "presto", "starburst"),              "trino"),
+    (("athena", "glue"),                            "athena"),
+    (("iceberg", "parquet", "hudi", "s3"),          "iceberg"),
+    (("sql server", "mssql", "synapse", "sqlserver"), "mssql"),
+    (("oracle",),                                   "oracle"),
+    (("clickhouse",),                               "clickhouse"),
+    (("spark", "emr", "hive"),                      "spark"),
+]
+
+
+def _requested(v: object) -> str | None:
+    """Classify a warehouse a user named into REQUESTED, never echoing it.
+
+    Returns None for a non-string or an empty one. Everything else arrives
+    as one of ten words, so a connection string pasted into the field -- the
+    realistic accident, since the agent is relaying what a person typed --
+    cannot carry a host or a credential into an event.
+    """
+    if not isinstance(v, str):
+        return None
+    said = " ".join(v.strip().lower().split())
+    if not said:
+        return None
+    for needles, label in _REQUESTED_RULES:
+        if any(n in said for n in needles):
+            return label
+    return "other"
 
 # Which MCP client launched the server. NOT a pass-through enum like the
 # others: a client name is arbitrary vendor text, so `_host` CLASSIFIES it
@@ -221,6 +287,8 @@ FIELDS = {
     "duration_s":  _int,
     "ci":          _bool,
     "flags":       _flags,
+    "via":         lambda v: _enum(VIA, v),
+    "requested_connector": _requested,
     "host":        _host,
     "tools":       _tools,
     "stages":      _stage_times,

@@ -198,3 +198,32 @@ def test_a_fruitless_tool_call_still_records_that_it_was_called(doc):
                         {"name": "no_such_table_at_all"})
     assert out
     assert ts.serialize(telemetry._pending)["tools"] == ["table_detail"]
+
+
+# --- which warehouse someone asked for that we cannot open ---------------
+
+def test_asking_for_an_unsupported_warehouse_is_noted(doc):
+    """The only measurement that exists for demand we are failing: a person
+    whose warehouse we cannot open leaves no trace today. It is the whole
+    basis for choosing the fifth connector by evidence."""
+    srv = mcp_server.build_server(doc)
+    _in_a_request("Claude Code", srv.call_tool, "discover_connections",
+                  {"requested": "Databricks SQL Warehouse"})
+    assert ts.serialize(telemetry._pending)["requested_connector"] == "databricks"
+
+
+def test_listing_connections_notes_no_warehouse(doc):
+    """No `requested`, no field: the ordinary call says nothing about demand."""
+    srv = mcp_server.build_server(doc)
+    _in_a_request("Claude Code", srv.call_tool, "discover_connections", {})
+    assert "requested_connector" not in ts.serialize(telemetry._pending)
+
+
+def test_what_the_user_typed_never_reaches_the_event(doc):
+    """The realistic accident is an agent relaying a connection string."""
+    srv = mcp_server.build_server(doc)
+    _in_a_request("Claude Code", srv.call_tool, "discover_connections",
+                  {"requested": "postgres://admin:hunter2@acme.example/db"})
+    out = ts.serialize(telemetry._pending)
+    assert "hunter2" not in json.dumps(out)
+    assert "acme" not in json.dumps(out)

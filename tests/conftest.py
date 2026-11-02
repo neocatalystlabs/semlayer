@@ -14,7 +14,9 @@ cannot be reloaded out from under us.
 
 from __future__ import annotations
 
+import os
 import urllib.request
+from pathlib import Path
 
 import pytest
 
@@ -61,3 +63,78 @@ def _no_network_telemetry(monkeypatch, request):
         return real(req, *a, **kw)
 
     monkeypatch.setattr(urllib.request, "urlopen", guard)
+
+
+_LAYER_DOC = """semantic_layer:
+  spec_version: 0.6.0
+  name: {name}
+  warehouse: {warehouse}
+  generated_by:
+    engine: 0.6.0b1
+    model: none/heuristic
+  tables:
+{tables}"""
+
+_LAYER_TABLE = """  - name: t{n}
+    source: main.t{n}
+    columns:
+    - name: id
+      sql_type: INTEGER
+"""
+
+
+@pytest.fixture
+def write_layer():
+    """Write a small but real layer document, for the session tests.
+
+    Here rather than in one test module and imported by the other: CI runs
+    `pytest`, which does not put the repository root on `sys.path`, so
+    `from tests.test_session_day2 import write` passes under
+    `python -m pytest` locally and fails in CI with ModuleNotFoundError.
+    It did, on #84's first run.
+    """
+    def write(path, *, name="tiny", warehouse="duckdb:/tmp/t.duckdb", tables=1):
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        body = "".join(_LAYER_TABLE.format(n=i) for i in range(tables))
+        path.write_text(_LAYER_DOC.format(name=name, warehouse=warehouse,
+                                          tables=body))
+        return path
+    return write
+
+
+@pytest.fixture
+def cache_layer(write_layer):
+    """The same document, in the cache, keyed the way the engine keys it."""
+    def cache(home, **kw):
+        from semlayer.session import cache_key
+        connection = kw.get("warehouse", "duckdb:/tmp/t.duckdb")
+        return write_layer(Path(home) / ".semlayer" / "layers"
+                           / f"{cache_key(connection)}.yaml", **kw)
+    return cache
+
+
+@pytest.fixture
+def nowhere(tmp_path, monkeypatch):
+    """A machine with no warehouse configured: empty cwd, empty home, no env.
+
+    For the session and MCP tests, where the subject is discovery -- which
+    reads the working directory, the environment, and files under $HOME, so
+    all three have to be moved for a test to be about what it stubs.
+
+    The environment is cleared by PREFIX rather than by a list of names, which
+    matters: `tests/test_review_mcp.py` loads the developer's own `.env` into
+    the process with `load_dotenv`, so by the time these tests run in a full
+    suite, every SNOWFLAKE_* and GCP_* variable on this laptop is set. Two
+    tests passed alone and failed in the batch before this was prefix-based.
+    """
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("SEMLAYER_HOME", str(tmp_path / "home" / ".semlayer"))
+    (tmp_path / "home").mkdir()
+    (tmp_path / "cwd").mkdir()
+    monkeypatch.chdir(tmp_path / "cwd")
+    for var in list(os.environ):
+        if var.startswith(("PG_", "SNOWFLAKE_", "GCP_", "DBT_", "CLOUDSDK_",
+                           "GOOGLE_APPLICATION_CREDENTIALS")):
+            monkeypatch.delenv(var, raising=False)
+    return tmp_path

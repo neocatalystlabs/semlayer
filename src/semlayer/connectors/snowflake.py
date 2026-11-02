@@ -212,6 +212,38 @@ def _connections_toml() -> pathlib.Path:
     return (pathlib.Path(home) if home else pathlib.Path.home() / ".snowflake") / _CONNECTIONS_TOML
 
 
+def _parse_connections(path: pathlib.Path) -> dict:
+    """Parse `connections.toml`, or say why it could not be read.
+
+    Split out of `from_connection_name` so that session discovery, which
+    lists the section NAMES without opening anything, reads this file through
+    the same parser rather than a second copy of it.
+    """
+    import tomllib
+    try:
+        return tomllib.loads(path.read_text(encoding="utf-8"))
+    except (tomllib.TOMLDecodeError, OSError) as e:
+        raise SourceError(f"could not read {path}", hint=str(e)) from e
+
+
+def connection_sections() -> dict[str, dict]:
+    """The named connections in `connections.toml`: name -> its settings.
+
+    Empty when the file is absent or unreadable, and never raises: the
+    caller is discovery, which is advisory and must not be able to break
+    `status`. A caller that is about to CONNECT goes through
+    `from_connection_name`, which refuses loudly instead.
+    """
+    path = _connections_toml()
+    try:
+        if not path.exists():
+            return {}
+        doc = _parse_connections(path)
+    except (SourceError, OSError):
+        return {}
+    return {name: body for name, body in doc.items() if isinstance(body, dict)}
+
+
 class SnowflakeSource:
     """MetadataProvider + QueryExecutor over one Snowflake database."""
 
@@ -308,11 +340,7 @@ class SnowflakeSource:
                      "a URL (snowflake://user@account/db?role=..) or use the "
                      "environment (`semlayer init snowflake`)",
             )
-        import tomllib
-        try:
-            doc = tomllib.loads(path.read_text(encoding="utf-8"))
-        except (tomllib.TOMLDecodeError, OSError) as e:
-            raise SourceError(f"could not read {path}", hint=str(e)) from e
+        doc = _parse_connections(path)
         section = doc.get(name)
         if not isinstance(section, dict):
             known = ", ".join(sorted(k for k, v in doc.items() if isinstance(v, dict)))

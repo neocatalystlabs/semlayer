@@ -2,6 +2,95 @@
 
 ## Unreleased
 
+### `semlayer mcp` starts with nothing and tells your agent what to do
+
+The server used to demand a layer path, so the only order that worked was
+infer first, serve second. That is not the order people arrive in: the MCP
+server is what gets added to Claude Desktop, Claude Code or Cursor first, and
+for most installs it is the only thing that ever runs.
+
+With `uv` installed, there is now no terminal step at all:
+
+```json
+{ "mcpServers": { "semlayer": {
+    "command": "uvx",
+    "args": ["--with", "semlayer[warehouses]", "semlayer", "mcp"] } } }
+```
+
+```bash
+semlayer mcp                                # no layer, no arguments, still useful
+semlayer mcp --connection snowflake:prod    # the layer cached for one warehouse
+semlayer mcp layer.yaml                     # unchanged, and still wins
+```
+
+**`status`** is the new first tool, and it answers four questions a fresh
+install needs: what is loaded (size, age, how many claims nobody has reviewed),
+**which layers are already on this machine**, which warehouse connections are
+visible, and **which kinds this build can open** — with the URI forms to use,
+the other names for the same thing (Redshift, Supabase and Neon are the
+Postgres connection), and whether each driver is actually importable. Then one
+sentence saying what to do next. For a machine with no layer, that sentence
+says the layer does not exist and has to be built: the honest answer, and not
+one an agent can work out for itself.
+
+**Every other tool answers with `status` when no layer is loaded.** They used to
+raise, and an agent handed a raw error can only retry or give up.
+
+**A layer you built yesterday is found today.** `status` lists every layer in
+`$SEMLAYER_HOME/layers/` and in your project (`layer.yaml`, `semlayer.yaml`,
+`.semlayer/*.yaml`, or any YAML whose top key is `semantic_layer`, in the
+working directory or the repository root). Exactly one and no path given: it is
+loaded on start, and `next` names the warehouse so you can object. Several: the
+server asks which, and **`load_layer`** takes the answer. A copy in your repo
+beats a cached copy of the same warehouse, because the repo is where your
+team's review decisions live.
+
+**Credentials have a place that is not the chat.** `$SEMLAYER_HOME/.env`, one
+`KEY=value` per line, **re-read on every call** — so an agent can tell you the
+exact line to add, you add it, and the next `status` sees it with no restart.
+Remove the line and it stops working on the next call too. `status` reports
+that file's path and which keys it sets, names only, so your agent can see
+whether its advice landed. A shell `export` is the one thing that cannot work:
+Claude Desktop on macOS launches servers with a minimal environment.
+
+**`discover_connections`** lists the warehouses reachable from this machine:
+DuckDB files in the working directory, `PG_READER_DSN` (from the environment or
+that `.env`), a BigQuery project or application default credentials, dbt's
+`profiles.yml` (every profile and target, mapped to a connection where it can
+be), `SNOWFLAKE_ACCOUNT`, and the sections of `~/.snowflake/connections.toml`.
+It opens no connection and reads no credential: passwords, key paths, DSN
+values, account identifiers and hostnames are not reported, even where the file
+being read has them in plain sight. Each entry says whether semlayer can open
+it and what it would need if not — a dbt target built from `{{ env_var(...) }}`
+is reported as unresolvable rather than silently skipped, and an adapter we
+have no connector for says so.
+
+**And when it is a warehouse we cannot open at all**, `discover_connections`
+takes `requested` — what you actually said — and answers with the truth plus
+the nearest route: a dbt project for names and lineage with no connection, or
+DuckDB where it can attach the store (an Iceberg REST catalog, Parquet in
+object storage). Redshift is not in that category and now says so instead of
+being turned away.
+
+[docs/mcp.md](docs/mcp.md) is rewritten around this, including a correction: the
+page said the server never touches your warehouse, which was a claim about the
+serving tools stated as a claim about the product. Inference reads metadata and
+sample values under the credential you give it — there is no semantic layer
+without that — and the page now says where the line actually falls. `README.md`
+and `docs/quickstart.md` lead with `pip install "semlayer[warehouses]"`; the
+editable install is for working on semlayer itself.
+
+Also two telemetry fields, both disclosed in
+[docs/telemetry.md](docs/telemetry.md) in the same release: `via` on `infer`
+events (`cli` or `mcp`, which front door an inference came through — only `cli`
+is emitted today), and `requested_connector` on `mcp` events, the ENGINE
+someone named that we cannot open, classified into ten fixed words. Never the
+words typed: it is the only record of demand we are failing, and the basis for
+choosing the next connector by evidence. Event schema version is now `4`.
+
+Not in this release: starting an inference from inside a session, and running
+an agent's SQL. `status` says so plainly rather than implying otherwise.
+
 ### Connectors: run as yourself, and failures that stop reading as our bug
 
 **Snowflake no longer refuses to connect without a role.** `SNOWFLAKE_READER_ROLE`
