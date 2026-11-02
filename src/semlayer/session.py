@@ -152,11 +152,20 @@ def cache_key(connection: str) -> str:
 def layer_cache_path(connection: str) -> Path:
     """Where the inferred layer for `connection` is cached.
 
-    ONE function, deliberately. Whether the cache belongs in the user's home
-    directory or in their repository -- where a teammate would see it, and
-    where a `.gitignore` decision would have to be made -- is not settled.
-    The home directory is the default until it is, and moving it is this
-    function and nothing else.
+    DECIDED (Raj, 2026-11-02): the home directory, never the repository.
+    Inference writes this file without being asked, and writing into
+    somebody's repository unasked is not ours to do -- it would also force a
+    `.gitignore` decision on them, and put a machine-local artefact in a
+    place that gets committed by accident.
+
+    The repository copy is the explicit one: `save_layer(path)` puts it
+    there when the user wants their team to see it, and a repo copy WINS
+    over a cache copy of the same warehouse in `visible_layers`, because it
+    is the one carrying the team's review decisions. So the cache is the
+    cold-start fallback -- which is the whole answer for a client like
+    Claude Desktop, with no useful working directory at all.
+
+    Still ONE function, so the decision stays reversible in one place.
     """
     return home() / "layers" / f"{cache_key(connection)}.yaml"
 

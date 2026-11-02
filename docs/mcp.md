@@ -146,6 +146,11 @@ or your repository root.
 - **A copy in your repo beats a cached copy of the same warehouse.** The repo
   is where your team's review decisions live.
 
+The cache is deliberately in your home directory and not in your repository:
+inference writes it without asking, and a file we put in your repo unasked is
+a `.gitignore` decision we made for you. Putting a layer where your teammates
+can see it is an explicit step, not a side effect.
+
 Each entry carries its connection, table count and age, so an agent can caveat
 a stale model instead of trusting it.
 
