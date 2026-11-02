@@ -34,6 +34,12 @@ dependencies = [
     "duckdb>=1.5,<2",
     "anthropic>=0.40",
     "mcp>=1.0,<2",  # 2.x renamed FastMCP -> MCPServer and changed the tool API
+    # Declared rather than taken from mcp's own requirements, which is where
+    # it was coming from: `mcp_server` imports it directly now, to wait for
+    # the inference job without blocking the server's event loop. anyio
+    # rather than asyncio because the loop is whatever the host chose --
+    # `asyncio.sleep` would break a server run under trio.
+    "anyio>=4.0",
     "sqlglot>=25",  # semantic SQL linter (MIT)
     # DuckDB returns a pytz tzinfo when it fetches a TIMESTAMPTZ value and does
     # not depend on pytz itself, so profiling any table with a timestamptz
