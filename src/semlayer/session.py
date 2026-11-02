@@ -774,14 +774,22 @@ def _env_file_report() -> dict:
 
 
 def _next_inferring(payload: dict) -> str:
-    """A run is going. Say so, and do not promise to come back."""
+    """A run is going. Say where, and do not promise to come back."""
     job = payload.get("job") or {}
-    stage = job.get("stage") or "starting"
     asked = job.get("question")
+    where = job.get("doing") or job.get("stage") or "starting"
+    percent = round((job.get("fraction") or 0) * 100)
+    eta = job.get("eta_s")
+    # "roughly", always: the estimate is an extrapolation from how fast this
+    # warehouse has answered so far, and a number to the second invites
+    # somebody to hold us to it.
+    left = (f", roughly {eta // 60} min left" if eta and eta >= 90 else
+            f", roughly {eta}s left" if eta else "")
     sentence = (f"A semantic layer is being built for {job.get('connection')} -- "
-                f"stage {stage}, {job.get('elapsed_s')}s so far. Tell the user it "
-                "is running and roughly where it is. NOTHING WILL WAKE YOU when "
-                "it finishes: call status again when the user next says anything, "
+                f"about {percent}%, {where}, {job.get('elapsed_s')}s so far"
+                f"{left}. Tell the user that, in those terms, and in words "
+                "rather than as a number alone. NOTHING WILL WAKE YOU when it "
+                "finishes: call status again when the user next says anything, "
                 "or if your client lets you, poll it.")
     if asked:
         sentence += (f" They asked: {asked!r} -- answer that as soon as the "
@@ -923,6 +931,51 @@ INFER_WAIT_CAP_S = 60
 INFER_WAIT_DEFAULT_S = 25
 
 
+# What share of a run each stage takes, for the progress fraction. MEASURED,
+# because the four stages are nowhere near equal and a bar built on equal
+# weights would stall for minutes and then jump.
+#
+# With a model: the live 116-table dbt_synthea run in docs/scale.md
+# (2026-10-28, 8 workers, all four LLM loops pooled) -- profile 53 s, link
+# 142 s, describe 159 s of 354 s. Enrich did not register against those, so
+# it gets a small tail rather than zero: a bar that reaches 100% while the
+# run is still going is worse than one that ends at 97%.
+#
+# Without a model: the six built fixtures, 2026-11-02. The split depends on
+# size -- a 4-table fixture is nearly all fixed cost -- so these come from
+# the three big enough for a bar to matter at all: messy_mart 10/73/16,
+# tpcds_clean 21/75/4, collision_heavy 20/79/1.
+STAGE_WEIGHTS_LLM = {"profile": 0.15, "link": 0.39, "describe": 0.43,
+                     "enrich": 0.03}
+STAGE_WEIGHTS_NO_LLM = {"profile": 0.17, "link": 0.76, "enrich": 0.07}
+
+# What each stage is doing, in words a person would use. The agent reads
+# this out, and "enrich" is our word for it, not theirs.
+STAGE_WORDS = {
+    "profile": "measuring every column",
+    "link": "finding the keys and joins nobody declared",
+    "describe": "writing descriptions",
+    "enrich": "metrics, hierarchies and routing knowledge",
+}
+
+# Below this, an estimate is guesswork dressed up as information.
+_ETA_MIN_FRACTION = 0.05
+_ETA_MIN_ELAPSED_S = 5
+# And below this there is nothing useful to say: "roughly 10 seconds left"
+# on a run that is about to finish is noise, and on a short run the floor
+# was reported for the whole second half of it.
+_ETA_MIN_REMAINING_S = 20
+# Rounded to this, because "roughly" is the honest word and a number to the
+# second invites someone to hold us to it.
+_ETA_ROUND_S = 10
+
+# A running job never reports 100%. The last stage finishing is not the run
+# finishing -- the document still has to be written and swapped in -- and a
+# bar that sits at 100% while the thing is still going is the single most
+# common way a progress bar lies.
+_MAX_RUNNING_FRACTION = 0.99
+
+
 class Cancelled(Exception):
     """Raised inside the pipeline's progress callback to stop a run."""
 
@@ -936,7 +989,8 @@ class InferJob:
     holding a warehouse connection.
     """
 
-    def __init__(self, connection: str, question: str | None, scope: str | None):
+    def __init__(self, connection: str, question: str | None, scope: str | None,
+                 with_llm: bool = True):
         self.connection = redact(connection)
         self.question = question or None
         self.scope = scope or None
@@ -944,6 +998,11 @@ class InferJob:
         self.state = "running"          # running | done | failed | cancelled
         self.stage: str | None = None
         self.stages: dict[str, float] = {}
+        self.weights = STAGE_WEIGHTS_LLM if with_llm else STAGE_WEIGHTS_NO_LLM
+        self.label: str | None = None
+        self.tables_done: int | None = None
+        self.tables_total: int | None = None
+        self._within = 0.0
         self.error: str | None = None
         self.exception: BaseException | None = None
         self.doc: dict | None = None
@@ -966,15 +1025,70 @@ class InferJob:
         """Ask the run to stop at its next stage boundary."""
         self._cancel.set()
 
+    @property
+    def fraction(self) -> float:
+        """How far through the whole run, 0 to 1, from the measured weights.
+
+        Completed stages contribute their whole weight; the running one
+        contributes its weight times how far through itself it says it is.
+        Monotonic by construction, which matters more than being exactly
+        right: a bar that goes backwards reads as a bug in the thing being
+        watched.
+        """
+        done = sum(w for s, w in self.weights.items() if s in self.stages)
+        current = self.weights.get(self.stage or "", 0.0)
+        if self.stage in self.stages:
+            current = 0.0           # already counted above
+        at = min(1.0, done + current * self._within)
+        if self.running:
+            at = min(at, _MAX_RUNNING_FRACTION)
+        return round(at, 3)
+
+    @property
+    def eta_s(self) -> int | None:
+        """Roughly how many seconds are left, or None when it would be a guess.
+
+        Extrapolated from the fraction, which is itself driven by per-unit
+        rates inside the stage -- so it already reflects how fast THIS
+        warehouse is answering, rather than any assumption about size. Not
+        offered in the first seconds or the first few percent, and rounded,
+        because the honest word is "roughly".
+        """
+        f, elapsed = self.fraction, self.elapsed_s
+        if f < _ETA_MIN_FRACTION or elapsed < _ETA_MIN_ELAPSED_S or not self.running:
+            return None
+        remaining = elapsed * (1 - f) / f
+        if remaining < _ETA_MIN_REMAINING_S:
+            return None
+        return int(round(remaining / _ETA_ROUND_S) * _ETA_ROUND_S)
+
     def progress(self, event: dict) -> None:
-        """The pipeline's callback: record the stage, and stop if asked to."""
+        """The pipeline's callback: record where it is, and stop if asked to."""
         if self._cancel.is_set():
             raise Cancelled("cancelled by the user")
         stage = str(event.get("stage") or "")
-        if event.get("event") == "done":
+        kind = event.get("event")
+        if kind == "done":
             self.stages[stage] = event.get("seconds") or 0
-        else:
+            self._within = 0.0
+        elif kind == "unit":
             self.stage = stage
+            self._within = float(event.get("within") or 0.0)
+            self.label = event.get("label")
+            if stage in ("profile", "describe"):
+                # Tables are the unit a person understands. Link's units are
+                # inclusion queries and model chunks, which are ours.
+                self.tables_done = event.get("done")
+                self.tables_total = event.get("total")
+        else:
+            # A stage boundary. Clear what belonged to the last stage: enrich
+            # has no per-unit loop, so without this the label would still
+            # read "checking inclusion: 79 of 79" while link was over -- and
+            # that line is what the agent reads out to the user.
+            self.stage = stage
+            self._within = 0.0
+            self.label = None
+            self.tables_done = self.tables_total = None
 
     def as_dict(self) -> dict:
         """What `status` reports about this run. No credential, ever."""
@@ -983,9 +1097,20 @@ class InferJob:
             "connection": self.connection,
             "elapsed_s": self.elapsed_s,
             "stage": self.stage,
+            "fraction": self.fraction,
+            # The per-unit label while a hooked loop is running, else the
+            # stage in words: enrich has no loop, and "doing: null" would
+            # leave the agent with nothing to say.
+            "doing": self.label or STAGE_WORDS.get(self.stage or ""),
             "stages_done": self.stages,
             "question": self.question,
         }
+        if self.tables_total:
+            out["tables_done"] = self.tables_done
+            out["tables_total"] = self.tables_total
+        eta = self.eta_s
+        if eta is not None and self.running:
+            out["eta_s"] = eta
         if self.model:
             out["model"] = self.model
         if self.error:
@@ -1248,13 +1373,24 @@ class Session:
             out["error"] = ("no connection to infer from: pass one, or ask the "
                             "user which of `connections` to model")
             return out
-        job = InferJob(target, question, scope)
+        job = InferJob(target, question, scope,
+                       with_llm=use_llm and self._api_key() is not None)
         self.job = job
         job.thread = threading.Thread(
             target=self._run_infer, args=(job, use_llm), daemon=True,
             name="semlayer-infer")
         job.thread.start()
-        job.thread.join(timeout=max(0.0, min(wait_seconds, INFER_WAIT_CAP_S)))
+        if wait_seconds:
+            job.thread.join(timeout=max(0.0, min(wait_seconds, INFER_WAIT_CAP_S)))
+        return self.after_infer(job, target)
+
+    def after_infer(self, job: InferJob, target: str) -> dict:
+        """The status to answer an `infer` call with, once it has waited.
+
+        Separate from `start_infer` because the MCP tool does its own
+        waiting: it has to stay on the event loop to stream progress to the
+        client, so it cannot use a blocking join.
+        """
         out = self.status()
         if job.state == "failed":
             out["error"] = job.error
@@ -1328,6 +1464,16 @@ class Session:
         job.report = report
         return doc
 
+    def _api_key(self) -> str | None:
+        """The model key, from the `.env` file or the environment.
+
+        Separate from `_provider` because the progress weights need to know
+        whether describe will run at all, and constructing a provider to
+        find that out would be wasteful and surprising.
+        """
+        return (env_file.read(env_path()).get("ANTHROPIC_API_KEY")
+                or os.environ.get("ANTHROPIC_API_KEY") or None)
+
     def _provider(self):
         """The LLM provider for an inference, or None if there is no key.
 
@@ -1337,8 +1483,7 @@ class Session:
         failing the call. `repo_cache=False` per #73: a server has no
         business writing cassettes into someone's repository.
         """
-        key = (env_file.read(env_path()).get("ANTHROPIC_API_KEY")
-               or os.environ.get("ANTHROPIC_API_KEY"))
+        key = self._api_key()
         if not key:
             return None
         from semlayer.llm.provider import AnthropicProvider
