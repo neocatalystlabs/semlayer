@@ -469,6 +469,34 @@ def test_a_layer_we_did_not_write_claims_nothing(_nowhere):
     assert s.status()["layer"]["built_without_model"] is None
 
 
+@pytest.mark.parametrize(("doc", "answer"), [
+    ({"generated_by": {"engine": "0.6.0b1", "model": "none/heuristic"}}, True),
+    ({"generated_by": {"model": "none"}}, True),
+    ({"generated_by": {"engine": "0.6.0b1", "model": "haiku-4-5/escalation"}}, False),
+    # Not a document this engine wrote: ours always records both halves of
+    # `generated_by`, so a missing or empty model is a producer who told us
+    # nothing -- not a producer who told us "no model".
+    ({"generated_by": {"engine": "someone-else"}}, None),
+    ({"generated_by": {"model": None}}, None),
+    ({"generated_by": {"model": "   "}}, None),
+    ({"name": "hand-written"}, None),
+])
+def test_the_claim_is_only_made_where_it_is_recorded(doc, answer):
+    assert sess.built_without_model({"semantic_layer": doc}) is answer
+
+
+def test_a_set_claims_nothing_about_its_members():
+    """A stitched hub records `none/heuristic` because assembling a hub needs
+    no model -- which says nothing about the member documents merged into it.
+    Those may be full of model-written descriptions, and announcing "no
+    descriptions" over a resolved set would be flatly wrong."""
+    hub = {"semantic_layer": {
+        "members": [{"name": "sales", "path": "sales.yaml"}],
+        "generated_by": {"engine": "0.6.0b1", "model": "none/heuristic"},
+    }}
+    assert sess.built_without_model(hub) is None
+
+
 def test_the_key_sentence_comes_after_the_first_answer_not_before(warehouse):
     """A stranger has no key, so day 1 has to work keyless: the suggestion
     may never read as a precondition."""

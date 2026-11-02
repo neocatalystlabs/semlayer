@@ -687,26 +687,44 @@ def visible_layers() -> list[dict]:
     return out
 
 
-# What `generated_by.model` says when a run had no model: statistics, naming
-# rules and inclusion tests, and no sentence written by anything.
-_NO_MODEL = {"", "none", "none/heuristic"}
-
-
 def built_without_model(doc: dict) -> bool | None:
     """Whether THIS engine built the layer with no model. None if unknown.
 
-    Three states, and the third is why this is not a boolean. A document we
-    produced records `generated_by.model`, so "none/heuristic" is a fact. A
-    document with no `generated_by` at all was not written by us -- every
-    hand-authored gold in fixtures is one -- and we know nothing about how it
-    was made. Claiming "no descriptions" there would tell someone their
-    hand-written layer was statistics-only, and counting descriptions does
-    not save us: the messy_mart gold has none at table level either.
+    Three states, and the third carries most of the weight. The claim this
+    answers -- "nothing in here has a written description" -- is one a user
+    could act on, so it is only made where it is a recorded fact.
+
+    True: `generated_by.model` is `none` or `none/<something>`, which is
+    what `profile.run` writes when it ran with no provider. Our own
+    documents always record the field, both halves of it.
+
+    False: a model is named, so descriptions were attempted.
+
+    None, for three different kinds of not-knowing, each of which was a
+    wrong answer in an earlier version of this function:
+
+      * No `generated_by`, or no `model` inside it. Not a document this
+        engine wrote -- every hand-authored gold in `fixtures/golds` is
+        one -- and a producer who recorded nothing told us nothing.
+        Counting descriptions instead does not rescue it: the messy_mart
+        gold has none at table level either, so that test would announce
+        that somebody's hand-written layer was statistics-only.
+      * A resolved SET. A stitched hub records `none/heuristic` because
+        assembling a hub needs no model, which says nothing about the
+        member documents merged into it -- those may be full of
+        model-written descriptions. The hub's own line is not evidence
+        about its members.
     """
-    generated = (doc.get("semantic_layer") or {}).get("generated_by")
-    if not generated:
+    sl = doc.get("semantic_layer") or {}
+    if sl.get("members"):
         return None
-    return str(generated.get("model") or "").strip().lower() in _NO_MODEL
+    model = (sl.get("generated_by") or {}).get("model")
+    if not isinstance(model, str) or not model.strip():
+        return None
+    said = model.strip().lower()
+    # `none/heuristic` today; the suffix is the escalation path, so match the
+    # family rather than the exact string.
+    return said == "none" or said.startswith("none/")
 
 
 def save_document(path: str | Path, doc: dict) -> None:
