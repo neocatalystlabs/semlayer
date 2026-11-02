@@ -342,3 +342,104 @@ def test_event_id_is_reserved_rather_than_a_field():
     assert "event_id" in ts.RESERVED
     assert "event_id" not in ts.FIELDS
     assert ts.serialize({"event_id": "deadbeef"}) == {}
+
+
+# --- via: which front door an inference came through ----------------------
+
+def test_via_carries_only_the_two_doors_that_exist():
+    assert ts.serialize({"via": "cli"}) == {"via": "cli"}
+    assert ts.serialize({"via": "mcp"}) == {"via": "mcp"}
+
+
+def test_an_unknown_door_is_dropped_rather_than_becoming_other():
+    """VIA has no "other" member, so an unrecognised value is dropped. That is
+    the right default for a field whose whole value is that `cli` and `mcp`
+    can be counted against each other: a third bucket nobody designed would
+    be read as one of the two."""
+    assert ts.serialize({"via": "browser"}) == {}
+    assert ts.serialize({"via": "/usr/local/bin/semlayer"}) == {}
+
+
+def test_via_arrived_with_a_schema_bump():
+    assert "via" in ts.FIELDS
+    assert ts.SCHEMA >= 4
+
+
+def test_the_cli_notes_which_door_only_for_infer():
+    """`via` on a `validate` event would mean nothing, so the call site sends
+    None and the serializer drops it. Only `cli` is ever emitted today -- the
+    MCP server's infer tool will note `mcp` from its own call site."""
+    import argparse
+
+    from semlayer import cli, telemetry
+
+    for command, want in (("infer", "cli"), ("validate", None)):
+        telemetry._pending.clear()
+        cli._note_invocation(argparse.Namespace(command=command,
+                                                source="duckdb:w.duckdb"))
+        assert telemetry._pending.get("via") == want
+        assert ts.serialize(telemetry._pending).get("via") == want
+    telemetry._pending.clear()
+
+
+# --- requested_connector: demand we are currently failing ----------------
+
+@pytest.mark.parametrize(("said", "label"), [
+    ("databricks", "databricks"),
+    ("Databricks SQL Warehouse", "databricks"),
+    ("our unity catalog", "databricks"),
+    ("delta lake", "databricks"),
+    ("redshift", "redshift"),
+    ("trino", "trino"),
+    ("presto", "trino"),
+    ("starburst", "trino"),
+    ("athena", "athena"),
+    ("glue catalog", "athena"),
+    ("iceberg", "iceberg"),
+    ("parquet files in s3", "iceberg"),
+    ("SQL Server", "mssql"),
+    ("synapse", "mssql"),
+    ("oracle", "oracle"),
+    ("clickhouse", "clickhouse"),
+    ("spark", "spark"),
+    ("hive metastore", "spark"),
+])
+def test_a_named_warehouse_is_classified(said, label):
+    assert ts.serialize({"requested_connector": said}) == {"requested_connector": label}
+
+
+def test_a_warehouse_nobody_anticipated_becomes_other():
+    """Unlike FLAGS, an unknown name maps to `other` rather than being
+    dropped: "someone asked for something we have never heard of" is the
+    signal, and a dropped row makes it indistinguishable from nobody asking."""
+    assert ts.serialize({"requested_connector": "Vertica"}) == {
+        "requested_connector": "other"}
+
+
+@pytest.mark.parametrize("value", ["", "   ", None, 7, ["databricks"]])
+def test_an_empty_or_wrong_shaped_value_is_absent(value):
+    assert ts.serialize({"requested_connector": value}) == {}
+
+
+def test_the_classifier_cannot_return_its_input():
+    """The realistic accident: an agent relays a connection string, not a
+    word. Every path out of this field is one of ten fixed labels, so a
+    host, a database name or a password has nowhere to go."""
+    pasted = "postgresql://admin:hunter2@acme-prod.eu-west-1.rds.amazonaws.com/warehouse"
+    out = ts.serialize({"requested_connector": pasted})
+    assert out["requested_connector"] in ts.REQUESTED
+    assert "hunter2" not in json.dumps(out)
+    assert "acme-prod" not in json.dumps(out)
+
+
+def test_every_label_is_declared():
+    from semlayer.telemetry_schema import _REQUESTED_RULES
+    for _needles, label in _REQUESTED_RULES:
+        assert label in ts.REQUESTED
+
+
+def test_the_session_tools_are_declared():
+    """`_tools` maps an undeclared name to `other`, so a tool missing from
+    the whitelist silently merges with the unknown ones."""
+    from semlayer.telemetry_schema import TOOLS
+    assert {"status", "discover_connections", "load_layer"} <= TOOLS
