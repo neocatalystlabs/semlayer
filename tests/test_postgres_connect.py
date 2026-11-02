@@ -101,9 +101,88 @@ def _stub_psycopg(monkeypatch, *, connect_raises=None, connection=None):
     return con
 
 
+@pytest.fixture(autouse=True)
+def _clean_env(monkeypatch):
+    """No PG_* role or DSN variable may reach these tests from the shell.
+
+    Added with the PG_ROLE fix below: once `from_dsn` reads the environment,
+    a developer with PG_ROLE exported would get different results from CI,
+    and every assertion here about "no role was asked for" would be quietly
+    testing their shell instead of the code.
+    """
+    for k in ("PG_ROLE", "PG_READER_ROLE", "PG_ADMIN_ROLE",
+              "PG_DSN", "PG_READER_DSN", "PG_ADMIN_DSN", "PGDATABASE"):
+        monkeypatch.delenv(k, raising=False)
+
+
 def _from_dsn(**kw):
     from semlayer.connectors.postgres import PostgresSource
     return PostgresSource.from_dsn("postgresql://u@h/db", **kw)
+
+
+# --- the role a DSN run adopts ---------------------------------------------
+
+def test_a_dsn_run_honours_pg_role(monkeypatch):
+    """It did not, and nothing said so.
+
+    `pipeline.py` dispatches `postgresql://...` to `from_dsn(uri)` with no
+    role, while the bare `postgres` URI went through `from_env`, which read
+    the variable. So the documented PG_ROLE worked on one path and was
+    silently ignored on the other -- the one most people use, since a DSN is
+    how a Postgres credential is normally held. Nothing failed; the run just
+    profiled as the DSN's user while the person believed it was the reader
+    role, which is the worst shape a config bug can take.
+    """
+    con = _stub_psycopg(monkeypatch)
+    monkeypatch.setenv("PG_ROLE", "layer_reader")
+    _from_dsn()
+    assert str(con.executed[0]) == 'SET ROLE "layer_reader"'
+
+
+def test_the_persona_specific_variable_wins_over_the_generic_one(monkeypatch):
+    con = _stub_psycopg(monkeypatch)
+    monkeypatch.setenv("PG_ROLE", "generic")
+    monkeypatch.setenv("PG_READER_ROLE", "specific")
+    _from_dsn()
+    assert str(con.executed[0]) == 'SET ROLE "specific"'
+
+
+def test_an_explicit_argument_beats_the_environment(monkeypatch):
+    """Same precedence snowflake._asked_role uses: what the caller passed
+    wins, because they said it later and more deliberately."""
+    con = _stub_psycopg(monkeypatch)
+    monkeypatch.setenv("PG_ROLE", "from_env")
+    _from_dsn(role="from_arg")
+    assert str(con.executed[0]) == 'SET ROLE "from_arg"'
+
+
+def test_no_role_anywhere_still_issues_no_set_role(monkeypatch):
+    """Running as yourself stays the default -- the fix must not start
+    asserting a role nobody asked for."""
+    con = _stub_psycopg(monkeypatch)
+    _from_dsn()
+    assert not any("SET ROLE" in str(x) for x in con.executed)
+
+
+def test_from_env_and_from_dsn_resolve_the_role_identically(monkeypatch):
+    """The real defect was that two entry points each did their own lookup.
+
+    from_env now delegates to from_dsn rather than duplicating it, so this
+    test is about the structure holding, not about either answer.
+    """
+    from semlayer.connectors.postgres import PostgresSource
+
+    con_a = _stub_psycopg(monkeypatch)
+    monkeypatch.setenv("PG_ROLE", "same_role")
+    monkeypatch.setenv("PG_DSN", "postgresql://u@h/db")
+    PostgresSource.from_env(persona="reader")
+    via_env = [str(x) for x in con_a.executed if "SET ROLE" in str(x)]
+
+    con_b = _stub_psycopg(monkeypatch)
+    PostgresSource.from_dsn("postgresql://u@h/db")
+    via_dsn = [str(x) for x in con_b.executed if "SET ROLE" in str(x)]
+
+    assert via_env == via_dsn == ['SET ROLE "same_role"']
 
 
 # --- failures that are not our bug ----------------------------------------

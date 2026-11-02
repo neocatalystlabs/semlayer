@@ -122,6 +122,7 @@ def test_the_whole_deterministic_pipeline_runs_on_bigquery(reader):
     # NOT asserting the ORDER, though it should be assertable: the decode
     # query has no ORDER BY, so BigQuery returns these in whatever sequence
     # it likes and DuckDB returns insertion order. Fixing that changes the
-    # layer, which changes the agent-pipeline prompts, which needs a paid
-    # cassette re-record. See HANDOFF.
+    # layer, and so the prompts in examples/agent_pipeline, whose cassettes
+    # would need re-recording against a live model -- see the comment at the
+    # query in enrich/run.py.
     assert cid.get("enum_values"), "the capped decode query should have run"
