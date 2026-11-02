@@ -40,15 +40,39 @@ login cannot run unattended.
 
 ### As a dedicated reader role
 
-For anything repeated, give it a role whose grants you control:
+For anything repeated, give it a role whose grants you control.
+
+First make a key pair. The reader is a **service user**, which authenticates
+with a key and cannot hold a password at all:
+
+```bash
+mkdir -p ~/.snowflake/keys && chmod 700 ~/.snowflake/keys
+openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -nocrypt \
+  -out ~/.snowflake/keys/semlayer_reader.p8
+openssl rsa -in ~/.snowflake/keys/semlayer_reader.p8 -pubout \
+  -out ~/.snowflake/keys/semlayer_reader.pub
+```
+
+Then create the role and the user, and point semlayer at the private key:
 
 ```bash
 semlayer init snowflake --database analytics --warehouse-name wh_xs  # run output as ACCOUNTADMIN
+#   paste semlayer_reader.pub into the RSA_PUBLIC_KEY line, without its
+#   BEGIN/END lines, before you run the script
 export SNOWFLAKE_ACCOUNT=ORG-ACCOUNT SNOWFLAKE_READER_USER=semlayer_reader_svc \
-       SNOWFLAKE_READER_PASSWORD=... SNOWFLAKE_READER_ROLE=semlayer_reader \
+       SNOWFLAKE_READER_PRIVATE_KEY_PATH=~/.snowflake/keys/semlayer_reader.p8 \
+       SNOWFLAKE_READER_ROLE=semlayer_reader \
        SNOWFLAKE_WAREHOUSE=wh_xs SNOWFLAKE_DATABASE=analytics
 semlayer infer snowflake -o layer.yaml
 ```
+
+**Why not a password.** Snowflake enforces MFA on password sign-ins for users of
+the default (person) type, so a password service account is refused on its first
+connection with `390197 Multi-factor authentication is required` — there is
+nobody to approve a prompt. `TYPE = SERVICE` cannot be given a password or MFA,
+which is the point: nothing to phish, nothing for a human to rotate by hand. If
+you gave the key a passphrase (drop `-nocrypt`), export
+`SNOWFLAKE_READER_PRIVATE_KEY_PASSPHRASE` as well.
 
 `SNOWFLAKE_READER_ROLE` is optional but recommended here: naming it is what
 makes the minimal-grant claim mean something, because the report can then show
