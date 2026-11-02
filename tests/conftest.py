@@ -84,6 +84,22 @@ _LAYER_TABLE = """  - name: t{n}
 
 
 @pytest.fixture
+def built_fixture():
+    """The path to a built DuckDB fixture, or a SKIP if it is not built.
+
+    `fixtures/build/` is gitignored and CI builds it before the suite, so a
+    test that needs a real warehouse must skip rather than error in a fresh
+    clone -- the convention `test_benchmark_replays.py` already follows.
+    """
+    def get(name: str) -> Path:
+        path = Path(__file__).resolve().parents[1] / "fixtures" / "build" / f"{name}.duckdb"
+        if not path.is_file():
+            pytest.skip(f"fixtures not built: python fixtures/build.py {name}")
+        return path
+    return get
+
+
+@pytest.fixture
 def write_layer():
     """Write a small but real layer document, for the session tests.
 

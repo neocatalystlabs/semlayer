@@ -257,11 +257,11 @@ def test_the_handshake_names_the_postgres_family():
     assert "postgres connection" in text
 
 
-def test_the_handshake_does_not_promise_inference_this_build():
-    """The reviewed wording said `status` explains "how to start inference".
-    This build cannot, and promising it here is the dead end the slice
-    exists to remove."""
-    assert "start inference" not in mcp_server._INSTRUCTIONS
+# Slice 1 pinned the opposite of this: it asserted that the handshake did
+# NOT say "how to start inference", because that build could not. It can
+# now, and `test_the_handshake_now_names_inference_and_the_answer_order`
+# below is the replacement -- kept as a note because the deleted assertion
+# is the clearest record of what changed between the two slices.
 
 
 # --- a warehouse the user named that was not in the list -----------------
@@ -352,3 +352,91 @@ def test_a_named_path_is_not_an_autoload(served, _nowhere, write_layer):
     assert main(["mcp", str(path)]) == 0
     assert served[0].state == "ready"
     assert served[0].autoloaded is False
+
+
+# --- the front door: build a layer, then answer with it ------------------
+
+def test_the_four_front_door_tools_are_registered():
+    srv = mcp_server.build_server(Session())
+    names = {t.name for t in anyio.run(srv.list_tools)}
+    assert {"infer", "cancel_infer", "context_for_question", "run_sql"} <= names
+
+
+def test_infer_and_then_answer_in_one_session(_nowhere, built_fixture):
+    """The journey, through the real tool surface: nothing, then a layer,
+    then an answer, without a second server and without a terminal."""
+    import shutil
+    shutil.copy(built_fixture("messy_mart"), _nowhere / "cwd" / "warehouse.duckdb")
+    srv = mcp_server.build_server(Session())
+
+    assert call(srv, "status")["state"] == "no_layer"
+
+    built = call(srv, "infer", {"connection": "duckdb:warehouse.duckdb",
+                                "question": "how many customers per segment?",
+                                "wait_seconds": 60, "use_llm": False})
+    assert built["state"] == "ready", built.get("error")
+    assert built["pending_question"] == "how many customers per segment?"
+
+    ctx = call(srv, "context_for_question",
+               {"question": "how many customers per segment?"})
+    assert "cust_mstr" in ctx["tables"]
+    assert ctx["context"]
+    # asking for the context IS answering it, so the reminder goes
+    assert call(srv, "status")["pending_question"] is None
+
+    ran = call(srv, "run_sql", {"sql": "select seg_cd, count(*) as n "
+                                       "from cust_mstr group by 1 order by 2 desc"})
+    assert ran["ran"] is True
+    assert ran["columns"] == ["seg_cd", "n"]
+    assert len(ran["rows"]) == 3
+    assert "assumptions" in ran
+
+
+def test_run_sql_refuses_to_write_through_the_tool(_nowhere, built_fixture):
+    """The guard is in the module and the tool must not route around it."""
+    import shutil
+    shutil.copy(built_fixture("messy_mart"), _nowhere / "cwd" / "warehouse.duckdb")
+    srv = mcp_server.build_server(Session())
+    call(srv, "infer", {"connection": "duckdb:warehouse.duckdb",
+                        "wait_seconds": 60, "use_llm": False})
+    out = call(srv, "run_sql", {"sql": "drop table cust_mstr"})
+    assert out["ran"] is False
+    assert "DROP" in out["refused"]
+    # still there
+    assert call(srv, "run_sql",
+                {"sql": "select count(*) as n from cust_mstr"})["ran"] is True
+
+
+def test_the_answer_tools_fall_back_to_status_with_no_layer():
+    """Same contract as every other tool: never a bare error."""
+    srv = mcp_server.build_server(Session())
+    for tool, args in (("context_for_question", {"question": "revenue?"}),
+                       ("run_sql", {"sql": "select 1"})):
+        out = call(srv, tool, args)
+        assert out["state"] == "no_layer", tool
+        assert "built" in out["next"], tool
+
+
+def test_run_sql_without_a_reachable_connection_says_what_is_wrong(gold):
+    """A layer loaded from a FILE names a warehouse this machine may not be
+    able to open, and the agent has to be able to tell the user that."""
+    srv = mcp_server.build_server(Session.of(gold))
+    out = call(srv, "run_sql", {"sql": "select 1"})
+    assert out["ran"] is False
+    assert "connection" in out["next"]
+
+
+def test_cancelling_when_nothing_runs_is_an_answer_not_an_error():
+    srv = mcp_server.build_server(Session())
+    assert call(srv, "cancel_infer")["error"] == "no inference is running"
+
+
+def test_the_handshake_now_names_inference_and_the_answer_order():
+    """Slice 1 could not promise inference and said so. It can now, and the
+    reviewed wording is restored in full."""
+    text = mcp_server._INSTRUCTIONS
+    assert "how to start inference" in text
+    assert "context_for_question" in text
+    assert "run_sql" in text
+    assert "ASK THEM FIRST" in text
+    assert "Never ask the user for a password or a key in chat." in text

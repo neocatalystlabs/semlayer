@@ -113,8 +113,12 @@ def infer(source, llm=None, options: InferOptions | None = None, *,
     return doc
 
 
+def _no_progress(event: dict) -> None:
+    """The default `progress`: nobody is watching."""
+
+
 def infer_with_report(source, llm=None, options: InferOptions | None = None, *,
-                      context=None, lineage=None, state=None,
+                      context=None, lineage=None, state=None, progress=None,
                       **settings) -> tuple[dict, dict]:
     """`infer` plus the per-run observability report (BETA Q2).
 
@@ -129,6 +133,14 @@ def infer_with_report(source, llm=None, options: InferOptions | None = None, *,
     `lineage`: a semlayer.lineage.LineageBundle read from an ETL manifest. Link
     consults it only to break ties statistics cannot.
     `state`: a state store for partition-wise incremental profiling.
+    `progress`: called with `{"stage": name, "event": "start"}` as each stage
+    begins and `{"stage": name, "event": "done", "seconds": n}` as it ends.
+    For a caller that is not waiting on the return value -- the MCP server
+    runs this on a thread and reports the stage in `status` -- and for
+    cancellation: raising from the callback unwinds the run at a stage
+    boundary, which is the only way to stop it, since a Python thread cannot
+    be killed and a half-run holding a warehouse connection is worse than a
+    late stop.
     Prose excerpts ride into typing/describe evidence; CSV dictionaries seed
     descriptions; doc decode claims reconcile post-enrich (conflicts on
     contradiction — priors, never truth).
@@ -148,12 +160,19 @@ def infer_with_report(source, llm=None, options: InferOptions | None = None, *,
     if session_role:
         report["access"] = {"session_role": session_role}
 
+    # Normalised to a callable once, rather than tested at each call site: a
+    # branch per stage is three branches this function does not need, and it
+    # sat right on the complexity limit.
+    notify = progress if progress is not None else _no_progress
+
     def _timed(stage: str, fn):
+        notify({"stage": stage, "event": "start"})
         t0 = time.perf_counter()
         result = fn()
         dt = round(time.perf_counter() - t0, 2)
         report["stages"][stage] = dt
         logger.info("stage %s done in %.1fs", stage, dt)
+        notify({"stage": stage, "event": "done", "seconds": dt})
         return result
 
     doc, stats = _timed("profile", lambda: profile_with_stats(

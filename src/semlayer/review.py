@@ -255,6 +255,20 @@ class ReviewItem:
         return f"{self.table}.{self.column}" if self.column else self.table
 
 
+# Kinds whose accept UNLOCKS behaviour, rather than merely blessing a label.
+# The distinction decides who may decide (slice 3: an agent may accept the
+# others alone, and must only PROPOSE these) and what an answer has to
+# disclose: a decode guess a metric's filter depends on is a different kind
+# of uncertainty from a type label nobody has confirmed.
+GATING_KINDS = frozenset({
+    "llm_guess_enum",       # the decodes a metric filter is written against
+    "aggregate_mapping",    # whether a summary table may be routed to
+    "discovered_filter",    # a rule that changes what a metric counts
+    "conflict",             # two signals disagreeing, unresolved
+    "same_entity",          # whether two columns are the same thing
+})
+
+
 def collect(doc: dict) -> list[ReviewItem]:
     """Scan the semantic layer for claims and conflicts awaiting human review."""
     items: list[ReviewItem] = []

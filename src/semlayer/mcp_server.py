@@ -370,22 +370,21 @@ def _server_class():
 # Handed to the model at the handshake, which is the only moment we are
 # certain of its attention. Everything here is a fact the agent cannot
 # discover by trying: that a layer has to be built before anything works,
-# that it must never ask for a secret, that Redshift is postgres, and that
-# an unsupported warehouse has an honest answer waiting in a tool.
+# that it must never ask for a secret, that Redshift is postgres, that an
+# unsupported warehouse has an honest answer waiting in a tool, and the
+# order to answer a question in.
 #
-# Reviewed by Raj 2026-11-01. One deliberate change from that text: it said
-# `status` explains "how to start inference", which this build cannot do --
-# promising it here would produce exactly the dead end the slice exists to
-# remove. And `context_for_question` is named as the opener in the reviewed
-# text; it arrives with the infer tool, so until then this says
-# semantic_search.
+# This is now the wording Raj reviewed on 2026-11-01, with no deviation:
+# the two clauses that had to be changed for slice 1 -- "how to start
+# inference", and `context_for_question` as the opener -- are both true as
+# of this slice, because `infer` and `context_for_question` exist.
 _INSTRUCTIONS = (
     "semlayer models a data warehouse into a semantic layer and serves it to "
     "you. Call `status` first. A semantic layer is not something this machine "
     "has by default: it has to be BUILT from a warehouse, and until it is "
     "there is nothing to search or query. If no layer is loaded, `status` "
     "tells you which warehouse connections were found on this machine, which "
-    "layers were found already built, and what has to happen next -- every "
+    "layers were found already built, and how to start inference -- every "
     "other tool answers with that same object when no layer is loaded, so "
     "read `next` and act on it rather than retrying. "
     "Never ask the user for a password or a key in chat. Credentials live in "
@@ -395,10 +394,17 @@ _INSTRUCTIONS = (
     "use the postgres connection. If the user names a warehouse that is not "
     "listed as supported, say so plainly, pass the name to "
     "`discover_connections` as `requested`, and offer the nearest route it "
-    "returns. Once a layer is loaded, start every question with "
-    "semantic_search, apply required filters, never use UNUSABLE objects, run "
-    "`check_sql` before any SQL runs, and caveat answers built on "
-    "lifecycle=inferred elements."
+    "returns. "
+    "`infer` builds the layer: it reads their warehouse, takes minutes on a "
+    "real one, and spends their own LLM budget, so ASK THEM FIRST and say "
+    "which warehouse you are about to model. Pass their question to it; when "
+    "the layer is ready, `status` reminds you to answer it. "
+    "Once a layer is loaded, start every question with "
+    "`context_for_question`, apply required filters, never use UNUSABLE "
+    "objects, run `check_sql` before any SQL runs, and run it with `run_sql`, "
+    "which executes one read-only SELECT against their warehouse. Answer in "
+    "words first, then state the assumptions the answer rests on, and caveat "
+    "answers built on lifecycle=inferred elements."
 )
 
 
@@ -471,6 +477,120 @@ def _register_session_tools(srv, session: Session) -> None:
         return json.dumps(session.load_layer(ref), default=str)
 
 
+def _register_answer_tools(srv, session: Session) -> None:
+    """Build a layer, and answer a question with it.
+
+    These four are what make the server a front door rather than a reference
+    book: it can create the thing it serves, and it can run the SQL it helped
+    write. Registered apart from the document tools because they are the ones
+    that touch the warehouse.
+    """
+
+    @srv.tool()
+    def infer(connection: str = "", question: str = "", scope: str = "",
+              wait_seconds: int = 25, use_llm: bool = True) -> str:
+        """Build the semantic layer for a warehouse. Ask the user first.
+
+        This READS THEIR WAREHOUSE -- metadata and sample values -- under the
+        connection given, and on a real warehouse it takes minutes and uses
+        their own LLM key, which costs them money. Ask before calling it, and
+        say which warehouse you are about to model.
+
+        connection: a uri from `status.connections`, or one the user gave.
+        Omit it to use the session's.
+        question: what the user actually asked. Keep it here: when the layer
+        is ready, `status` reminds you to answer it, so a run that outlives
+        this turn does not lose the point of itself.
+        scope: schema names, comma-separated, to model only those. The way to
+        make a big warehouse finish quickly.
+        wait_seconds: how long to hold this call open (capped at 60). A DuckDB
+        file finishes inside it and comes back `ready`, so you can answer in
+        the same turn. Anything larger comes back `inferring`.
+        use_llm: false for a statistics-only layer -- no descriptions, no
+        decode validation, no cost, and much faster.
+
+        Nothing will wake you when a long run finishes. Tell the user that,
+        and call `status` when they next speak.
+        """
+        return json.dumps(session.start_infer(
+            connection or None, question=question or None, scope=scope or None,
+            wait_seconds=wait_seconds, use_llm=use_llm), default=str)
+
+    @srv.tool()
+    def cancel_infer() -> str:
+        """Stop the inference that is running. Takes effect at the next stage."""
+        return json.dumps(session.cancel_infer(), default=str)
+
+    @srv.tool()
+    def context_for_question(question: str) -> str:
+        """START EVERY QUESTION HERE once a layer is loaded.
+
+        Returns the part of the layer that bears on this question -- the
+        tables it selected, their columns, keys, required filters and
+        metrics, the routing knowledge for choosing between them -- plus
+        `open_questions`: the claims underneath that nobody has confirmed.
+
+        Write your SQL from this, `check_sql` it, then `run_sql`. Put the
+        open questions under your answer as assumptions.
+        """
+        return _answer(session, lambda doc: agent_context(doc, question, session))
+
+    @srv.tool()
+    def run_sql(sql: str) -> str:
+        """Run ONE read-only SELECT against the session's warehouse.
+
+        `check_sql` runs first and an error means the SQL is NOT executed --
+        a query that sums cancelled orders runs perfectly well, so "it ran"
+        was never the standard. Warnings do not block, and come back with the
+        rows because they are about whether the number means what the user
+        thinks.
+
+        Rows are capped and there is a ten-minute time limit; the cap, the
+        limit and whether rows were truncated are all stated in the result,
+        so you can tell the user what actually applied. Nothing is written,
+        nothing is persisted, and your SQL is never rewritten: a required
+        filter is reported, never silently applied.
+
+        Refused while an inference is running -- one connection is not shared
+        between the two. Ask again when `status` says `ready`.
+
+        The result carries `assumptions` -- the unconfirmed claims the answer
+        rests on. Answer the user in words first, then render those under it.
+        """
+        return _answer(session, lambda doc: agent_run(doc, sql, session))
+
+
+def agent_context(doc: dict, question: str, session: Session) -> dict:
+    """`context_for_question`, and the question stops being pending.
+
+    Clearing it here is the point of having kept it: the reminder exists so
+    that an agent returning to a finished run knows what it was for, and an
+    agent that has just asked for the context is already answering it.
+    """
+    from semlayer import agent_query
+
+    if question.strip():
+        session.pending_question = None
+    return agent_query.context_for_question(doc, question)
+
+
+def agent_run(doc: dict, sql: str, session: Session) -> dict:
+    """`run_sql`, under the session's own connection and dialect.
+
+    The session owns the connection and decides whether it is free, so the
+    refusal while an inference is running lives there rather than here.
+    """
+    try:
+        return session.run_query(doc, sql)
+    except Exception as e:
+        return {"ran": False, "sql": sql,
+                "error": f"{type(e).__name__}: {str(e)[:300]}",
+                "next": ("No warehouse connection is open for this session. "
+                         "Call status: if a layer was loaded from a file, the "
+                         "connection it names may not be reachable from here, "
+                         "and the user has to say how to reach it.")}
+
+
 def build_server(layer: Session | dict):
     """Wire the pure query functions above as MCP tools on a FastMCP server.
 
@@ -480,6 +600,7 @@ def build_server(layer: Session | dict):
     session = Session.of(layer)
     srv = _server_class()("semlayer", instructions=_INSTRUCTIONS)
     _register_session_tools(srv, session)
+    _register_answer_tools(srv, session)
 
     @srv.tool()
     def semantic_search(query: str) -> str:

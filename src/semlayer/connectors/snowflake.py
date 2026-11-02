@@ -13,7 +13,12 @@ import os
 import pathlib
 
 from semlayer.errors import SourceError
-from semlayer.source import ColumnMeta, TableMeta
+from semlayer.source import (
+    RUN_SQL_ROWS,
+    RUN_SQL_TIMEOUT_S,
+    ColumnMeta,
+    TableMeta,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -477,6 +482,40 @@ class SnowflakeSource:
             return cur.fetchall()
         finally:
             cur.close()
+
+    def query_capped(self, sql: str, limit: int = RUN_SQL_ROWS,
+                     timeout_s: float | None = RUN_SQL_TIMEOUT_S,
+                     ) -> tuple[list[str], list[tuple], bool]:
+        """`query` for an agent: named columns, capped rows, Snowflake's clock.
+
+        With None, the account's and the warehouse's own timeouts are what
+        apply, which is the user's configuration rather than ours.
+
+        `timeout_s` becomes `STATEMENT_TIMEOUT_IN_SECONDS` on the session.
+        NOT the driver's `execute(timeout=...)`, which was what this used
+        first: measured against a deliberately slow cross join on
+        2026-11-02, a `timeout=3` ran for **69 seconds** and then returned
+        normally. A limit reported in a result and not enforced is worse than
+        none, because the agent repeats it to the user. The session parameter
+        is server-enforced, needs no privilege beyond the session itself, and
+        is unset afterwards because this connection outlives the query.
+        """
+        cur = self.con.cursor()
+        try:
+            if timeout_s:
+                cur.execute("ALTER SESSION SET STATEMENT_TIMEOUT_IN_SECONDS = "
+                            f"{max(1, int(timeout_s))}")
+            cur.execute(sql)
+            columns = [d[0] for d in cur.description or []]
+            rows = cur.fetchmany(limit + 1)
+        finally:
+            if timeout_s:
+                try:
+                    cur.execute("ALTER SESSION UNSET STATEMENT_TIMEOUT_IN_SECONDS")
+                except Exception:
+                    pass        # a dead session needs no tidying
+            cur.close()
+        return columns, [tuple(r) for r in rows[:limit]], len(rows) > limit
 
     def for_worker(self):
         """Per-worker executor: the shared connection.

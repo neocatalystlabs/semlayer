@@ -9,7 +9,12 @@ from __future__ import annotations
 
 import os
 
-from semlayer.source import ColumnMeta, TableMeta
+from semlayer.source import (
+    RUN_SQL_ROWS,
+    RUN_SQL_TIMEOUT_S,
+    ColumnMeta,
+    TableMeta,
+)
 
 _EXTRA_HINT = "pip install 'semlayer[warehouses]'"
 
@@ -216,6 +221,38 @@ class BigQuerySource:
     def query(self, sql: str) -> list[tuple]:
         """Run sql and return plain row tuples."""
         return [tuple(row.values()) for row in self.client.query(sql).result()]
+
+    def query_capped(self, sql: str, limit: int = RUN_SQL_ROWS,
+                     timeout_s: float | None = RUN_SQL_TIMEOUT_S,
+                     ) -> tuple[list[str], list[tuple], bool]:
+        """`query` for an agent: named columns, capped rows, a job timeout.
+
+        With None, the project's own limits apply, which is the user's
+        configuration rather than ours.
+
+        `timeout_s` arms BOTH halves, deliberately. `job_timeout_ms` is
+        what stops the WORK, since BigQuery cancels the job and the scan and
+        the bill stop with it -- but measured against a deliberately slow
+        query it took 14s to surface a 2s limit, because the client was
+        still waiting on the API. So the wait is bounded as well, with slack
+        for the cancellation to land.
+
+        The row cap is applied by stopping the iterator, so the SQL is never
+        rewritten.
+        """
+        from google.cloud import bigquery
+        config = (bigquery.QueryJobConfig(
+            job_timeout_ms=max(1, int(timeout_s * 1000))) if timeout_s else None)
+        result = self.client.query(sql, job_config=config).result(
+            timeout=(timeout_s + 5) if timeout_s else None)
+        columns = [f.name for f in result.schema]
+        rows, truncated = [], False
+        for n, row in enumerate(result):
+            if n >= limit:
+                truncated = True
+                break
+            rows.append(tuple(row.values()))
+        return columns, rows, truncated
 
     def for_worker(self):
         """Per-worker executor: the BigQuery client is thread-safe; every worker may share it."""

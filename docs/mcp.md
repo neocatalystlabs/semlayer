@@ -11,9 +11,9 @@ do not have to read this page before it is useful.
 
 One thing worth knowing before you start: **a semantic layer is not something
 your machine has by default — it is built from your warehouse, and it takes
-minutes.** The server is useful before that happens (it finds your warehouses
-and tells your agent what to do), but until a layer exists there is nothing to
-search or query. That is the first thing `status` says.
+minutes.** The server can build it for you from inside the conversation
+(`infer`), and until it exists there is nothing to search or query. That is
+the first thing `status` says.
 
 ```bash
 semlayer mcp                       # a stdio server, layer or no layer
@@ -121,6 +121,14 @@ itself goes, in order of preference:
    call, too.
 3. **The `env` block of your MCP config.** This works, and needs a client
    restart to take effect, which is why it is third.
+4. **Pasted into the chat anyway?** It works, for this session only. The
+   value is held in memory and goes nowhere else: not to disk, not to a log,
+   not into telemetry, not into the layer or the run report, and not into the
+   cache key — `status` shows the connection with the secret replaced, which
+   is also what the cache is keyed on. Your agent is told to say three
+   things: it worked, it is gone when the server restarts, and here is the
+   durable line to add instead. Rotating a credential you pasted into a chat
+   is the careful move.
 
 `status` reports that file's path, whether it exists, and **which keys it
 currently sets** — names only, never values — so your agent can see whether
@@ -196,29 +204,57 @@ reading your data. What it does with that access:
   model provider. Statistical profiling still runs locally, and the measured
   cost to accuracy is about a point on one fixture and nothing corpus-wide.
 
-**Serving the layer does not.** The tools below read the layer document and
-nothing else. They hold no credential, open no connection, and see no rows:
-`check_sql` lints SQL without running it, and `compile_metric` hands back SQL as
-text. Something else executes it.
+**`run_sql` reads rows, and only reads them.** This page used to say the
+server never touched your warehouse; that stopped being true when `run_sql`
+landed, and here is the actual line. One read-only SELECT per call, under the
+connection the session is already using:
 
-**All of it runs on your machine.** The CLI is the whole product; we host
-nothing, store nothing, and serve nothing. Your layer is a file you own.
+- **SELECT only, decided by parsing the statement** — not by looking for
+  words. `DELETE`, `UPDATE`, `INSERT`, `MERGE`, `CREATE`, `DROP`, `GRANT`,
+  `COPY` and `SELECT ... INTO` are refused, and so is a second statement
+  smuggled in after a semicolon. A column named `deleted_at` or a literal
+  containing `delete from` is not a write, and a parse knows the difference.
+- **`check_sql` runs first, and an error means the SQL is not executed.** A
+  query that sums cancelled orders runs perfectly well; "it ran" was never
+  the standard. Warnings come back with the rows instead of blocking.
+- **Your SQL is never rewritten.** No `LIMIT` is appended and no filter is
+  injected. A required filter is reported; applying it is the agent's job, so
+  what ran is what you can be shown.
+- **Capped rows and a ten-minute time limit**, both stated in the result
+  along with whether rows were truncated. Ten minutes because a real
+  analytical query takes minutes — the 30 seconds this started at refused
+  honest work — while a query with no limit holds the session's one
+  warehouse connection for as long as your warehouse will run it. It is a
+  default, not a rule: a caller can turn it off and let your own resource
+  monitors and account timeouts be the only limits. Nothing is persisted
+  anywhere.
+- **Refused while an inference is running.** One warehouse connection is not
+  shared between a profiling run and an agent's query — DuckDB forbids two
+  threads on one connection outright, and on every engine the two would
+  interleave. The inference waits for a query; a query does not wait for an
+  inference, because a query is seconds and the agent can simply ask again.
 
-### So how does a query actually run?
+**The document tools still touch nothing.** `semantic_search`, `table_detail`,
+`check_sql`, `compile_metric` and the rest read the layer file and nothing
+else: `check_sql` lints without running, `compile_metric` hands back SQL as
+text.
 
-**semlayer is the map, not the road.** It knows what your tables mean, which
-filters are mandatory, and how the query should be written. In practice you
-attach two things to the same assistant:
+**All of it runs on your machine.** We host nothing and store nothing. Your
+layer is a file you own, your credentials never leave, and the rows never pass
+through us — the server is a local process your client started.
 
-| | what it does | what it needs |
-|---|---|---|
-| **semlayer MCP** | meaning, rules, correct SQL | the layer file |
-| **your warehouse's MCP server** (or SQL client, or BI tool) | executes the SQL | your warehouse credentials |
+### Do I still need my warehouse's MCP server?
 
-The execution path is one you already control and already govern. Your
-credentials, your permissions, your warehouse still deciding who may see what —
-we record access semantics, we never enforce them, and your data never passes
-through us.
+Not for this. semlayer used to be the map and not the road: it knew what your
+tables meant and something else had to run the SQL. `run_sql` closes that, so
+one server answers a question end to end.
+
+Attach your warehouse's own MCP server anyway if you want writes, DDL, or
+queries bigger than a chat turn should carry. Those are deliberately not here.
+
+If you use the hosted control plane later, note the difference: it compiles
+and serves the model, and it never executes. Execution is local, under your
+credentials, or it does not happen.
 
 ## What your agent can ask
 
@@ -235,6 +271,10 @@ through us.
 | `route_intent` | *which* table to use for an intent, when several could answer |
 | `check_sql` | lint SQL against the layer: missing filters, fan-out, deprecated tables |
 | `compile_metric` | generate correct SQL for a metric, with the filters already applied |
+| `infer` | **build the layer**, from inside the conversation. Reads your warehouse; ask first |
+| `cancel_infer` | stop a run that is going |
+| `context_for_question` | **start every question here.** The part of the layer that bears on it, plus the claims underneath that nobody has confirmed |
+| `run_sql` | run one read-only SELECT and return the rows, with the assumptions the answer rests on |
 
 With no layer loaded, every tool answers with `status` instead of an error, so an
 agent that starts asking about tables before anything has been inferred is told
@@ -265,19 +305,67 @@ are written as attempts to leak one.
 
 ## There is no layer yet — now what?
 
-Build one. It takes minutes and it runs on your machine. In this build that is
-a terminal command — inference from inside the session is the next piece of
-work, and until it lands the server says so plainly rather than pretending:
+Ask for one. Your agent calls `infer` with the connection and your question,
+and no terminal is involved:
 
-```bash
-semlayer infer duckdb:warehouse.duckdb -o layer.yaml   # or postgres, bigquery, snowflake
+> **you:** how many customers do we have in each segment?
+> **agent:** there's no semantic layer for this machine yet — I can see a
+> DuckDB file at `warehouse.duckdb`. Shall I model it? It reads the warehouse
+> and takes a few minutes on a real one.
+> **you:** go ahead
+> **agent:** *(calls `infer`, waits, gets `ready` back)* 36 tables, 198
+> columns. Customers by segment: SMB 521, CON 495, ENT 484. One assumption:
+> `seg_cd`'s meanings are the engine's guess…
+
+What to know about it:
+
+- **It reads your warehouse and it costs money.** Metadata and sample values,
+  under the connection you gave, plus your own LLM key for the descriptions.
+  Your agent is told to ask before starting.
+- **A small warehouse finishes inside the call.** A DuckDB file with
+  `use_llm: false` takes seconds, so discovery, inference and the answer
+  happen in one turn.
+- **A real one does not, and nothing will wake your agent when it ends.** MCP
+  has no way to push. The call returns `inferring`, and the next `status` —
+  the next time you say anything — reports it and reminds the agent of the
+  question you asked. That is why `infer` takes your question.
+- **`scope`** limits it to named schemas, which is how a big warehouse
+  finishes quickly.
+- **The layer is cached** under `$SEMLAYER_HOME/layers/`, so tomorrow's chat
+  finds it. `save_layer` — putting a copy in your repo for your team — is the
+  next piece of work; for now `semlayer review` and the CLI read the cached
+  file by path.
+
+The CLI still does all of this if you prefer a terminal:
+`semlayer infer duckdb:warehouse.duckdb -o layer.yaml`. See
+[quickstart.md](quickstart.md) for the per-warehouse credentials and
+[warehouses.md](warehouses.md) for what each connector reads.
+
+## Asking a question
+
+Once a layer is loaded the order is fixed, and it is the order the benchmark
+measured:
+
+1. **`context_for_question`** — the tables that bear on the question, with
+   their columns, keys, required filters, metrics and routing knowledge, plus
+   `open_questions`: the claims underneath that nobody has confirmed.
+2. **`check_sql`** on the SQL the agent writes.
+3. **`run_sql`**, which lints again and refuses to execute anything with an
+   error in it, and gives up after ten minutes.
+4. **The answer first, assumptions under it.** Every result carries
+   `assumptions` — each unconfirmed claim the answer rested on, with what the
+   engine saw and whether accepting it would change any behaviour. Your agent
+   should render them and offer to record a correction in one word.
+
+```
+Customers by segment: SMB 521, CON 495, ENT 484.
+
+Assumed: seg_cd's values mean consumer / small-medium business / enterprise
+(the engine guessed; nobody has confirmed it). Say "yes" and I'll record it.
 ```
 
-Then restart the server, or leave the path off entirely: once the layer is the
-only one on the machine, the server finds it on start. `status` will have named
-the connections it could see, so your agent can tell you exactly which command
-to run. See [quickstart.md](quickstart.md) for the per-warehouse credentials
-and [warehouses.md](warehouses.md) for what each connector reads.
+Recording that verdict from the chat is the next piece of work; today it is
+`semlayer review <layer> --list`.
 
 ## Reading the numbers
 
@@ -299,6 +387,14 @@ Which table to use is a different question, answered by two other fields:
 `status` reports `undecided_review_items`: how many inferred claims nobody has
 looked at yet. A high number is not a warning, it is a to-do list —
 `semlayer review layer.yaml --list`.
+
+Those same claims come back attached to answers, which is the useful form:
+`context_for_question` returns the ones that bear on your question, and
+`run_sql` returns the ones the answer actually rested on. Each says whether
+accepting it would **change behaviour** — a decode guess that a metric's
+filter is written against is a different kind of uncertainty from a type
+label nobody has blessed — so the caveat you get is about this answer rather
+than about the layer in general.
 
 ## Keeping it current
 

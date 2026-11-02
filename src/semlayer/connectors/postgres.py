@@ -20,6 +20,8 @@ import logging
 import os
 
 from semlayer.source import (
+    RUN_SQL_ROWS,
+    RUN_SQL_TIMEOUT_S,
     ColumnMeta,
     ColumnStatistic,
     DeclaredConstraints,
@@ -198,6 +200,37 @@ class PostgresSource:
     def query(self, sql: str) -> list[tuple]:
         """Run read-only SQL and return rows."""
         return list(self.con.execute(sql).fetchall())
+
+    def query_capped(self, sql: str, limit: int = RUN_SQL_ROWS,
+                     timeout_s: float | None = RUN_SQL_TIMEOUT_S,
+                     ) -> tuple[list[str], list[tuple], bool]:
+        """`query` for an agent: named columns, capped rows, a server-side clock.
+
+        `timeout_s` becomes `statement_timeout`, which PostgreSQL enforces
+        itself -- a query that hangs on the server is cancelled there rather
+        than leaving us on a socket. It is a session setting any role may
+        change, so it needs no privilege the reader does not have, and it is
+        reset afterwards because the connection outlives the query.
+
+        With None -- the default -- the setting is not touched at all, so
+        whatever the user's own server or role has configured still applies.
+        """
+        cur = self.con.cursor()
+        try:
+            if timeout_s:
+                cur.execute("SET statement_timeout = "
+                            f"{max(1, int(timeout_s * 1000))}")
+            cur.execute(sql)
+            columns = [d.name for d in cur.description or []]
+            rows = cur.fetchmany(limit + 1)
+        finally:
+            if timeout_s:
+                try:
+                    cur.execute("SET statement_timeout = DEFAULT")
+                except Exception:
+                    pass        # a dead session needs no reset
+            cur.close()
+        return columns, [tuple(r) for r in rows[:limit]], len(rows) > limit
 
     def list_tables(self) -> list[TableMeta]:
         """Enumerate tables and columns via information_schema.

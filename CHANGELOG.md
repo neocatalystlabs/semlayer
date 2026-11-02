@@ -2,6 +2,81 @@
 
 ## Unreleased
 
+### Build the layer, and answer the question, without leaving the chat
+
+Slice 1 made the MCP server useful with no layer. It still could not make
+one, so the honest `next` ended "Inference is not available in this build."
+It is now, and so is running the SQL — one server answers a question end to
+end.
+
+**`infer`** builds the layer from inside the conversation: the connection,
+the user's question, an optional `scope` of schemas, and `wait_seconds`. The
+wait is the design. A DuckDB file with `use_llm: false` finishes in seconds,
+so discovery, inference and the answer happen in ONE turn with no polling; a
+real warehouse does not, so the call returns `inferring` and the next
+`status` reports it. Nothing wakes your agent when a long run ends — MCP
+cannot push — and `next` says so rather than implying otherwise. The question
+you asked is kept on the session, so when the layer is ready `status` reminds
+the agent what it was for. `cancel_infer` stops a run at its next stage
+boundary. The layer lands in the cache, where tomorrow's chat finds it.
+
+**`context_for_question`** is where every question now starts: the tables
+that bear on it with their columns, keys, required filters, metrics and
+routing knowledge — the same rendering the published benchmark measured —
+plus `open_questions`, the claims underneath that nobody has confirmed.
+
+**`run_sql`** runs one read-only SELECT against the session's warehouse:
+
+- SELECT only, decided by PARSING the statement. `DELETE`, `UPDATE`,
+  `INSERT`, `MERGE`, `CREATE`, `DROP`, `TRUNCATE`, `GRANT`, `COPY`,
+  `SELECT ... INTO` and a second statement after a semicolon are all refused.
+  A column called `deleted_at`, or a literal containing `delete from`, is not
+  a write — and a parse knows that where a word search does not.
+- `check_sql` runs first and an **error means it is not executed**. A query
+  that sums cancelled orders runs perfectly well; "it ran" was never the
+  standard. Warnings come back with the rows instead of blocking.
+- Your SQL is never rewritten: no `LIMIT` appended, no filter injected. A
+  required filter is reported and left undone, so what ran is what you can be
+  shown.
+- Capped rows and a **ten-minute** time limit, both reported along with
+  whether the result was truncated. The cap is about what fits in a model's
+  context; the clock is chosen from both ends — a real analytical query
+  takes minutes, so the 30 seconds this started at refused honest work,
+  while no limit at all holds the session's one warehouse connection for as
+  long as the warehouse will run the query. It is a default rather than a
+  rule, and turning it off leaves your own resource monitors as the only
+  limits. Enforced by the engine itself: DuckDB's interrupt, PostgreSQL's
+  `statement_timeout`, BigQuery's `job_timeout_ms` plus a bounded client
+  wait, Snowflake's `STATEMENT_TIMEOUT_IN_SECONDS`.
+- Refused while an inference is running. One warehouse connection is not
+  shared between a profiling run and an agent's query: DuckDB forbids two
+  threads on one connection, and on every engine the two would interleave.
+  The inference waits for a query; a query does not wait for an inference.
+- Nothing is persisted.
+- Every result carries **`assumptions`**: the unconfirmed claims the answer
+  rested on, each with what the engine saw and whether accepting it would
+  change behaviour. Answer first, assumptions under it.
+
+**A credential pasted into the chat now works** — for that session only. The
+agent is still told never to ask for one, but when it happens anyway the
+value is held in memory and goes nowhere else: not to disk, not to a log, not
+into telemetry, the layer, the run report or the cache key. `status` shows
+the connection with the secret replaced, and that redacted form is what the
+cache is keyed on, so the same warehouse is one cache entry whether or not
+the password was in the string.
+
+`docs/mcp.md` corrects its own promise again, and this time in the other
+direction: the page said the serving tools never touch your warehouse, which
+stopped being true when `run_sql` landed. The real line is now written out —
+inference reads metadata and samples, `run_sql` reads rows and only rows, the
+document tools touch nothing, and if you use the hosted control plane later
+it compiles and never executes.
+
+Telemetry: an inference started by an agent writes its own event, the same
+shape as a CLI one, with `via: mcp` — the measurement the whole MCP-first
+phase exists for. The four new tools join the `tools` whitelist. No new
+fields and no schema bump.
+
 ### `semlayer mcp` starts with nothing and tells your agent what to do
 
 The server used to demand a layer path, so the only order that worked was
