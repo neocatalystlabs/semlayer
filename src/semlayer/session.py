@@ -623,6 +623,23 @@ def _last_used_path() -> Path:
     return home() / "last-used"
 
 
+def _git_user_name(near: Path) -> str | None:
+    """`git config user.name` where the layer lives, or None.
+
+    The same lookup the CLI's review command does, so a verdict recorded
+    from a chat is signed with the same name as one recorded from a
+    terminal.
+    """
+    import subprocess
+    try:
+        r = subprocess.run(["git", "config", "user.name"],
+                           cwd=Path(near).resolve().parent,
+                           capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return (r.stdout.strip() or None) if r.returncode == 0 else None
+
+
 def _mark_used(ref: str) -> None:
     """Remember `ref` as the layer most recently loaded here.
 
@@ -1202,6 +1219,12 @@ class Session:
         # never read as a precondition.
         self.answered_once = False
         self.told_about_key = False
+        # Who is signing verdicts this session. Git's user.name where the
+        # layer lives, or what the person said when asked once -- never
+        # invented, and never the MCP client's name: "claude-desktop" is not
+        # a person and a file that says it decided something is a file that
+        # lies.
+        self.person: str | None = None
 
     @classmethod
     def of(cls, layer: Session | dict) -> Session:
@@ -1642,6 +1665,129 @@ class Session:
                 f"written descriptions. A model key in {_tilde(env_path())} "
                 "adds them next time it is built. Do not make it sound "
                 "required; everything here works without one.")
+
+    def who_decides(self, by: str | None = None) -> str | None:
+        """The name to sign a person's verdict with, or None if nobody knows.
+
+        `by` wins -- the agent asked and was told. Otherwise git's
+        `user.name` where the layer lives, which is the same answer the CLI
+        gives, so a verdict recorded from a chat and one recorded from a
+        terminal are signed identically. Remembered for the session once
+        found, because asking twice is the kind of thing that stops people
+        reviewing anything.
+        """
+        if by and by.strip():
+            self.person = by.strip()
+        if self.person is None and self.layer_path is not None:
+            self.person = _git_user_name(self.layer_path)
+        return self.person
+
+    def review_answer(self, key: str, verdict: str, decided_by: str,
+                      by: str | None = None, exclude: list[str] | None = None,
+                      note: str | None = None) -> dict:
+        """Record a verdict, and write it where the next session will find it.
+
+        In effect immediately, which is the whole point: the document in
+        memory is the one the tools answer from, so the claim stops showing
+        up as an assumption on the very next answer. Written through to the
+        file as well, because a verdict that dies with the process is worse
+        than no verdict -- the user believes it was recorded.
+        """
+        from semlayer import agent_review
+
+        if self.doc is None:
+            return self.status()
+        name = by
+        if decided_by == "person":
+            name = self.who_decides(by)
+        out = agent_review.answer(self.doc, key, verdict, decided_by,
+                                  by=name, exclude=exclude, note=note)
+        if (out.get("recorded") or out.get("note_recorded")) and self.layer_path:
+            try:
+                save_document(self.layer_path, self.doc)
+                out["written_to"] = str(self.layer_path)
+            except OSError as e:
+                # The verdict IS in effect for this session; say plainly that
+                # it will not survive, rather than implying it was saved.
+                out["warning"] = (f"recorded in this session but NOT saved: "
+                                  f"{e}. Tell the user it will be lost when "
+                                  "this server restarts.")
+        return out
+
+    def save_layer(self, path: str) -> dict:
+        """Write the layer where a team can see it, and keep writing there.
+
+        The cache is per-machine and keyed by connection; a copy in the
+        repository is the one a colleague reads and reviews. From here on
+        this session's verdicts land in that file, because the alternative
+        is two copies drifting with no way to tell which is current.
+        """
+        if self.doc is None:
+            return self.status()
+        target = Path(path).expanduser()
+        try:
+            save_document(target, self.doc)
+        except OSError as e:
+            return {"saved": False, "error": f"{type(e).__name__}: {e}",
+                    "next": ("Tell the user the path could not be written and "
+                             "ask where it should go.")}
+        previous, self.layer_path = self.layer_path, target
+        _mark_used(str(target))
+        return {
+            "saved": True,
+            "path": str(target),
+            "was": str(previous) if previous else None,
+            "tables": len((self.doc.get("semantic_layer") or {}).get("tables") or []),
+            "next": ("Tell the user where it is and that their verdicts now "
+                     "land there. Suggest committing it: a teammate who pulls "
+                     "it gets every decision made so far."),
+        }
+
+    def export_layer(self, target: str, path: str) -> dict:
+        """Write a snapshot of the layer in somebody else's format.
+
+        On request only, and a SNAPSHOT: nothing keeps it in step with the
+        layer afterwards, and nothing reads it back. An agent that answered
+        from an export would be answering from a lossy copy of a file it
+        already has -- so the export is for their other tools, and the
+        layer stays the source of truth.
+
+        Lossy on purpose, and it says where: `losses` lists what the target
+        format cannot carry. Confidence, provenance and lifecycle are the
+        usual casualties, which is most of what makes this layer honest.
+        """
+        if self.doc is None:
+            return self.status()
+        if target != "dbt":
+            return {"exported": False,
+                    "error": f"no exporter for {target!r}",
+                    "available": ["dbt"],
+                    "next": ("Tell the user which formats exist. LookML and "
+                             "the Ossie interchange format are planned, not "
+                             "built.")}
+        from semlayer.export.dbt import export_dbt
+
+        payload, losses = export_dbt(self.doc)
+        out_path = Path(path).expanduser()
+        try:
+            import yaml
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(yaml.safe_dump(payload, sort_keys=False, width=100))
+        except OSError as e:
+            return {"exported": False, "error": f"{type(e).__name__}: {e}",
+                    "next": "Ask the user where the file should go."}
+        return {
+            "exported": True,
+            "target": target,
+            "path": str(out_path),
+            "semantic_models": len(payload.get("semantic_models") or []),
+            "metrics": len(payload.get("metrics") or []),
+            "losses": losses,
+            "next": ("Tell the user where it is, and that it is a snapshot: "
+                     "nothing updates it when the layer changes, and you will "
+                     "keep answering from the layer rather than from this. If "
+                     "`losses` is non-empty, say what the format dropped."),
+        }
 
     def cancel_infer(self) -> dict:
         """Ask a running inference to stop, and say what happened.
