@@ -5,9 +5,13 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for testing! Please attach `<your-output>.report.json`
-        (written next to your semantic layer file — it contains only
-        timings/counts/spend, no schema content).
+        Thanks for testing! **This issue will be public and permanent**, so
+        please don't attach `<your-output>.report.json` or paste schema,
+        table or role names. The report records the tables and schemas you
+        scoped the run to, so it is yours to keep — if you want us to see
+        it, email hello@semlayer.dev instead.
+
+        The numbers below are all we need.
   - type: dropdown
     id: warehouse
     attributes:

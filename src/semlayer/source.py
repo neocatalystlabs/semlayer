@@ -79,6 +79,55 @@ def row_cap(source, n: int) -> str:
     return getattr(source, "row_cap_clause", lambda k: f" LIMIT {k}")(n)
 
 
+def qcol(source, name: str) -> str:
+    """Quote one identifier the way THIS source quotes identifiers.
+
+    Use this for every column or alias that goes into generated SQL. The
+    alternative -- an f-string with literal double quotes -- is what PROFILE
+    avoided and what ENRICH, LINK and probe did not, and on BigQuery it is
+    not a quoting style but a different kind of expression: double quotes
+    there delimit a STRING, so `sum("amount")` asks BigQuery to add up the
+    text "amount" and it answers
+
+        No matching signature for aggregate function SUM
+          Argument 1: Unable to coerce type STRING to expected type FLOAT64
+
+    which is why `semlayer infer` could profile a BigQuery project and never
+    finish enriching one. DuckDB and Postgres hid it because double quotes
+    genuinely are their identifier quote; Snowflake would have failed
+    differently, since its quoted identifiers are case-SENSITIVE while
+    unquoted names fold to upper case, so `"order_total"` does not match a
+    stored ORDER_TOTAL.
+
+    The fallback doubles any embedded quote, which the f-strings it replaces
+    did not: a column actually named `we"ird` produced a syntax error that
+    blamed the SQL rather than the name.
+    """
+    quoter = getattr(source, "quote_ident", None)
+    if quoter is not None:
+        return quoter(name)
+    return '"' + name.replace('"', '""') + '"'
+
+
+def qtable(source, schema: str, table: str) -> str:
+    """Qualify one table the way THIS source qualifies tables.
+
+    The same job `qcol` does, for the other half of a FROM clause. Most
+    callers already reach for `source.qualify`; this exists so a caller does
+    not have to carry its own fallback lambda, and so the fallback is written
+    once with the quote-doubling the inline ones omit.
+
+    SnowflakeSource defines no `qualify`, so the fallback is live rather than
+    decorative: it quotes the names exactly as `list_tables` reported them,
+    which is what Snowflake needs, because a quoted identifier there is
+    case-sensitive and unquoted names are stored folded to upper case.
+    """
+    qualifier = getattr(source, "qualify", None)
+    if qualifier is not None:
+        return qualifier(schema, table)
+    return f"{qcol(source, schema)}.{qcol(source, table)}"
+
+
 @runtime_checkable
 class CatalogProvider(Protocol):
     """Native catalog descriptions: the cheapest prior knowledge there is.

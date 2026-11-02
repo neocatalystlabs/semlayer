@@ -41,7 +41,7 @@ from semlayer.lineage import naming_layer
 # tier 2 sampled ONE table and reported "0% share a key set" from it. A
 # measurement from a sample of one is not a measurement.
 from semlayer.profile.typing_rules import is_keyish as _keyish
-from semlayer.source import row_cap
+from semlayer.source import qcol, qtable, row_cap
 
 # Grades are about what the engine can do here, not about the warehouse.
 GRADES = ("strong", "fair", "weak")
@@ -379,13 +379,13 @@ def tier2(src, p: Probe, table_sample: int = TIER2_TABLE_SAMPLE) -> Probe:
             continue
         col = keyish[0].name
         try:
+            qc, qt = qcol(src, col), qtable(src, t.schema, t.name)
             counts = src.query(
-                f'SELECT COUNT("{col}"), COUNT(DISTINCT "{col}") '
-                f'FROM "{t.schema}"."{t.name}"'
+                f'SELECT COUNT({qc}), COUNT(DISTINCT {qc}) FROM {qt}'
             )
             rows = src.query(
-                f'SELECT DISTINCT "{col}" FROM "{t.schema}"."{t.name}" '
-                f"WHERE \"{col}\" IS NOT NULL "
+                f'SELECT DISTINCT {qc} FROM {qt} '
+                f"WHERE {qc} IS NOT NULL "
                 f"ORDER BY 1{row_cap(src, TIER2_VALUE_SAMPLE)}"
             )
         except Exception:

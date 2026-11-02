@@ -21,7 +21,7 @@ from collections import OrderedDict, defaultdict
 from dataclasses import dataclass
 from typing import Any
 
-from semlayer.source import row_cap
+from semlayer.source import qcol, row_cap
 
 _LEGACY_RE = re.compile(r"(_legacy|_old|_bak|_deprecated|_archive)$")
 _AGG_NAME_RE = re.compile(r"(^|_)(agg|summary|rollup)($|_)|^(dly|mth|wkly)_")
@@ -155,8 +155,16 @@ def _upgrade_enum_decodes(source, sl, stats) -> None:
                 continue
             ts = stats[ptn].table
             q = getattr(source, "qualify", lambda s, n: f'"{s}"."{n}"')(ts.schema, ts.name)
+            # ORDER BY because this is a capped SELECT whose rows go into the
+            # document. Without it DuckDB happened to return insertion order
+            # and BigQuery returned its own, so the same warehouse produced
+            # the same 50 decodes in a different sequence -- a spurious diff
+            # on every re-inference, in a file that lands as a PR in the
+            # customer's repo. Past 100 rows an unordered LIMIT picks a
+            # different SUBSET each run, which is the same bug with teeth.
             pairs = source.query(
-                f'SELECT "{pcn}", "{label_cols[0]}" FROM {q}{row_cap(source, 100)}')
+                f'SELECT {qcol(source, pcn)}, {qcol(source, label_cols[0])} '
+                f'FROM {q} ORDER BY 1{row_cap(source, 100)}')
             c["enum_values"] = [
                 {"value": v, "meaning": str(m), "decode_source": "dictionary_join"}
                 for v, m in pairs if v is not None
@@ -280,7 +288,8 @@ def _fd_holds(source, tq: str, where: str, coarse: str, fine: str) -> tuple[bool
     # portability audit the same day.
     row = source.query(
         f'SELECT sum(CASE WHEN n > 1 THEN 1 ELSE 0 END), count(*) FROM '
-        f'(SELECT "{fine}", count(DISTINCT "{coarse}") n FROM {tq}{where} '
+        f'(SELECT {qcol(source, fine)}, count(DISTINCT {qcol(source, coarse)}) n '
+        f'FROM {tq}{where} '
         f'GROUP BY 1) g')[0]
     bad, tot = int(row[0] or 0), int(row[1] or 0)
     if not tot:
@@ -536,11 +545,12 @@ def _time_attribute_tag(source, tq: str, d: str, c: dict, tstats, n: int) -> str
     name = c["name"]
     quarter_shaped = 2 <= cs.n_distinct <= 4
     month_shaped = 12 <= cs.n_distinct <= 13
+    qn, qd = qcol(source, name), qcol(source, d)
     row = source.query(
-        f'SELECT sum(CASE WHEN "{name}" = EXTRACT(QUARTER FROM "{d}") THEN 1 ELSE 0 END),'
-        f' sum(CASE WHEN "{name}" = EXTRACT(MONTH FROM "{d}") THEN 1 ELSE 0 END),'
-        f' sum(CASE WHEN "{name}" = EXTRACT(YEAR FROM "{d}") THEN 1 ELSE 0 END),'
-        f' max(abs("{name}" - EXTRACT(YEAR FROM "{d}"))), min("{name}"), max("{name}")'
+        f'SELECT sum(CASE WHEN {qn} = EXTRACT(QUARTER FROM {qd}) THEN 1 ELSE 0 END),'
+        f' sum(CASE WHEN {qn} = EXTRACT(MONTH FROM {qd}) THEN 1 ELSE 0 END),'
+        f' sum(CASE WHEN {qn} = EXTRACT(YEAR FROM {qd}) THEN 1 ELSE 0 END),'
+        f' max(abs({qn} - EXTRACT(YEAR FROM {qd}))), min({qn}), max({qn})'
         f" FROM {tq}")[0]
     q_match, m_match, y_match, y_dev, lo, hi = (float(x or 0) for x in row)
     if quarter_shaped and 1 <= lo and hi <= 4:
@@ -977,7 +987,7 @@ def _grain_covers(source, qualify, stats, t: dict, f: dict, gmap: dict) -> bool:
     if not a_rows:
         return False
     f_ts = stats[f["name"]].table
-    cols = ", ".join(f'"{c}"' for c in gmap.values())
+    cols = ", ".join(qcol(source, c) for c in gmap.values())
     try:
         distinct = source.query(
             f"SELECT count(*) FROM (SELECT DISTINCT {cols} "
@@ -1045,7 +1055,8 @@ def _close(a: float, f: float) -> bool:
 def _group_sums(source, table_q: str, key_col: str, m_col: str,
                 filter_sql: str = "") -> dict | None:
     w = f" WHERE {filter_sql}" if filter_sql else ""
-    q = (f'SELECT "{key_col}", round(sum("{m_col}"),2) FROM {table_q}{w} '
+    q = (f'SELECT {qcol(source, key_col)}, round(sum({qcol(source, m_col)}),2) '
+         f'FROM {table_q}{w} '
          f"GROUP BY 1{row_cap(source, _MAX_GROUPS)}")
     rows = source.query(q)
     if len(rows) >= _MAX_GROUPS:
@@ -1338,8 +1349,9 @@ def _child_measures_reconcile(source, qualify, stats, child: dict, parent: dict,
         if not sums:
             continue
         for pm in p_meas:
-            rows = source.query(f'SELECT "{pk}", round("{pm}", 2) FROM {pq}'
-                                f'{row_cap(source, _MAX_GROUPS)}')
+            rows = source.query(
+                f'SELECT {qcol(source, pk)}, round({qcol(source, pm)}, 2) FROM {pq}'
+                f'{row_cap(source, _MAX_GROUPS)}')
             pvals = {k: float(v) for k, v in rows if k is not None and v is not None}
             common = [k for k in sums if k in pvals]
             if len(common) < 20:

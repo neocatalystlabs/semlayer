@@ -70,3 +70,54 @@ def test_profile_fan_trap_on_bigquery_meets_floor(reader):
     print(f"\n[bigquery:fan_trap] type_acc={s.type_accuracy:.3f} role_acc={s.role_accuracy:.3f} pk_r={s.pk_recall:.3f}")
     assert s.type_accuracy >= 0.85
     assert s.pk_recall >= 0.99
+
+
+def test_the_whole_deterministic_pipeline_runs_on_bigquery(reader):
+    """PROFILE then LINK then ENRICH, which is what the CLI actually does.
+
+    This is the test whose absence let `semlayer infer` ship broken against
+    BigQuery for as long as the connector has existed. Every other test in
+    this file stops after PROFILE -- and PROFILE was the one stage that
+    already quoted identifiers through the source, so it was the one stage
+    that worked. LINK, ENRICH and probe built their SQL with literal double
+    quotes, which on BigQuery delimit a STRING rather than an identifier, so
+    `sum("amount")` asked BigQuery to total the text "amount":
+
+        No matching signature for aggregate function SUM
+          Argument 1: Unable to coerce type STRING to expected type FLOAT64
+
+    No stub can catch that. DuckDB and Postgres accept the broken form
+    because double quotes really are their identifier quote, so the only
+    thing that fails is a real BigQuery, and the only thing that reaches a
+    real BigQuery is this file.
+
+    Deterministic (`llm=None`), so it costs nothing beyond the queries and
+    can run on every nightly. It asserts the pipeline COMPLETES and the
+    document validates; the accuracy floors stay in the test above.
+    """
+    from semlayer.pipeline import InferOptions, infer_with_report
+    from semlayer.validate import validate_document
+
+    tables = [t for t in reader.list_tables() if t.schema == "fan_trap"]
+    if not tables:
+        pytest.skip("fan_trap not mirrored yet")
+
+    doc, report = infer_with_report(
+        reader, llm=None, options=InferOptions(schema={"fan_trap"}))
+
+    assert validate_document(doc).ok
+    assert set(report["stages"]) == {"profile", "link", "enrich"}, (
+        f"a stage did not run: {sorted(report['stages'])}")
+    assert report["counts"]["tables"] == 4
+
+    sl = doc["semantic_layer"]
+    orders = next(t for t in sl["tables"] if t["name"].endswith("orders"))
+    cid = next(c for c in orders["columns"] if c["name"] == "customer_id")
+    assert cid.get("foreign_key"), "orders.customer_id should resolve to customers"
+
+    # The enum decode reads rows out of the parent table under a row cap, so
+    # it is both a LINK result and an ENRICH query having succeeded. Ordered,
+    # because an uncapped-but-unordered LIMIT returned the same 50 decodes in
+    # a different sequence on each warehouse and churned the diff.
+    values = [e["value"] for e in cid.get("enum_values") or []]
+    assert values == sorted(values), "capped decode must come back ordered"

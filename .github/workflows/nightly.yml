@@ -3,14 +3,15 @@ name: Nightly (live)
 # Live tier: real warehouse connectors + live LLM sanity. Jobs skip cleanly
 # when the secrets are absent, so forks stay green.
 #
-# THE BIGQUERY TIER IS CURRENTLY SKIPPING HERE, AND HAS BEEN ALL ALONG.
-# tests/test_bigquery_live.py skips unless GOOGLE_APPLICATION_CREDENTIALS_READER
-# names a key file, and nothing below sets it or writes one -- only GCP_PROJECT
-# is passed. The tier passes locally against the real project, so the gap is
-# the wiring, not the tests. To close it, add the reader key JSON as a repo
-# secret and write it to a file in a step before pytest (or set up workload
-# identity federation and have the test accept ADC). Until then `-rs` makes
-# the skip say so in the log rather than reading as a pass.
+# The BigQuery tier skipped here for months and read as a pass: the tests
+# want GOOGLE_APPLICATION_CREDENTIALS_READER to name a key file, nothing set
+# it, and `-q` prints "3 skipped" next to a green tick. GCP_READER_KEY now
+# carries the reader key and the step below materialises it, so the tier
+# actually runs; `-rs` stays so that a future skip says why instead of
+# hiding again.
+#
+# Snowflake live tests are still not run here -- the project's trial has
+# ended. See CONTRIBUTING.md to run them against your own account.
 #
 # Snowflake live tests (tests/test_snowflake_live.py) are not run in CI —
 # the project does not maintain a Snowflake account. Run them against your
@@ -38,6 +39,30 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -e ".[dev,warehouses]"
+      # Written to RUNNER_TEMP, never the workspace: a credential inside the
+      # checkout can leave in an artifact upload or a stray commit. The step
+      # is a no-op without the secret, so forks and PRs stay green and the
+      # tier simply skips as before.
+      # The emptiness test is in the shell rather than a step-level `if`,
+      # because the `secrets` context is not dependably available to `if` and
+      # a condition that silently evaluates false would put us back where we
+      # started: a tier skipping under a green tick.
+      - name: Materialise the BigQuery reader key
+        env:
+          GCP_READER_KEY: ${{ secrets.GCP_READER_KEY }}
+        run: |
+          if [ -z "$GCP_READER_KEY" ]; then
+            echo "::notice::no GCP_READER_KEY secret -- the BigQuery tier will skip"
+            exit 0
+          fi
+          key="$RUNNER_TEMP/bq-reader.json"
+          printf '%s' "$GCP_READER_KEY" > "$key"
+          chmod 600 "$key"
+          # Fail loudly on a truncated or mis-pasted secret. Without this the
+          # tests would report a credential error, which reads like a product
+          # bug rather than a bad secret.
+          python -c "import json,sys; d=json.load(open(sys.argv[1])); assert d.get('type')=='service_account', 'not a service-account key'" "$key"
+          echo "GOOGLE_APPLICATION_CREDENTIALS_READER=$key" >> "$GITHUB_ENV"
       - name: Live warehouse tier (skips without secrets)
         env:
           GCP_PROJECT: ${{ secrets.GCP_PROJECT }}

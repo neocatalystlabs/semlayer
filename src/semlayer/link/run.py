@@ -27,6 +27,7 @@ from semlayer.link.candidates import (
 )
 from semlayer.link.table_type import classify_table
 from semlayer.profile.typing_rules import normalise_name
+from semlayer.source import qcol
 
 logger = logging.getLogger(__name__)
 
@@ -503,7 +504,7 @@ def _composite_pk_candidates(t: dict, ts) -> list[str]:
 
 def _is_unique_tuple(source, tq: str, cols: tuple[str, ...], rows: int) -> bool:
     """Is this column tuple jointly unique over every row?"""
-    sel = ", ".join(f'"{c}"' for c in cols)
+    sel = ", ".join(qcol(source, c) for c in cols)
     got = source.query(
         f"SELECT count(*) FROM (SELECT DISTINCT {sel} FROM {tq})")[0][0]
     return int(got or 0) == rows
