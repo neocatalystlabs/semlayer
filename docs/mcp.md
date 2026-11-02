@@ -325,9 +325,16 @@ What to know about it:
 - **A small warehouse finishes inside the call.** A DuckDB file with
   `use_llm: false` takes seconds, so discovery, inference and the answer
   happen in one turn.
-- **A real one does not, and nothing will wake your agent when it ends.** MCP
-  has no way to push. The call returns `inferring`, and the next `status` —
-  the next time you say anything — reports it and reminds the agent of the
+- **While the call is open you see progress.** The server streams MCP
+  progress notifications, so a client that renders them (Claude Code, Cursor)
+  shows a bar with what it is doing — "profiling table 24 of 36",
+  "corroborating foreign keys: 3 of 12", "writing descriptions" — and a
+  rough estimate once the run has shown its pace. A client that does not
+  render them loses nothing.
+- **A real one does not finish in the call, and nothing will wake your agent
+  when it ends.** MCP has no way to push. The call returns `inferring`, and
+  the next `status` — the next time you say anything — reports where it has
+  got to (`fraction`, `tables_done`, `eta_s`) and reminds the agent of the
   question you asked. That is why `infer` takes your question.
 - **`scope`** limits it to named schemas, which is how a big warehouse
   finishes quickly.
@@ -406,6 +413,14 @@ that `infer` would overwrite. The client picks up the new file on restart.
 
 **The tools do not appear.** Almost always the client cannot find `semlayer`.
 Give the absolute path to the executable.
+
+**A run looks stuck.** `status.job` carries `fraction`, what it is `doing`,
+`tables_done` of `tables_total` where tables are the unit, and `eta_s` once
+there is enough to extrapolate from. The stage shares behind the percentage
+were measured rather than assumed, and they differ by whether a model is
+running: with one, describing tables is the largest part; without one,
+finding the keys nobody declared is about three quarters of the run. An
+estimate is never offered in the first seconds, and it is always "roughly".
 
 **`status` says `no_layer` and lists nothing.** The server starts in whatever
 directory your client launches it from, which is usually not your project — so

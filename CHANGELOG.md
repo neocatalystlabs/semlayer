@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+### A progress bar on `infer`, and a server that answers while it runs
+
+Building a layer is minutes of silence, and the only thing the server could
+say about it was which stage it was in.
+
+**The four loops that take the time now report from inside themselves** —
+the tables being profiled, the inclusion queries, the model's corroboration
+of foreign keys, and the tables being described. `status.job` carries
+`fraction`, `doing` ("profiling table 24 of 36"), `tables_done` of
+`tables_total`, and `eta_s` once there is enough to extrapolate from. While
+an `infer` call is open the same numbers stream to the client as MCP
+progress notifications, so Claude Code and Cursor show a bar; a client that
+ignores them loses nothing.
+
+**The stage weights behind the percentage were measured, not assumed**, and
+there are two sets because the stages are nowhere near equal and the split
+depends on whether a model runs. With one: the live 116-table run in
+[docs/scale.md](docs/scale.md) — profile 15%, link 39%, describe 43%.
+Without one: the three built fixtures big enough for a bar to matter, where
+finding the keys nobody declared is about three quarters of the run. The
+fraction is monotonic by construction, which matters more than being exactly
+right — a bar that goes backwards reads as a bug in the thing it is
+watching. An estimate is withheld in the first seconds and the first few
+percent, and is always rounded: "roughly" is the honest word.
+
+**And `infer` no longer freezes the server.** FastMCP calls a synchronous
+tool function directly on its event loop, so the `thread.join` inside
+`infer` made the whole server unresponsive for the length of its wait —
+measured over stdio, a `status` sent one second into a run was not answered
+for 5.9 more, and the wait can be 60 seconds. `infer` is async now and waits
+without holding the loop, which is also the only way a progress notification
+could be sent at all. A `status` during a run is answered in hundredths of a
+second, and the regression test fails against the synchronous version.
+
 ### Build the layer, and answer the question, without leaving the chat
 
 Slice 1 made the MCP server useful with no layer. It still could not make
