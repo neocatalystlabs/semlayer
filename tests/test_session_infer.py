@@ -485,6 +485,37 @@ def test_the_claim_is_only_made_where_it_is_recorded(doc, answer):
     assert sess.built_without_model({"semantic_layer": doc}) is answer
 
 
+def test_a_real_resolved_hub_claims_nothing(tmp_path):
+    """Through `load_document`, which is where the bug actually lived: it
+    resolves a hub into ONE document carrying the HUB's `generated_by`, so
+    a set used to report its members as description-free while one of them
+    had been written by a model."""
+    def member(name, model, description):
+        doc = {"semantic_layer": {
+            "spec_version": "0.6.0", "name": name,
+            "warehouse": "duckdb:w.duckdb",
+            "generated_by": {"engine": "0.6.0b1", "model": model},
+            "tables": [{"name": f"{name}_t", "source": f"main.{name}_t",
+                        "description": description,
+                        "columns": [{"name": "id", "sql_type": "INTEGER"}]}]}}
+        sess.save_document(tmp_path / f"{name}.yaml", doc)
+        return {"name": name, "path": f"{name}.yaml"}
+
+    members = [member("sales", "haiku-4-5/escalation", "written by a model"),
+               member("ops", "none/heuristic", "")]
+    sess.save_document(tmp_path / "hub.yaml", {"semantic_layer": {
+        "spec_version": "0.6.0", "name": "hub",
+        "generated_by": {"engine": "0.6.0b1", "model": "none/heuristic"},
+        "members": members}})
+
+    s = sess.Session()
+    s.load(tmp_path / "hub.yaml")
+    layer = s.status()["layer"]
+    assert layer["tables"] == 2, "the hub resolved to its members' tables"
+    assert layer["model"] == "none/heuristic", "the hub's own line is unchanged"
+    assert layer["built_without_model"] is None
+
+
 def test_a_set_claims_nothing_about_its_members():
     """A stitched hub records `none/heuristic` because assembling a hub needs
     no model -- which says nothing about the member documents merged into it.
