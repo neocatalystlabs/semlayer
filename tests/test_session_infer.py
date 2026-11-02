@@ -580,3 +580,121 @@ def test_with_a_key_already_set_it_says_to_infer_again(warehouse, monkeypatch):
     out = s.run_query(s.doc, "select 1 as one")
     assert "infer` again" in out["next"]
     assert ".env" not in out["next"].split("Say once")[-1]
+
+
+# --- a verdict, and keeping it -------------------------------------------
+
+def test_a_verdict_is_written_where_the_next_session_will_find_it(warehouse):
+    """In effect immediately AND on disk: a verdict that dies with the
+    process is worse than none, because the user believes it was kept."""
+    s = sess.Session()
+    s.start_infer(warehouse, wait_seconds=60, use_llm=False)
+    from semlayer import agent_review
+    q = next(x for x in agent_review.questions(s.doc, limit=100)["questions"]
+             if not x["gates_behaviour"] and x["decidable"])
+
+    out = s.review_answer(q["key"], "accept", "agent", by="claude-code/opus")
+    assert out["recorded"] is True
+    assert out["written_to"] == str(s.layer_path)
+
+    reloaded = sess.load_document(s.layer_path)
+    assert q["key"] not in {x["key"] for x in
+                            agent_review.questions(reloaded, limit=100)["questions"]}
+
+
+def test_a_persons_name_comes_from_git_where_the_layer_lives(warehouse, monkeypatch):
+    """The same answer the CLI gives, so a verdict from a chat and one from
+    a terminal are signed identically."""
+    s = sess.Session()
+    s.start_infer(warehouse, wait_seconds=60, use_llm=False)
+    monkeypatch.setattr(sess, "_git_user_name", lambda near: "Git Person")
+    assert s.who_decides() == "Git Person"
+    from semlayer import agent_review
+    q = next(x for x in agent_review.questions(s.doc, limit=100)["questions"]
+             if x["decidable"])
+    out = s.review_answer(q["key"], "accept", "person")
+    assert out["recorded"] is True
+    assert out["by"] == "Git Person"
+
+
+def test_a_name_given_once_is_remembered(warehouse, monkeypatch):
+    monkeypatch.setattr(sess, "_git_user_name", lambda near: None)
+    s = sess.Session()
+    s.start_infer(warehouse, wait_seconds=60, use_llm=False)
+    assert s.who_decides("Raj") == "Raj"
+    assert s.who_decides() == "Raj", "asking twice is how review stops happening"
+
+
+def test_with_no_name_anywhere_it_refuses_rather_than_inventing(warehouse, monkeypatch):
+    monkeypatch.setattr(sess, "_git_user_name", lambda near: None)
+    s = sess.Session()
+    s.start_infer(warehouse, wait_seconds=60, use_llm=False)
+    from semlayer import agent_review
+    q = next(x for x in agent_review.questions(s.doc, limit=100)["questions"]
+             if x["decidable"])
+    out = s.review_answer(q["key"], "accept", "person")
+    assert out["recorded"] is False
+    assert "who made it" in out["why"]
+
+
+def test_an_unwritable_layer_says_the_verdict_will_not_survive(warehouse):
+    """Honest about the one thing the user cannot see: it worked here, and
+    it is going to be lost."""
+    s = sess.Session()
+    s.start_infer(warehouse, wait_seconds=60, use_llm=False)
+    s.layer_path = sess.Path("/proc/version")      # exists, cannot be written
+    from semlayer import agent_review
+    q = next(x for x in agent_review.questions(s.doc, limit=100)["questions"]
+             if not x["gates_behaviour"] and x["decidable"])
+    out = s.review_answer(q["key"], "accept", "agent", by="claude-code/opus")
+    assert out["recorded"] is True
+    assert "NOT saved" in out["warning"]
+
+
+# --- getting the layer out ----------------------------------------------
+
+def test_save_layer_writes_it_and_follows_it(big_warehouse, _nowhere):
+    s = sess.Session()
+    s.start_infer(big_warehouse, wait_seconds=60, use_llm=False)
+    cached = s.layer_path
+    target = _nowhere / "cwd" / "models" / "layer.yaml"
+
+    out = s.save_layer(str(target))
+    assert out["saved"] is True
+    assert out["was"] == str(cached)
+    assert target.is_file()
+    assert sess.scan_layer(target)["tables"] == 36
+    # and verdicts now land in the repo copy rather than the cache
+    assert s.layer_path == target
+
+
+def test_save_layer_to_an_impossible_path_says_so(warehouse):
+    s = sess.Session()
+    s.start_infer(warehouse, wait_seconds=60, use_llm=False)
+    out = s.save_layer("/proc/version/nope/layer.yaml")
+    assert out["saved"] is False
+    assert out["error"]
+    assert "ask where" in out["next"]
+
+
+def test_export_is_a_snapshot_and_says_what_it_dropped(warehouse, _nowhere):
+    s = sess.Session()
+    s.start_infer(warehouse, wait_seconds=60, use_llm=False)
+    target = _nowhere / "cwd" / "semantic_models.yml"
+    out = s.export_layer("dbt", str(target))
+    assert out["exported"] is True
+    assert out["semantic_models"] > 0
+    assert target.is_file()
+    assert "snapshot" in out["next"]
+    assert isinstance(out["losses"], list)
+    # the layer, not the export, stays what answers
+    assert s.layer_path != target
+
+
+def test_an_unknown_export_target_lists_what_exists(warehouse):
+    s = sess.Session()
+    s.start_infer(warehouse, wait_seconds=60, use_llm=False)
+    out = s.export_layer("lookml", "/tmp/x.lkml")
+    assert out["exported"] is False
+    assert out["available"] == ["dbt"]
+    assert "not built" in out["next"]

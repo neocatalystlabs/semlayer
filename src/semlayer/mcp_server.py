@@ -366,6 +366,14 @@ def _server_class():
             _note_tool(name)
             return await super().call_tool(name, arguments)
 
+        async def get_prompt(self, name, arguments=None):
+            # A prompt is a surface too, and the one we most need to know
+            # about: an optional walkthrough nobody invokes is a walkthrough
+            # to delete. Noted by NAME only, like a tool.
+            _note_host(self)
+            _note_tool(name)
+            return await super().get_prompt(name, arguments)
+
     return _Server
 
 
@@ -623,6 +631,100 @@ def _register_answer_tools(srv, session: Session) -> None:
         return _answer(session, lambda doc: agent_run(doc, sql, session))
 
 
+def _register_review_tools(srv, session: Session) -> None:
+    """Recording a verdict from the conversation, and keeping the result.
+
+    Apart from the answer tools because these WRITE: to the document in
+    memory, to the file it came from, and -- for save_layer and
+    export_layer -- to wherever the user asked.
+    """
+
+    @srv.tool()
+    def review_questions(tables: str = "", limit: int = 20) -> str:
+        """What is uncertain in this layer, as questions you can answer.
+
+        Pull this when the user asks what is unreviewed or unreliable. Do
+        NOT walk the user through it after inference: the questions that
+        matter are the ones an answer rested on, and `run_sql` hands you
+        those as `assumptions`.
+
+        tables: comma-separated, to scope it to what you are looking at.
+        """
+        from semlayer import agent_review
+        names = [t.strip() for t in tables.split(",") if t.strip()]
+        return _answer(session, lambda doc: agent_review.questions(
+            doc, names or None, limit))
+
+    @srv.tool()
+    def review_question(key: str) -> str:
+        """One question in full: every object it covers, and the evidence."""
+        from semlayer import agent_review
+        return _answer(session, lambda doc: agent_review.question(doc, key))
+
+    @srv.tool()
+    def review_answer(key: str, verdict: str, decided_by: str,
+                      by: str = "", exclude: str = "", note: str = "") -> str:
+        """Record a verdict. Takes effect immediately, and says who decided.
+
+        verdict: `accept`, `reject`, or `set:<value>` -- `review_question`
+        gives the shape `set` takes.
+
+        decided_by: `agent` if this is YOUR call, `person` if the user said
+        it. Never guess this. You may accept a claim whose accept changes no
+        behaviour; rejecting, setting, and accepting anything that unlocks
+        behaviour are the person's, and you will be told which this is.
+
+        by: the name to record. For a person, what they told you -- ask once
+        if you do not know, never invent it, and never use your own client's
+        name. For yourself, something recognisable like `claude-code/opus`.
+
+        exclude: comma-separated object locations the verdict should skip.
+        note: your reasoning, kept on the question whether or not the verdict
+        was recorded. This is how you PROPOSE one you may not decide.
+        """
+        skip = [x.strip() for x in exclude.split(",") if x.strip()]
+        if session.doc is None:
+            return json.dumps(session.status(), default=str)
+        return json.dumps(session.review_answer(
+            key, verdict, decided_by, by=by or None, exclude=skip or None,
+            note=note or None), default=str)
+
+    @srv.tool()
+    def review_decisions() -> str:
+        """Every verdict in this layer and who stands behind each one.
+
+        Read `signal`: `agent` means nobody has confirmed it. Say so when an
+        answer rests on one.
+        """
+        from semlayer import agent_review
+        return _answer(session, agent_review.decisions)
+
+    @srv.tool()
+    def save_layer(path: str) -> str:
+        """Write the layer into the user's project so their team has it.
+
+        The cache is per-machine; a file in the repository is what a
+        colleague reads. From then on this session's verdicts land there.
+        Ask where they want it rather than choosing for them.
+        """
+        if session.doc is None:
+            return json.dumps(session.status(), default=str)
+        return json.dumps(session.save_layer(path), default=str)
+
+    @srv.tool()
+    def export_layer(target: str, path: str) -> str:
+        """Write a snapshot of the layer in another tool's format.
+
+        target: `dbt` today. On request only, and lossy -- the result says
+        what the format could not carry. Nothing keeps it in step with the
+        layer afterwards and you must keep answering from the layer, never
+        from the export.
+        """
+        if session.doc is None:
+            return json.dumps(session.status(), default=str)
+        return json.dumps(session.export_layer(target, path), default=str)
+
+
 def agent_context(doc: dict, question: str, session: Session) -> dict:
     """`context_for_question`, and the question stops being pending.
 
@@ -654,6 +756,47 @@ def agent_run(doc: dict, sql: str, session: Session) -> dict:
                          "and the user has to say how to reach it.")}
 
 
+# The user-invoked walkthrough. A PROMPT rather than a questionnaire, and
+# optional: the lazy flow IS the setup, so a person who asks a data question
+# never sees this. Someone who types "set up semlayer" gets walked through
+# it, and the text is written for the AGENT, reusing the same tools and the
+# same `next` sentences underneath -- one flow, not two.
+_SETUP = """\
+The user asked to set semlayer up. Walk them through it with the tools, one
+step at a time, and do not ask anything you can discover or anything you do
+not need yet.
+
+1. Call `status`. It says what is on this machine already.
+2. If a layer was found, say which warehouse it is for and its age, and ask
+   whether that is the one they mean. If several were found, ask which and
+   call `load_layer`. If none, name the warehouse connections `status` found
+   and ask them to confirm one -- or, if it found none, ask where their data
+   lives in the words `next` uses.
+3. NEVER ask for a password, a key or a connection string with a secret in
+   it. If a credential is missing, `status` names the exact line and the
+   file: give them that line, say you will wait, and call `status` again
+   when they say it is done. It is re-read every time; nothing needs
+   restarting.
+4. Say what inference will do before you start it: it reads their warehouse,
+   it takes minutes on a real one, and it spends their own model budget if a
+   key is set. Then call `infer` with the connection and whatever question
+   they came with.
+5. While it runs, tell them roughly where it is from `status.job`. Nothing
+   will wake you when it finishes, so check when they next speak.
+6. Ask their name ONCE, and only because verdicts are recorded with it --
+   `status` may already know it from git. Never invent it and never use your
+   own client's name.
+7. Answer their question: `context_for_question`, then `check_sql`, then
+   `run_sql`. Answer in words first and put the assumptions underneath.
+8. After that first answer, if the layer was built without a model, say in
+   one sentence what a key would add -- once, and not as a requirement.
+
+Do not ask which model they want, do not ask for a key up front, and do not
+walk them through the review queue: the claims that matter are the ones
+their answer rested on.
+"""
+
+
 def build_server(layer: Session | dict):
     """Wire the pure query functions above as MCP tools on a FastMCP server.
 
@@ -664,6 +807,12 @@ def build_server(layer: Session | dict):
     srv = _server_class()("semlayer", instructions=_INSTRUCTIONS)
     _register_session_tools(srv, session)
     _register_answer_tools(srv, session)
+    _register_review_tools(srv, session)
+
+    @srv.prompt(name="setup", description="Walk me through setting up semlayer")
+    def setup() -> str:
+        """The optional walkthrough, for someone who asks to be set up."""
+        return _SETUP
 
     @srv.tool()
     def semantic_search(query: str) -> str:
