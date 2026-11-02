@@ -70,7 +70,7 @@ Everything lands with `confidence` ([calibrated, with the misses published](docs
 
 ## Beta feedback
 
-Running the beta? File the [**Beta feedback** form](https://github.com/neocatalystlabs/semlayer/issues/new/choose) (attach the `*.report.json` the CLI writes next to your output — timings and counts only, never your schema or data), or email [hello@semlayer.dev](mailto:hello@semlayer.dev) for anything sensitive.
+Running the beta? File the [**Beta feedback** form](https://github.com/neocatalystlabs/semlayer/issues/new/choose). GitHub issues are public and permanent, so the form asks only for numbers you are happy to say out loud — don't paste schema names, role names or the `*.report.json` the CLI writes next to your output. That file stays on your machine; it records which tables and schemas you scoped the run to, so it is yours, not ours. If you want us to see it, email [hello@semlayer.dev](mailto:hello@semlayer.dev) — same address for anything else sensitive.
 
 ## Layout
 
