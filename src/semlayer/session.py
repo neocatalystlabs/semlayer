@@ -29,6 +29,8 @@ from __future__ import annotations
 
 import hashlib
 import os
+import threading
+import time
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
@@ -684,20 +686,37 @@ def visible_layers() -> list[dict]:
     return out
 
 
+def save_document(path: str | Path, doc: dict) -> None:
+    """Write a semantic layer document. The sibling of `load_document`.
+
+    Here rather than in the CLI because the infer tool writes the cache copy
+    and the CLI writes the user's file, and one spelling of "how a layer is
+    serialised" is the difference between those two files being the same
+    document or merely similar ones.
+    """
+    import yaml
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(doc, sort_keys=False, width=100))
+
+
 # How many connections the `next` sentence names before it starts counting.
 _NAMED_IN_NEXT = 6
-
-
-# The one sentence that promises what this build can do. It changes the day
-# inference becomes a tool here, and it is written once so that day is one
-# edit. No release is cut between this slice and that one, so nobody ever
-# runs a build that says it.
-_NO_INFER = "Inference is not available in this build."
 
 
 def _next_ready(payload: dict) -> str:
     """What to do with a layer in hand -- and, on day 2, what to admit first."""
     layer = payload.get("layer") or {}
+    asked = payload.get("pending_question")
+    if asked:
+        # The reminder the whole wait-and-return design needs: the layer
+        # finished after the turn that asked for it, so the agent is told
+        # what it was for rather than expected to remember.
+        return (f"The layer is ready, and the user's question is still "
+                f"unanswered: {asked!r}. Answer it now -- start with "
+                "context_for_question, check_sql the SQL you write, then "
+                "run_sql. Say which warehouse the answer came from.")
     if payload.get("autoloaded"):
         where = layer.get("warehouse") or layer.get("path") or "this machine"
         return (f"A semantic layer for {where} was already on this machine and has "
@@ -753,14 +772,35 @@ def _env_file_report() -> dict:
                      "ask the user for a secret in chat.")}
 
 
+def _next_inferring(payload: dict) -> str:
+    """A run is going. Say so, and do not promise to come back."""
+    job = payload.get("job") or {}
+    stage = job.get("stage") or "starting"
+    asked = job.get("question")
+    sentence = (f"A semantic layer is being built for {job.get('connection')} -- "
+                f"stage {stage}, {job.get('elapsed_s')}s so far. Tell the user it "
+                "is running and roughly where it is. NOTHING WILL WAKE YOU when "
+                "it finishes: call status again when the user next says anything, "
+                "or if your client lets you, poll it.")
+    if asked:
+        sentence += (f" They asked: {asked!r} -- answer that as soon as the "
+                     "layer is ready.")
+    if payload.get("layer"):
+        sentence += (" A layer is still loaded and still answerable; say that "
+                     "it is the previous one.")
+    return sentence
+
+
 def next_step(payload: dict) -> str:
     """What the agent should do next, in one sentence, written to be acted on.
 
     ONE place, because this sentence is a promise about what the server can
-    do. Four states, and the hardest one to write is the common one: no
-    layer, because the thing the agent has to tell the user is not "I could
-    not load a file" but "this does not exist yet and has to be built".
+    do. The hardest one to write is still the common one: no layer, because
+    the thing the agent has to tell the user is not "I could not load a file"
+    but "this does not exist yet and has to be built".
     """
+    if payload.get("state") == "inferring":
+        return _next_inferring(payload)
     if payload.get("state") == "ready":
         return _next_ready(payload)
     layers = payload.get("layers") or []
@@ -779,9 +819,11 @@ def next_step(payload: dict) -> str:
         return ("No semantic layer exists for this machine yet, and one has to be "
                 "BUILT before any question about the data can be answered -- there "
                 "is nothing to search or query until then. These warehouse "
-                f"connections are visible from here: {_name_some(usable)}. Tell the "
-                "user a layer has to be built and ask which of these to model, or "
-                f"whether their warehouse is somewhere else. {_NO_INFER}")
+                f"connections are visible from here: {_name_some(usable)}. Ask the "
+                "user which one to model -- or whether their warehouse is somewhere "
+                "else -- and then call infer with that uri and their question. "
+                "Inference reads their warehouse and takes minutes on a real one, "
+                "so ask before starting it.")
     return ("No semantic layer exists on this machine, and none can be built until "
             "you know where the data is -- tell the user that, then ask where it "
             "lives. For Postgres, Redshift, Supabase or Neon ask for a DSN without "
@@ -789,7 +831,163 @@ def next_step(payload: dict) -> str:
             "project id. For DuckDB ask for the file path. For Snowflake ask for "
             "the connection name from their connections file, or the account and "
             "user. If it is none of these, call discover_connections with "
-            f"`requested` set to what they said. {_NO_INFER}")
+            "`requested` set to what they said. Then call infer with the uri and "
+            "their question.")
+
+
+# --- a credential someone pasted into the chat ----------------------------
+#
+# The agent is told never to ask for one, and people paste them anyway. The
+# choice (Raj, 2026-11-01) is to accept it for the session rather than refuse:
+# refusing teaches nothing and strands the user, while accepting with a clear
+# "here is the durable place" moves them to the right place next time.
+#
+# The whole value of that choice depends on the secret going nowhere. It lives
+# in one attribute, in memory; `connection` -- which is what the status payload
+# reports and what the cache key hashes -- is the redacted form.
+
+
+def redact(connection: str) -> str:
+    """The connection string with any secret replaced, its shape intact.
+
+    Distinct from `_identity`, which is for hashing and may normalise
+    whatever it likes. This is for a human and an agent to read, so the host,
+    the database and the user survive and only the secret is replaced: a
+    redaction that destroys the rest is one the user cannot recognise as
+    their own connection.
+    """
+    from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+    raw = connection.strip()
+    if "://" not in raw:
+        return raw
+    u = urlsplit(raw)
+    netloc = u.hostname or ""
+    if u.username:
+        netloc = f"{u.username}:***@{netloc}" if u.password else f"{u.username}@{netloc}"
+    elif u.password:
+        netloc = f"***@{netloc}"
+    if u.port:
+        netloc = f"{netloc}:{u.port}"
+    # `safe="*"`, or the redaction marker itself comes back percent-encoded
+    # as %2A%2A%2A and the user cannot read their own connection string.
+    query = urlencode([(k, "***" if k.lower() in _SECRET_QUERY_KEYS else v)
+                       for k, v in parse_qsl(u.query, keep_blank_values=True)],
+                      safe="*")
+    return urlunsplit((u.scheme, netloc, u.path, query, u.fragment))
+
+
+def carries_secret(connection: str) -> bool:
+    """Whether this connection string has a credential embedded in it."""
+    return redact(connection) != connection.strip()
+
+
+# What to tell the agent when it worked anyway. Three things, in this order,
+# because the first is what the user asked and the last is what we want them
+# to do: it worked, it dies with the server, here is the durable line.
+def pasted_credential_reply(connection: str) -> dict:
+    """The answer to a secret in a connection string: accepted, and transient."""
+    return {
+        "credential": "accepted for this session only",
+        "held": "in memory, for as long as this server runs",
+        "never": ("written to disk, logged, sent in telemetry, recorded in the "
+                  "layer or the run report, or used in the cache key"),
+        "gone_when": "this server restarts, which your MCP client does often",
+        "durable_instead": redact(connection),
+        "next": ("Tell the user it worked, that the credential is gone when the "
+                 "server restarts, and that the durable place is a line in "
+                 f"{_tilde(env_path())} -- the connection above with the secret "
+                 "taken out, plus the credential on its own line. If they are "
+                 "not on a read-only role, `semlayer init <kind>` prints one. "
+                 "Say once that rotating a credential pasted into a chat is the "
+                 "careful thing to do."),
+    }
+
+
+# --- the inference job ----------------------------------------------------
+#
+# MCP has no way to wake a model when a background job finishes, and nothing
+# here may pretend otherwise. So the shape is: start it, wait a little in case
+# it is quick, and if it is not, hand back `inferring` and let the next
+# `status` carry the news. The agent is reminded by the payload rather than
+# expected to remember.
+
+# How long a tool call may block. A DuckDB file with no LLM finishes in
+# seconds, which is the case worth optimising: discovered, inferred and
+# answered in one turn, with no polling at all. Beyond this the call returns
+# and the job keeps running.
+INFER_WAIT_CAP_S = 60
+INFER_WAIT_DEFAULT_S = 25
+
+
+class Cancelled(Exception):
+    """Raised inside the pipeline's progress callback to stop a run."""
+
+
+class InferJob:
+    """One inference, running on a thread the tool call does not wait for.
+
+    Cancellation is cooperative and lands at a stage boundary: the progress
+    callback raises `Cancelled`, which unwinds the pipeline. Killing a thread
+    is not possible in Python and pretending otherwise would leave a half-run
+    holding a warehouse connection.
+    """
+
+    def __init__(self, connection: str, question: str | None, scope: str | None):
+        self.connection = redact(connection)
+        self.question = question or None
+        self.scope = scope or None
+        self.started_at = time.time()
+        self.state = "running"          # running | done | failed | cancelled
+        self.stage: str | None = None
+        self.stages: dict[str, float] = {}
+        self.error: str | None = None
+        self.exception: BaseException | None = None
+        self.doc: dict | None = None
+        self.report: dict | None = None
+        self.model: str | None = None
+        self._cancel = threading.Event()
+        self.thread: threading.Thread | None = None
+
+    @property
+    def elapsed_s(self) -> int:
+        """Whole seconds since the run started."""
+        return int(time.time() - self.started_at)
+
+    @property
+    def running(self) -> bool:
+        """Whether the run is still going."""
+        return self.state == "running"
+
+    def cancel(self) -> None:
+        """Ask the run to stop at its next stage boundary."""
+        self._cancel.set()
+
+    def progress(self, event: dict) -> None:
+        """The pipeline's callback: record the stage, and stop if asked to."""
+        if self._cancel.is_set():
+            raise Cancelled("cancelled by the user")
+        stage = str(event.get("stage") or "")
+        if event.get("event") == "done":
+            self.stages[stage] = event.get("seconds") or 0
+        else:
+            self.stage = stage
+
+    def as_dict(self) -> dict:
+        """What `status` reports about this run. No credential, ever."""
+        out = {
+            "state": self.state,
+            "connection": self.connection,
+            "elapsed_s": self.elapsed_s,
+            "stage": self.stage,
+            "stages_done": self.stages,
+            "question": self.question,
+        }
+        if self.model:
+            out["model"] = self.model
+        if self.error:
+            out["error"] = self.error
+        return out
 
 
 class Session:
@@ -814,6 +1012,15 @@ class Session:
         # has to say so before answering: a layer we chose on their behalf is
         # a layer they have not agreed to.
         self.autoloaded = False
+        # A credential pasted into the chat, if one was. The full connection
+        # string lives HERE and nowhere else: `connection` above is the
+        # redacted form, which is what the payload reports and what the cache
+        # key hashes. Never written, never logged, never sent.
+        self._credential: str | None = None
+        # The open warehouse connection, reused across infer and run_sql, and
+        # the running job if there is one.
+        self._source = None
+        self.job: InferJob | None = None
 
     @classmethod
     def of(cls, layer: Session | dict) -> Session:
@@ -832,7 +1039,15 @@ class Session:
 
     @property
     def state(self) -> str:
-        """`no_layer` or `ready`."""
+        """`no_layer`, `inferring`, or `ready`.
+
+        A running job wins over a loaded layer, because "a new layer is being
+        built" is the more actionable fact and the agent should caveat what it
+        answers from the old one. The tools still answer from the document
+        that is loaded: `inferring` describes the session, not the document.
+        """
+        if self.job is not None and self.job.running:
+            return "inferring"
         return "ready" if self.doc is not None else "no_layer"
 
     def load(self, path: str | Path) -> None:
@@ -933,9 +1148,201 @@ class Session:
         return True
 
     def select(self, connection: str) -> bool:
-        """Select `connection`, loading its cached layer if one exists."""
-        self.connection = connection
+        """Select `connection`, loading its cached layer if one exists.
+
+        A secret in the string is split off here and nowhere else: what the
+        session reports from now on is the redacted form, and the full string
+        survives only in `_credential`, in memory.
+        """
+        self.close_source()
+        self._credential = connection if carries_secret(connection) else None
+        self.connection = redact(connection)
         return self.load_cached(connection)
+
+    def target(self) -> str | None:
+        """The connection string to actually open -- with the secret, if any."""
+        return self._credential or self.connection
+
+    def open_source(self):
+        """Open the warehouse this session is about, once, and keep it.
+
+        One connection serves inference and the agent's own queries: the
+        alternative is a fresh login per tool call, which on Snowflake is
+        seconds of latency inside a chat turn.
+
+        The `.env` file is applied for the duration of the open and taken
+        back afterwards, because the connectors read `os.environ` themselves
+        at that moment. Nothing it says outlives the call.
+        """
+        from semlayer.errors import SourceError
+
+        if self._source is not None:
+            return self._source
+        target = self.target()
+        if not target:
+            raise SourceError(
+                "no warehouse connection is selected for this session",
+                hint="call status to see what is visible, then pass a uri")
+        from semlayer.pipeline import open_source_from_uri
+        with env_file.applied(env_file.read(env_path())):
+            self._source = open_source_from_uri(target)
+        return self._source
+
+    def close_source(self) -> None:
+        """Release the warehouse connection, if one is open."""
+        source, self._source = self._source, None
+        close = getattr(source, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass            # a connection already dead needs no closing
+
+    def start_infer(self, connection: str | None = None, *,
+                    question: str | None = None, scope: str | None = None,
+                    wait_seconds: float = INFER_WAIT_DEFAULT_S,
+                    use_llm: bool = True) -> dict:
+        """Build a layer for `connection`, waiting only a little for it.
+
+        The wait is the whole design. A DuckDB file with no LLM finishes in
+        seconds, and waiting for it means the user is discovered, inferred
+        and ANSWERED in one turn with no polling. A real warehouse will not
+        finish, so the call returns `inferring` and the next `status` carries
+        the news -- MCP cannot wake a model when a job ends, and nothing here
+        pretends it can.
+
+        `question` is what the user actually asked. It is kept so that the
+        status payload can remind the agent to answer it once the layer
+        exists, rather than relying on the agent to remember across turns.
+        """
+        if self.job is not None and self.job.running:
+            out = self.status()
+            out["error"] = ("an inference is already running for "
+                            f"{self.job.connection}; call status to watch it, "
+                            "or cancel_infer to stop it")
+            return out
+        if connection and redact(connection) != self.connection:
+            self.select(connection)
+        elif connection:
+            self._credential = connection if carries_secret(connection) else None
+        if question:
+            self.pending_question = question
+        target = self.target()
+        if not target:
+            out = self.status()
+            out["error"] = ("no connection to infer from: pass one, or ask the "
+                            "user which of `connections` to model")
+            return out
+        job = InferJob(target, question, scope)
+        self.job = job
+        job.thread = threading.Thread(
+            target=self._run_infer, args=(job, use_llm), daemon=True,
+            name="semlayer-infer")
+        job.thread.start()
+        job.thread.join(timeout=max(0.0, min(wait_seconds, INFER_WAIT_CAP_S)))
+        out = self.status()
+        if job.state == "failed":
+            out["error"] = job.error
+        if carries_secret(target):
+            out["credential"] = pasted_credential_reply(target)
+        return out
+
+    def _run_infer(self, job: InferJob, use_llm: bool) -> None:
+        """The job body. Runs on its own thread; never raises out of it."""
+        import time as _time
+        started = _time.time()
+        try:
+            doc = self._infer_once(job, use_llm)
+            path = layer_cache_path(self.target() or "")
+            save_document(path, doc)
+            job.doc, job.state = doc, "done"
+            # The swap: a fresh document, assigned over the old reference.
+            # A tool call in flight reads one or the other, never a dict
+            # being filled in.
+            self.doc, self.layer_path = doc, path
+            self.autoloaded = False
+            _mark_used(str(path))
+        except Cancelled:
+            job.state = "cancelled"
+        except BaseException as e:
+            # Anything at all: this is a thread, and an exception escaping it
+            # would be printed to stderr and lost rather than reported to the
+            # agent that asked for the run.
+            job.state, job.error = "failed", f"{type(e).__name__}: {e}"[:400]
+            # Kept for the telemetry class, which maps the TYPE and never
+            # reads the message -- that is where table names and SQL live.
+            job.exception = e
+        finally:
+            self._note_infer(job, started)
+
+    def _infer_once(self, job: InferJob, use_llm: bool) -> dict:
+        """Open, infer, return the document. The part that can fail."""
+        from semlayer.pipeline import InferOptions, infer_with_report
+        from semlayer.source import document_name
+
+        source = self.open_source()
+        llm = self._provider() if use_llm else None
+        job.model = getattr(llm, "model", None) if llm is not None else "none/heuristic"
+        schema = {x.strip() for x in (job.scope or "").split(",") if x.strip()} or None
+        options = InferOptions(schema=schema,
+                               name=document_name(None, schema, source))
+        doc, report = infer_with_report(source, llm=llm, options=options,
+                                        progress=job.progress)
+        job.report = report
+        return doc
+
+    def _provider(self):
+        """The LLM provider for an inference, or None if there is no key.
+
+        Mirrors the CLI: descriptions are what the LLM is for, and a run
+        without a key still produces a layer -- statistics, keys, joins,
+        aggregates -- so a missing key degrades the result rather than
+        failing the call. `repo_cache=False` per #73: a server has no
+        business writing cassettes into someone's repository.
+        """
+        key = (env_file.read(env_path()).get("ANTHROPIC_API_KEY")
+               or os.environ.get("ANTHROPIC_API_KEY"))
+        if not key:
+            return None
+        from semlayer.llm.provider import AnthropicProvider
+        with env_file.applied({"ANTHROPIC_API_KEY": key}):
+            return AnthropicProvider(repo_cache=False)
+
+    def _note_infer(self, job: InferJob, started: float) -> None:
+        """Record the `infer` event for a run started from an agent.
+
+        A separate event rather than fields on the session's own event,
+        because one session may infer more than once and because this must be
+        comparable with the CLI's infer events -- same event name, same
+        command, `via` the only difference. Fields are passed explicitly, not
+        through `telemetry.note`, which is process-scoped and would smear
+        this run's counts across the session event written at exit.
+        """
+        import time as _time
+        try:
+            from semlayer import telemetry
+            from semlayer.errors import error_class
+            sl = (job.doc or {}).get("semantic_layer", {})
+            tables = sl.get("tables") or []
+            props: dict = {
+                "command": "infer",
+                "via": "mcp",
+                "connector": family(job.connection) or "none",
+                "duration_s": int(_time.time() - started),
+                "outcome": {"done": "ok", "cancelled": "interrupted"}.get(
+                    job.state, "error"),
+                "llm": "anthropic" if job.model not in (None, "none/heuristic") else "none",
+            }
+            if tables:
+                props["tables"] = len(tables)
+                props["columns"] = sum(len(t.get("columns") or []) for t in tables)
+            if job.report and job.report.get("stages"):
+                props["stages"] = {k: int(v) for k, v in job.report["stages"].items()}
+            if job.state == "failed":
+                props["error_class"] = error_class(job.exception or Exception())
+            telemetry.record("cli", t=int(started), **props)
+        except Exception:
+            pass        # telemetry may never break a run, let alone a thread
 
     def discover(self) -> list[dict]:
         """Warehouse connections visible from here. Names only; opens nothing."""
@@ -944,6 +1351,24 @@ class Session:
     def route(self, requested: str) -> dict:
         """What to tell a user who named a warehouse that was not listed."""
         return route_for(requested)
+
+    def cancel_infer(self) -> dict:
+        """Ask a running inference to stop, and say what happened.
+
+        Cooperative, and it lands at the next stage boundary: a thread cannot
+        be killed, and a run abandoned mid-stage would still hold a warehouse
+        connection and still be charging for queries. So this returns
+        immediately with `cancelling` and the next `status` shows the end.
+        """
+        out = self.status()
+        if self.job is None or not self.job.running:
+            out["error"] = "no inference is running"
+            return out
+        self.job.cancel()
+        out["cancelling"] = (f"asked the run to stop at the end of "
+                             f"{self.job.stage or 'the current stage'}; call "
+                             "status to see it finish")
+        return out
 
     def status(self) -> dict:
         """One object, written for an agent to act on rather than to read.
@@ -956,6 +1381,7 @@ class Session:
         payload = {
             "state": self.state,
             "connection": self.connection,
+            "job": self.job.as_dict() if self.job is not None else None,
             "layer": self._layer(),
             "layers": visible_layers(),
             "connections": discover(),
