@@ -17,23 +17,6 @@ import pytest
 
 from semlayer import session as sess
 
-DOC = """semantic_layer:
-  spec_version: 0.6.0
-  name: {name}
-  warehouse: {warehouse}
-  generated_by:
-    engine: 0.6.0b1
-    model: none/heuristic
-  tables:
-{tables}"""
-
-TABLE = """  - name: t{n}
-    source: main.t{n}
-    columns:
-    - name: id
-      sql_type: INTEGER
-"""
-
 
 @pytest.fixture(autouse=True)
 def _nowhere(nowhere):
@@ -41,25 +24,10 @@ def _nowhere(nowhere):
     return nowhere
 
 
-def write(path, *, name="tiny", warehouse="duckdb:/tmp/t.duckdb", tables=1):
-    """A layer document on disk, small but real enough to load and scan."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    body = "".join(TABLE.format(n=i) for i in range(tables))
-    path.write_text(DOC.format(name=name, warehouse=warehouse, tables=body))
-    return path
-
-
-def cache(home, **kw):
-    """A layer in the cache, keyed the way the engine would key it."""
-    connection = kw.get("warehouse", "duckdb:/tmp/t.duckdb")
-    return write(home / ".semlayer" / "layers"
-                 / f"{sess.cache_key(connection)}.yaml", **kw)
-
-
 # --- identifying a document without parsing it ----------------------------
 
-def test_scan_reads_identity_and_counts_tables(tmp_path):
-    info = sess.scan_layer(write(tmp_path / "layer.yaml", name="mart", tables=7))
+def test_scan_reads_identity_and_counts_tables(tmp_path, write_layer):
+    info = sess.scan_layer(write_layer(tmp_path / "layer.yaml", name="mart", tables=7))
     assert info["name"] == "mart"
     assert info["warehouse"] == "duckdb:/tmp/t.duckdb"
     assert info["tables"] == 7
@@ -91,47 +59,47 @@ def test_a_document_with_no_warehouse_is_still_listed(tmp_path):
     assert info["tables"] == 1
 
 
-def test_an_undated_document_falls_back_to_its_file_time(tmp_path):
-    info = sess.scan_layer(write(tmp_path / "layer.yaml"))
+def test_an_undated_document_falls_back_to_its_file_time(tmp_path, write_layer):
+    info = sess.scan_layer(write_layer(tmp_path / "layer.yaml"))
     assert info["inferred_at"].startswith("20")
 
 
 # --- what is already on this machine --------------------------------------
 
-def test_a_layer_in_the_project_is_found(_nowhere):
-    write(_nowhere / "cwd" / "layer.yaml")
+def test_a_layer_in_the_project_is_found(_nowhere, write_layer):
+    write_layer(_nowhere / "cwd" / "layer.yaml")
     found = sess.visible_layers()
     assert [x["source"] for x in found] == ["repo"]
     assert found[0]["connection"] == "duckdb:/tmp/t.duckdb"
 
 
-def test_a_layer_in_the_cache_is_found(_nowhere):
-    cache(_nowhere / "home")
+def test_a_layer_in_the_cache_is_found(_nowhere, cache_layer):
+    cache_layer(_nowhere / "home")
     found = sess.visible_layers()
     assert [x["source"] for x in found] == ["cache"]
 
 
-def test_the_repo_copy_wins_over_the_cache_copy(_nowhere):
+def test_the_repo_copy_wins_over_the_cache_copy(_nowhere, write_layer, cache_layer):
     """The repo is where a team's review decisions live, so it is the copy of
     record; the cache is the cold-start fallback."""
-    write(_nowhere / "cwd" / "layer.yaml", name="in-repo")
-    cache(_nowhere / "home", name="in-cache")
+    write_layer(_nowhere / "cwd" / "layer.yaml", name="in-repo")
+    cache_layer(_nowhere / "home", name="in-cache")
     found = sess.visible_layers()
     assert [x["name"] for x in found] == ["in-repo"]
 
 
-def test_two_warehouses_are_both_listed(_nowhere):
-    write(_nowhere / "cwd" / "layer.yaml", name="one", warehouse="duckdb:/tmp/a.duckdb")
-    cache(_nowhere / "home", name="two", warehouse="duckdb:/tmp/b.duckdb")
+def test_two_warehouses_are_both_listed(_nowhere, write_layer, cache_layer):
+    write_layer(_nowhere / "cwd" / "layer.yaml", name="one", warehouse="duckdb:/tmp/a.duckdb")
+    cache_layer(_nowhere / "home", name="two", warehouse="duckdb:/tmp/b.duckdb")
     assert {x["name"] for x in sess.visible_layers()} == {"one", "two"}
 
 
-def test_a_layer_at_the_repo_root_is_found_from_a_subdirectory(_nowhere):
+def test_a_layer_at_the_repo_root_is_found_from_a_subdirectory(_nowhere, write_layer):
     """Claude Code and Cursor start the server in the project, which is often
     not the directory the layer file sits in."""
     root = _nowhere / "cwd"
     (root / ".git").mkdir()
-    write(root / "layer.yaml")
+    write_layer(root / "layer.yaml")
     sub = root / "models" / "marts"
     sub.mkdir(parents=True)
     import os
@@ -139,21 +107,21 @@ def test_a_layer_at_the_repo_root_is_found_from_a_subdirectory(_nowhere):
     assert len(sess.visible_layers()) == 1
 
 
-def test_the_candidate_list_is_capped(_nowhere):
+def test_the_candidate_list_is_capped(_nowhere, write_layer):
     """A directory full of YAML must not make `status` slow. The known names
     are looked at first, so the cap can never cost us `layer.yaml`."""
     cwd = _nowhere / "cwd"
     for i in range(sess._MAX_LAYER_CANDIDATES + 10):
-        write(cwd / f"z{i:03d}.yaml", warehouse=f"duckdb:/tmp/{i}.duckdb")
-    write(cwd / "layer.yaml", name="the-real-one")
+        write_layer(cwd / f"z{i:03d}.yaml", warehouse=f"duckdb:/tmp/{i}.duckdb")
+    write_layer(cwd / "layer.yaml", name="the-real-one")
     found = sess.visible_layers()
     assert len(found) <= sess._MAX_LAYER_CANDIDATES
     assert "the-real-one" in {x["name"] for x in found}
 
 
-def test_the_one_used_last_is_marked(_nowhere):
-    write(_nowhere / "cwd" / "layer.yaml", warehouse="duckdb:/tmp/a.duckdb")
-    cache(_nowhere / "home", warehouse="duckdb:/tmp/b.duckdb")
+def test_the_one_used_last_is_marked(_nowhere, write_layer, cache_layer):
+    write_layer(_nowhere / "cwd" / "layer.yaml", warehouse="duckdb:/tmp/a.duckdb")
+    cache_layer(_nowhere / "home", warehouse="duckdb:/tmp/b.duckdb")
     s = sess.Session()
     s.load_layer("duckdb:/tmp/b.duckdb")
     marked = [x for x in sess.visible_layers() if x.get("last_used")]
@@ -163,8 +131,8 @@ def test_the_one_used_last_is_marked(_nowhere):
 
 # --- loading one without being asked, or asking --------------------------
 
-def test_exactly_one_layer_is_loaded_on_start(_nowhere):
-    write(_nowhere / "cwd" / "layer.yaml", name="yesterday")
+def test_exactly_one_layer_is_loaded_on_start(_nowhere, write_layer):
+    write_layer(_nowhere / "cwd" / "layer.yaml", name="yesterday")
     s = sess.Session()
     assert s.autoload() is True
     assert s.state == "ready"
@@ -172,8 +140,8 @@ def test_exactly_one_layer_is_loaded_on_start(_nowhere):
     assert s.connection == "duckdb:/tmp/t.duckdb"
 
 
-def test_the_agent_is_told_to_name_the_warehouse_it_found(_nowhere):
-    write(_nowhere / "cwd" / "layer.yaml")
+def test_the_agent_is_told_to_name_the_warehouse_it_found(_nowhere, write_layer):
+    write_layer(_nowhere / "cwd" / "layer.yaml")
     s = sess.Session()
     s.autoload()
     nxt = s.status()["next"]
@@ -183,9 +151,9 @@ def test_the_agent_is_told_to_name_the_warehouse_it_found(_nowhere):
     assert "wrong one" in nxt
 
 
-def test_two_layers_are_a_question_not_a_default(_nowhere):
-    write(_nowhere / "cwd" / "layer.yaml", warehouse="duckdb:/tmp/a.duckdb")
-    cache(_nowhere / "home", warehouse="duckdb:/tmp/b.duckdb")
+def test_two_layers_are_a_question_not_a_default(_nowhere, write_layer, cache_layer):
+    write_layer(_nowhere / "cwd" / "layer.yaml", warehouse="duckdb:/tmp/a.duckdb")
+    cache_layer(_nowhere / "home", warehouse="duckdb:/tmp/b.duckdb")
     s = sess.Session()
     assert s.autoload() is False
     assert s.state == "no_layer"
@@ -198,9 +166,9 @@ def test_two_layers_are_a_question_not_a_default(_nowhere):
     assert "cached" in nxt
 
 
-def test_a_named_connection_is_not_overridden_by_a_found_layer(_nowhere):
+def test_a_named_connection_is_not_overridden_by_a_found_layer(_nowhere, write_layer):
     """Someone who passed `--connection` has said what the session is about."""
-    write(_nowhere / "cwd" / "layer.yaml")
+    write_layer(_nowhere / "cwd" / "layer.yaml")
     s = sess.Session("postgres")
     assert s.autoload() is False
     assert s.state == "no_layer"
@@ -213,8 +181,8 @@ def test_an_unreadable_found_layer_does_not_stop_the_server(_nowhere):
     assert s.status()["state"] == "no_layer"
 
 
-def test_load_layer_takes_a_ref_a_connection_or_a_path(_nowhere):
-    path = write(_nowhere / "cwd" / "layer.yaml", name="pick-me")
+def test_load_layer_takes_a_ref_a_connection_or_a_path(_nowhere, write_layer):
+    path = write_layer(_nowhere / "cwd" / "layer.yaml", name="pick-me")
     for ref in (str(path), "duckdb:/tmp/t.duckdb", "layer.yaml"):
         s = sess.Session()
         out = s.load_layer(ref)
@@ -223,8 +191,8 @@ def test_load_layer_takes_a_ref_a_connection_or_a_path(_nowhere):
         assert out["autoloaded"] is False
 
 
-def test_load_layer_sets_the_connection_it_loaded(_nowhere):
-    write(_nowhere / "cwd" / "layer.yaml")
+def test_load_layer_sets_the_connection_it_loaded(_nowhere, write_layer):
+    write_layer(_nowhere / "cwd" / "layer.yaml")
     s = sess.Session()
     assert s.load_layer("layer.yaml")["connection"] == "duckdb:/tmp/t.duckdb"
 
@@ -360,13 +328,13 @@ def test_the_pending_question_is_reserved_and_empty(_nowhere):
 
 # --- the swap the infer job will need -------------------------------------
 
-def test_a_tool_call_never_sees_a_half_loaded_layer(_nowhere):
+def test_a_tool_call_never_sees_a_half_loaded_layer(_nowhere, write_layer):
     """`load` builds the document and then replaces the reference, which is
     what lets the infer job swap a layer in under a live conversation. A
     reader must see the old document or the new one, never a mutation in
     progress."""
-    small = write(_nowhere / "cwd" / "small.yaml", tables=1)
-    big = write(_nowhere / "cwd" / "big.yaml", tables=9)
+    small = write_layer(_nowhere / "cwd" / "small.yaml", tables=1)
+    big = write_layer(_nowhere / "cwd" / "big.yaml", tables=9)
     s = sess.Session()
     s.load(small)
     counts, stop = [], threading.Event()

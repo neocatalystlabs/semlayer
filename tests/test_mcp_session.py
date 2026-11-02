@@ -299,9 +299,8 @@ def test_the_status_payload_carries_the_supported_vocabulary():
 
 # --- loading one of the layers already here ------------------------------
 
-def test_load_layer_loads_and_answers_with_the_new_state(_nowhere):
-    from tests.test_session_day2 import write
-    write(_nowhere / "cwd" / "layer.yaml", name="yesterday")
+def test_load_layer_loads_and_answers_with_the_new_state(_nowhere, write_layer):
+    write_layer(_nowhere / "cwd" / "layer.yaml", name="yesterday")
     srv = mcp_server.build_server(Session())
     assert call(srv, "status")["state"] == "no_layer"
     out = call(srv, "load_layer", {"ref": "layer.yaml"})
@@ -324,11 +323,10 @@ def test_load_layer_on_a_missing_file_answers_instead_of_erroring(_nowhere):
 
 # --- day 2 through the command --------------------------------------------
 
-def test_no_argument_loads_the_one_layer_already_here(served, _nowhere):
+def test_no_argument_loads_the_one_layer_already_here(served, _nowhere, write_layer):
     """What day 2 is: a new chat, possibly a new host, and the person who
     inferred yesterday says nothing today."""
-    from tests.test_session_day2 import write
-    write(_nowhere / "cwd" / "layer.yaml", name="yesterday")
+    write_layer(_nowhere / "cwd" / "layer.yaml", name="yesterday")
     from semlayer.cli import main
     assert main(["mcp"]) == 0
     assert served[0].state == "ready"
@@ -336,21 +334,20 @@ def test_no_argument_loads_the_one_layer_already_here(served, _nowhere):
     assert served[0].connection == "duckdb:/tmp/t.duckdb"
 
 
-def test_no_argument_with_two_layers_starts_empty(served, _nowhere):
+def test_no_argument_with_two_layers_starts_empty(served, _nowhere, write_layer,
+                                                  cache_layer):
     """Two is a question, and the server asks it in `status` rather than
     picking one on the user's behalf."""
-    from tests.test_session_day2 import cache, write
-    write(_nowhere / "cwd" / "layer.yaml", warehouse="duckdb:/tmp/a.duckdb")
-    cache(_nowhere / "home", warehouse="duckdb:/tmp/b.duckdb")
+    write_layer(_nowhere / "cwd" / "layer.yaml", warehouse="duckdb:/tmp/a.duckdb")
+    cache_layer(_nowhere / "home", warehouse="duckdb:/tmp/b.duckdb")
     from semlayer.cli import main
     assert main(["mcp"]) == 0
     assert served[0].state == "no_layer"
     assert served[0].autoloaded is False
 
 
-def test_a_named_path_is_not_an_autoload(served, _nowhere):
-    from tests.test_session_day2 import write
-    path = write(_nowhere / "cwd" / "layer.yaml")
+def test_a_named_path_is_not_an_autoload(served, _nowhere, write_layer):
+    path = write_layer(_nowhere / "cwd" / "layer.yaml")
     from semlayer.cli import main
     assert main(["mcp", str(path)]) == 0
     assert served[0].state == "ready"
