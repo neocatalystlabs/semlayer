@@ -240,7 +240,8 @@ def _jsonable(value):
 
 
 def run(doc: dict, source, sql: str, *, dialect: str = "duckdb",
-        limit: int = RUN_SQL_ROWS, timeout_s: float = RUN_SQL_TIMEOUT_S) -> dict:
+        limit: int = RUN_SQL_ROWS,
+        timeout_s: float | None = RUN_SQL_TIMEOUT_S) -> dict:
     """Lint, then run one SELECT, and say exactly what happened.
 
     The order matters and is the product: `check_sql` runs FIRST and an
@@ -257,6 +258,13 @@ def run(doc: dict, source, sql: str, *, dialect: str = "duckdb",
     back with the context an agent needs to repair it -- the same material
     `cq.answer.answer_with_repair` feeds back in the benchmark loop, which is
     where we learned that agents fix their own SQL when shown the error.
+
+    There is NO time limit by default. A real analytical query on a real
+    warehouse takes minutes, so a short cap would refuse legitimate work --
+    and the warehouse is the user's, billed to them and governed by their own
+    resource monitors. Capping it here would be enforcing where this product
+    records. The row cap stays, because that is about what fits in a model's
+    context rather than about the warehouse.
     """
     from semlayer.lint import lint_sql, render_findings
 
@@ -302,7 +310,11 @@ def run(doc: dict, source, sql: str, *, dialect: str = "duckdb",
         "rows": [[_jsonable(v) for v in r] for r in rows],
         "row_count": len(rows),
         "truncated": truncated,
-        "limits": {"rows": limit, "timeout_s": timeout_s},
+        # Reported so the agent can repeat it accurately: the row cap is
+        # ours, the clock is the warehouse's unless a caller passed one.
+        "limits": {"rows": limit, "timeout_s": timeout_s,
+                   "time_limit": ("none -- your warehouse's own limits apply"
+                                  if not timeout_s else f"{timeout_s}s")},
         "assumptions": assumptions(doc, touched),
     }
     if lint["warnings"]:

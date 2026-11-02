@@ -142,7 +142,9 @@ def test_a_good_query_returns_named_columns_and_rows(doc, source):
     assert out["columns"] == ["seg_cd", "n"]
     assert len(out["rows"]) == 3
     assert out["truncated"] is False
-    assert out["limits"]["rows"] and out["limits"]["timeout_s"]
+    assert out["limits"]["rows"] == 200
+    assert out["limits"]["timeout_s"] is None
+    assert "none" in out["limits"]["time_limit"]
 
 
 def test_the_row_cap_truncates_and_says_so(doc, source):

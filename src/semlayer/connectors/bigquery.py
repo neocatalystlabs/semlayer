@@ -223,25 +223,28 @@ class BigQuerySource:
         return [tuple(row.values()) for row in self.client.query(sql).result()]
 
     def query_capped(self, sql: str, limit: int = RUN_SQL_ROWS,
-                     timeout_s: float = RUN_SQL_TIMEOUT_S,
+                     timeout_s: float | None = RUN_SQL_TIMEOUT_S,
                      ) -> tuple[list[str], list[tuple], bool]:
-        """`query` for an agent: named columns, capped rows, a job timeout.
+        """`query` for an agent: named columns, capped rows, no clock by default.
 
-        `job_timeout_ms` is BigQuery's own limit on the job, which matters
-        more here than elsewhere because the bill is the scan: a runaway
-        query an agent wrote is cancelled server-side instead of running to
-        completion while nobody is listening. The cap is applied by stopping
-        the row iterator, so the SQL is never rewritten.
+        With None -- the default -- the project's own limits apply, which is
+        the user's configuration rather than ours.
+
+        A `timeout_s` arms BOTH halves, deliberately. `job_timeout_ms` is
+        what stops the WORK, since BigQuery cancels the job and the scan and
+        the bill stop with it -- but measured against a deliberately slow
+        query it took 14s to surface a 2s limit, because the client was
+        still waiting on the API. So the wait is bounded as well, with slack
+        for the cancellation to land.
+
+        The row cap is applied by stopping the iterator, so the SQL is never
+        rewritten.
         """
         from google.cloud import bigquery
-        config = bigquery.QueryJobConfig(job_timeout_ms=max(1, int(timeout_s * 1000)))
-        # Both halves, deliberately. `job_timeout_ms` is what stops the WORK
-        # -- BigQuery cancels the job, so the scan and the bill stop -- but
-        # measured against a deliberately slow query it took 14s to surface a
-        # 2s limit, because the client was still waiting on the API. So the
-        # wait is bounded too, with slack for the cancellation to land.
+        config = (bigquery.QueryJobConfig(
+            job_timeout_ms=max(1, int(timeout_s * 1000))) if timeout_s else None)
         result = self.client.query(sql, job_config=config).result(
-            timeout=timeout_s + 5)
+            timeout=(timeout_s + 5) if timeout_s else None)
         columns = [f.name for f in result.schema]
         rows, truncated = [], False
         for n, row in enumerate(result):

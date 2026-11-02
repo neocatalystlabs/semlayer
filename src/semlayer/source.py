@@ -358,11 +358,22 @@ class QueryExecutor(Protocol):
         ...
 
 
-# What an agent's own query may cost. Small on purpose: this runs inside a
-# chat turn, the rows are going into a model's context, and a query that
-# needs more than this is one a person should run in their own client.
+# How many rows an agent's own query may bring back. Small on purpose: these
+# rows go into a model's context, and a result that needs more than this is
+# one a person should pull in their own client.
 RUN_SQL_ROWS = 200
-RUN_SQL_TIMEOUT_S = 30
+
+# And NO time limit, deliberately (Raj, 2026-11-02). A real analytical query
+# on a real warehouse takes minutes, so a short cap refuses legitimate work;
+# and the warehouse is the user's, billed to them, governed by their own
+# resource monitors and query limits. Capping it here would be us enforcing
+# where the product says it only records. `timeout_s=None` therefore arms
+# nothing, and every connector below honours that.
+#
+# The mechanism stays reachable for a caller that wants one -- pass
+# `timeout_s` -- because it took live measurement to get right per engine
+# and it is worth keeping tested.
+RUN_SQL_TIMEOUT_S: float | None = None
 
 
 @runtime_checkable
@@ -380,9 +391,13 @@ class AgentQueryExecutor(Protocol):
     """
 
     def query_capped(self, sql: str, limit: int = RUN_SQL_ROWS,
-                     timeout_s: float = RUN_SQL_TIMEOUT_S,
+                     timeout_s: float | None = RUN_SQL_TIMEOUT_S,
                      ) -> tuple[list[str], list[tuple], bool]:
-        """Run `sql`; return (column names, rows, whether rows were truncated)."""
+        """Run `sql`; return (column names, rows, whether rows were truncated).
+
+        `timeout_s=None` means no time limit: the query runs as long as the
+        warehouse lets it.
+        """
         ...
 
 
@@ -573,24 +588,30 @@ class DuckDBSource:
         return self.con.execute(sql).fetchall()
 
     def query_capped(self, sql: str, limit: int = RUN_SQL_ROWS,
-                     timeout_s: float = RUN_SQL_TIMEOUT_S,
+                     timeout_s: float | None = RUN_SQL_TIMEOUT_S,
                      ) -> tuple[list[str], list[tuple], bool]:
-        """`query` for an agent: named columns, capped rows, interrupted on time.
+        """`query` for an agent: named columns, capped rows, no clock by default.
 
-        DuckDB has no statement timeout, so the clock is a watchdog that
+        DuckDB has no statement timeout, so a `timeout_s` is a watchdog that
         calls `interrupt()` -- the same mechanism the benchmark's executor
-        uses. `fetchmany(limit + 1)` is how truncation is detected without
+        uses. With None, nothing is armed, which also means nothing can
+        interrupt a query this connection is running for somebody else.
+
+        `fetchmany(limit + 1)` is how truncation is detected without
         appending a LIMIT to someone else's SQL.
         """
         import threading
-        timer = threading.Timer(timeout_s, self.con.interrupt)
-        timer.start()
+        timer = (threading.Timer(timeout_s, self.con.interrupt)
+                 if timeout_s else None)
+        if timer is not None:
+            timer.start()
         try:
             cur = self.con.execute(sql)
             columns = [d[0] for d in cur.description or []]
             rows = cur.fetchmany(limit + 1)
         finally:
-            timer.cancel()
+            if timer is not None:
+                timer.cancel()
         return columns, rows[:limit], len(rows) > limit
 
     def for_worker(self) -> WorkerExecutor:

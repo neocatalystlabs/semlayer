@@ -202,28 +202,33 @@ class PostgresSource:
         return list(self.con.execute(sql).fetchall())
 
     def query_capped(self, sql: str, limit: int = RUN_SQL_ROWS,
-                     timeout_s: float = RUN_SQL_TIMEOUT_S,
+                     timeout_s: float | None = RUN_SQL_TIMEOUT_S,
                      ) -> tuple[list[str], list[tuple], bool]:
-        """`query` for an agent: named columns, capped rows, server-side clock.
+        """`query` for an agent: named columns, capped rows, no clock by default.
 
-        `statement_timeout` is enforced by PostgreSQL itself, so a query that
-        hangs on the server is cancelled there rather than leaving us waiting
-        on a socket. It is a session setting any role may change, so this
-        needs no privilege the reader does not already have, and it is reset
-        afterwards because the connection outlives the query.
+        A `timeout_s` becomes `statement_timeout`, which PostgreSQL enforces
+        itself -- a query that hangs on the server is cancelled there rather
+        than leaving us on a socket. It is a session setting any role may
+        change, so it needs no privilege the reader does not have, and it is
+        reset afterwards because the connection outlives the query.
+
+        With None -- the default -- the setting is not touched at all, so
+        whatever the user's own server or role has configured still applies.
         """
-        ms = max(1, int(timeout_s * 1000))
         cur = self.con.cursor()
         try:
-            cur.execute(f"SET statement_timeout = {ms}")
+            if timeout_s:
+                cur.execute("SET statement_timeout = "
+                            f"{max(1, int(timeout_s * 1000))}")
             cur.execute(sql)
             columns = [d.name for d in cur.description or []]
             rows = cur.fetchmany(limit + 1)
         finally:
-            try:
-                cur.execute("SET statement_timeout = DEFAULT")
-            except Exception:
-                pass
+            if timeout_s:
+                try:
+                    cur.execute("SET statement_timeout = DEFAULT")
+                except Exception:
+                    pass        # a dead session needs no reset
             cur.close()
         return columns, [tuple(r) for r in rows[:limit]], len(rows) > limit
 

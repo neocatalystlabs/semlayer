@@ -33,11 +33,12 @@ def duck():
         con.close()
 
 
-def test_the_defaults_are_small_enough_for_a_chat_turn():
-    """These rows go into a model's context and the clock runs inside a tool
-    call, so both are deliberately modest."""
+def test_the_row_cap_is_small_and_there_is_no_clock():
+    """The rows go into a model's context, so the cap is modest. There is no
+    time limit at all: a real analytical query takes minutes, and the
+    warehouse being billed is the user's, with their own limits on it."""
     assert RUN_SQL_ROWS <= 500
-    assert RUN_SQL_TIMEOUT_S <= 60
+    assert RUN_SQL_TIMEOUT_S is None
 
 
 def test_duckdb_returns_named_columns(duck):
@@ -135,3 +136,25 @@ def test_postgres_resets_the_timeout_it_set(postgres):
     with pytest.raises(Exception):
         postgres.query_capped("select pg_sleep(10)", timeout_s=1)
     assert postgres.query("show statement_timeout")[0][0] in ("0", "0ms")
+
+
+def test_nothing_is_armed_by_default_on_duckdb(duck):
+    """A watchdog that fired by default would interrupt whatever this
+    connection is running, including a query it was not asked about."""
+    import threading
+    before = {t.name for t in threading.enumerate()}
+    duck.query_capped("select 1 as one")
+    assert {t.name for t in threading.enumerate()} == before
+
+
+def test_postgres_does_not_touch_the_setting_by_default(postgres):
+    """With no timeout asked for, the user's own server configuration is
+    what applies -- so the session setting must be left alone."""
+    # through the raw connection: the connector's `query` always fetches,
+    # and a SET returns no rows.
+    postgres.con.execute("SET statement_timeout = 7000")
+    try:
+        postgres.query_capped("select 1 as one")
+        assert postgres.query("show statement_timeout")[0][0] == "7s"
+    finally:
+        postgres.con.execute("SET statement_timeout = DEFAULT")
