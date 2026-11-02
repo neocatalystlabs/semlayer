@@ -545,10 +545,14 @@ def _register_answer_tools(srv, session: Session) -> None:
         rows because they are about whether the number means what the user
         thinks.
 
-        Rows are capped and there is a timeout; both are stated in the
-        result, along with whether rows were truncated. Nothing is written,
-        nothing is persisted, and your SQL is never rewritten: a required
-        filter is reported, never silently applied.
+        Rows are capped, and the cap and whether rows were truncated are
+        stated in the result. There is NO time limit: a real query takes as
+        long as the warehouse takes, and their own limits apply. Nothing is
+        written, nothing is persisted, and your SQL is never rewritten: a
+        required filter is reported, never silently applied.
+
+        Refused while an inference is running -- one connection is not shared
+        between the two. Ask again when `status` says `ready`.
 
         The result carries `assumptions` -- the unconfirmed claims the answer
         rests on. Answer the user in words first, then render those under it.
@@ -571,13 +575,13 @@ def agent_context(doc: dict, question: str, session: Session) -> dict:
 
 
 def agent_run(doc: dict, sql: str, session: Session) -> dict:
-    """`run_sql`, under the session's own connection and dialect."""
-    from semlayer import agent_query
-    from semlayer.session import family
+    """`run_sql`, under the session's own connection and dialect.
 
-    dialect = agent_query.dialect_for(family(session.connection or ""))
+    The session owns the connection and decides whether it is free, so the
+    refusal while an inference is running lives there rather than here.
+    """
     try:
-        source = session.open_source()
+        return session.run_query(doc, sql)
     except Exception as e:
         return {"ran": False, "sql": sql,
                 "error": f"{type(e).__name__}: {str(e)[:300]}",
@@ -585,7 +589,6 @@ def agent_run(doc: dict, sql: str, session: Session) -> dict:
                          "Call status: if a layer was loaded from a file, the "
                          "connection it names may not be reachable from here, "
                          "and the user has to say how to reach it.")}
-    return agent_query.run(doc, source, sql, dialect=dialect)
 
 
 def build_server(layer: Session | dict):

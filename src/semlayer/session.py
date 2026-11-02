@@ -786,8 +786,10 @@ def _next_inferring(payload: dict) -> str:
         sentence += (f" They asked: {asked!r} -- answer that as soon as the "
                      "layer is ready.")
     if payload.get("layer"):
-        sentence += (" A layer is still loaded and still answerable; say that "
-                     "it is the previous one.")
+        sentence += (" The previous layer is still loaded and still answerable "
+                     "-- say that it is the previous one. But run_sql is "
+                     "refused until the run finishes: the warehouse connection "
+                     "is not shared between the two.")
     return sentence
 
 
@@ -1021,6 +1023,12 @@ class Session:
         # the running job if there is one.
         self._source = None
         self.job: InferJob | None = None
+        # Held for as long as one operation is using that connection. The
+        # connectors are not built to be shared: DuckDB forbids two threads
+        # on one connection object (its own docstring says so, and
+        # `for_worker` exists because of it), and an agent's query arriving
+        # mid-inference would be a second user of the same handle.
+        self._in_use = threading.Lock()
 
     @classmethod
     def of(cls, layer: Session | dict) -> Session:
@@ -1223,8 +1231,14 @@ class Session:
             return out
         if connection and redact(connection) != self.connection:
             self.select(connection)
-        elif connection:
-            self._credential = connection if carries_secret(connection) else None
+        elif connection and carries_secret(connection):
+            # The same warehouse with a new secret -- a rotated password, or
+            # the user pasting it again. Only ever REPLACE a credential with
+            # another one: the agent sees the redacted form in `status`, so
+            # the redacted form is what it passes back, and treating that as
+            # "no secret given" wiped the held credential and sent the
+            # driver a literal `***`.
+            self._credential = connection
         if question:
             self.pending_question = question
         target = self.target()
@@ -1252,7 +1266,10 @@ class Session:
         import time as _time
         started = _time.time()
         try:
-            doc = self._infer_once(job, use_llm)
+            # Held for the whole run: an agent query arriving mid-inference
+            # is refused rather than allowed onto the same connection.
+            with self._in_use:
+                doc = self._infer_once(job, use_llm)
             path = layer_cache_path(self.target() or "")
             save_document(path, doc)
             job.doc, job.state = doc, "done"
@@ -1351,6 +1368,38 @@ class Session:
     def route(self, requested: str) -> dict:
         """What to tell a user who named a warehouse that was not listed."""
         return route_for(requested)
+
+    def run_query(self, doc: dict, sql: str) -> dict:
+        """Run the agent's SQL, if the warehouse connection is free.
+
+        Refused rather than queued while an inference is running, and the
+        asymmetry is deliberate: a query is seconds and the agent can simply
+        ask again, while a run is minutes and must not be thrown away or
+        interfered with. The inference waits for a query; a query does not
+        wait for an inference.
+
+        Sharing the connection instead is not an option. DuckDB forbids two
+        threads on one connection object, and on every engine the profiling
+        queries and the agent's query would be interleaving on one handle.
+        """
+        from semlayer import agent_query
+
+        if not self._in_use.acquire(blocking=False):
+            out = self.status()
+            out["ran"] = False
+            out["error"] = ("the warehouse connection is busy with the "
+                            "inference that is running, and semlayer will not "
+                            "share one connection between the two")
+            out["next"] = ("Tell the user the query has to wait for the run to "
+                           "finish, say roughly where the run is, and call "
+                           "run_sql again when status says `ready`.")
+            return out
+        try:
+            dialect = agent_query.dialect_for(family(self.connection or ""))
+            source = self.open_source()
+            return agent_query.run(doc, source, sql, dialect=dialect)
+        finally:
+            self._in_use.release()
 
     def cancel_infer(self) -> dict:
         """Ask a running inference to stop, and say what happened.

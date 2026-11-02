@@ -325,3 +325,105 @@ def test_a_failed_run_records_its_class_not_its_message(_nowhere, monkeypatch):
     assert rows[0]["outcome"] == "error"
     assert rows[0]["error_class"]
     assert "missing.duckdb" not in json.dumps(rows[0])
+
+
+# --- the credential survives being handed back ---------------------------
+
+def test_the_redacted_form_coming_back_does_not_wipe_the_credential(_nowhere):
+    """The flow that broke it: `status` shows the agent the REDACTED
+    connection, so that is the string the agent passes to the next call. The
+    first version treated "no secret in this string" as "forget the secret",
+    and the driver was then handed a literal `***`.
+    """
+    s = sess.Session()
+    s.select(DSN)
+    assert s.target() == DSN
+    s.start_infer(s.connection, wait_seconds=0.1, use_llm=False)
+    assert s.target() == DSN, "the held credential was dropped"
+    assert "***" not in (s.target() or "")
+
+
+def test_a_new_secret_for_the_same_warehouse_replaces_the_old_one(_nowhere):
+    """A rotated password, or the user pasting it again. Only ever replace a
+    credential with another credential."""
+    s = sess.Session()
+    s.select(DSN)
+    rotated = DSN.replace("hunter2", "correcthorse")
+    s.start_infer(rotated, wait_seconds=0.1, use_llm=False)
+    assert s.target() == rotated
+    assert "hunter2" not in json.dumps(s.status(), default=str)
+
+
+def test_switching_warehouse_does_drop_the_old_credential(_nowhere):
+    s = sess.Session()
+    s.select(DSN)
+    s.select("duckdb:other.duckdb")
+    assert s.target() == "duckdb:other.duckdb"
+    assert s._credential is None
+
+
+# --- one connection, one user at a time ----------------------------------
+
+def test_run_sql_is_refused_while_an_inference_is_running(warehouse, monkeypatch):
+    """DuckDB forbids two threads on one connection object -- its own
+    docstring says so -- and on every engine the profiling queries and the
+    agent's query would interleave on one handle. So the query is refused
+    rather than the connection shared."""
+    import time as _t
+
+    real = sess.Session._infer_once
+
+    def slow(self, job, use_llm):
+        _t.sleep(2)
+        return real(self, job, use_llm)
+
+    monkeypatch.setattr(sess.Session, "_infer_once", slow)
+    s = sess.Session()
+    # a layer from before, so `run_sql` would otherwise go ahead
+    s.start_infer(warehouse, wait_seconds=60, use_llm=False)
+    doc = s.doc
+    s.start_infer(warehouse, wait_seconds=0.2, use_llm=False)
+    assert s.state == "inferring"
+
+    out = s.run_query(doc, "select 1 as one")
+    assert out["ran"] is False
+    assert "busy" in out["error"]
+    assert "run_sql again" in out["next"]
+    assert "rows" not in out
+
+    s.job.thread.join(timeout=60)
+    after = s.run_query(doc, "select 1 as one")
+    assert after["ran"] is True, "and allowed again once the run is done"
+
+
+def test_a_query_does_not_block_the_turn_it_was_asked_in(warehouse, monkeypatch):
+    """Refused, not queued: a query is seconds and the agent can ask again,
+    while a run is minutes. Waiting would hold the tool call open for the
+    length of an inference."""
+    import time as _t
+
+    def slow(self, job, use_llm):
+        _t.sleep(2)
+        return {"semantic_layer": {"name": "x", "tables": []}}
+
+    monkeypatch.setattr(sess.Session, "_infer_once", slow)
+    s = sess.Session()
+    s.start_infer(warehouse, wait_seconds=0.1, use_llm=False)
+    t0 = _t.time()
+    s.run_query({"semantic_layer": {"name": "x", "tables": []}}, "select 1")
+    assert _t.time() - t0 < 1.0
+
+
+def test_an_ordinary_query_releases_the_connection(warehouse):
+    """The lock must not leak: two queries in a row have to both work."""
+    s = sess.Session()
+    s.start_infer(warehouse, wait_seconds=60, use_llm=False)
+    for _ in range(3):
+        assert s.run_query(s.doc, "select 1 as one")["ran"] is True
+
+
+def test_a_refused_query_still_releases_the_connection(warehouse):
+    s = sess.Session()
+    s.start_infer(warehouse, wait_seconds=60, use_llm=False)
+    assert s.run_query(s.doc, "delete from customers")["ran"] is False
+    assert s.run_query(s.doc, "select 1 as one")["ran"] is True
