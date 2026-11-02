@@ -23,6 +23,13 @@ semlayer mcp --connection snowflake:prod   # the layer cached for one warehouse
 
 ## Setup
 
+There is no questionnaire. Add the server, ask a data question, and it asks
+for what it needs when it needs it — which on day one is usually nothing.
+
+If you would rather be walked through it, the server offers a prompt:
+`/semlayer:setup` in Claude Code, or the prompt picker in Claude Desktop. It
+uses the same tools underneath, so there is one path and not two.
+
 `semlayer mcp` speaks stdio, so you do not run it yourself — your client does.
 Point the client at the command and leave the arguments off.
 
@@ -275,6 +282,12 @@ credentials, or it does not happen.
 | `cancel_infer` | stop a run that is going |
 | `context_for_question` | **start every question here.** The part of the layer that bears on it, plus the claims underneath that nobody has confirmed |
 | `run_sql` | run one read-only SELECT and return the rows, with the assumptions the answer rests on |
+| `review_questions` | what is uncertain in the layer, as questions — pull it when you ask, never pushed at you |
+| `review_question` | one question in full: every object it covers and the evidence |
+| `review_answer` | record a verdict. Takes effect immediately and records **who** decided |
+| `review_decisions` | every verdict and who stands behind it |
+| `save_layer` | write the layer into your project, so your team has it |
+| `export_layer` | a snapshot in another tool's format (`dbt` today) |
 
 With no layer loaded, every tool answers with `status` instead of an error, so an
 agent that starts asking about tables before anything has been inferred is told
@@ -378,8 +391,64 @@ Assumed: seg_cd's values mean consumer / small-medium business / enterprise
 (the engine guessed; nobody has confirmed it). Say "yes" and I'll record it.
 ```
 
-Recording that verdict from the chat is the next piece of work; today it is
-`semlayer review <layer> --list`.
+## Saying "yes, that's right"
+
+The assumptions under an answer are answerable. One word records it:
+
+```
+Customers by segment: SMB 521, CON 495, ENT 484.
+Assumed: seg_cd holds a short code, grouped as a type code (nobody has
+confirmed it). Say "yes" and I'll record it.
+
+> yes
+
+Recorded for 3 columns, in your name. That claim won't come up again.
+```
+
+It takes effect in the same breath — the document in memory is the one the
+tools answer from, so the claim stops appearing as an assumption on the next
+answer — and it is written through to the layer file, because a verdict that
+dies with the server is worse than none: you would believe it was kept.
+
+**Who may decide what.** Nobody can verify who typed anything, so instead
+every verdict records which it was, and the agent is held to a line:
+
+| | who |
+|---|---|
+| accept a claim where accepting changes no behaviour | the agent may, signed `claude-code/opus` |
+| accept anything that **unlocks** behaviour — a decode guess a metric's filter is written against, an aggregate table becoming routable, a discovered filter, a conflict, two columns being the same thing | **you**. The agent proposes with its reasoning and waits |
+| reject, or set a different value | **you**. Both assert something the engine never claimed |
+
+Your name comes from `git config user.name` where the layer lives — the same
+name the CLI records — or your agent asks once. Never invented, and never
+your MCP client's name: a file that says "claude-desktop" decided something
+is a file that lies. `review_decisions` shows the `signal` column, which is
+where this becomes visible: `agent` means nobody has confirmed it yet.
+
+`semlayer review <layer> --list` is the same queue in a terminal, and writes
+the same verdicts.
+
+## Keeping it, and handing it on
+
+**`save_layer`** writes the layer into your project. The cache under
+`$SEMLAYER_HOME` is per-machine and keyed by connection; a file in your
+repository is what a colleague reads, and what carries your decisions to
+them. From then on this session's verdicts land there rather than in the
+cache.
+
+**`export_layer`** writes a snapshot in another tool's format — `dbt` today.
+On request only, lossy on purpose, and it tells you what was dropped:
+
+```
+semantic_models: 33, metrics: 19
+losses: 3 deprecated tables not exported; hierarchies, aggregate routing and
+        repo knowledge have no dbt primitive; confidence/provenance carried
+        only in meta.semlayer
+```
+
+Nothing keeps an export in step with the layer afterwards, and your agent
+keeps answering from the layer rather than from the copy — most of what makes
+this layer honest is in the part dbt cannot hold.
 
 ## Reading the numbers
 
