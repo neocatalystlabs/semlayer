@@ -6,7 +6,7 @@
 Point it at your warehouse. It profiles every column, discovers the foreign keys nobody declared, decodes the status columns, finds the business rules hiding in your aggregate tables, and writes the whole thing down as a portable semantic layer in an openly licensed format — with **confidence, provenance, and lifecycle on every single claim** — ready for any AI agent to consume over MCP.
 
 ```bash
-pip install -e ".[warehouses]"
+pip install "semlayer[warehouses]"
 semlayer init snowflake            # generates the minimal-grant setup script
 # `snowflake` reads the environment; `snowflake:<connection>` reads
 # ~/.snowflake/connections.toml; `snowflake://user@account/db?role=..` is a URL
@@ -17,6 +17,13 @@ semlayer mcp layer.yaml            # serve it to Claude, Cursor, or any MCP clie
 semlayer lint layer.yaml query.sql  # check any SQL (yours or an agent's) against the layer
 semlayer drift layer.yaml snowflake  # catch schema changes (cron- and CI-friendly)
 ```
+
+Or start from an agent instead of a terminal: add the MCP server to Claude
+Desktop, Claude Code or Cursor and ask it what it can see — it discovers the
+warehouses configured on your machine and says what to do next, with no layer
+built yet. See [docs/mcp.md](docs/mcp.md).
+
+From a checkout (to develop on semlayer itself): `pip install -e ".[warehouses]"`.
 
 ## Why
 
@@ -50,7 +57,7 @@ Everything lands with `confidence` ([calibrated, with the misses published](docs
 - **Two knobs for speed, output identical at any value**: `--llm-workers N` (default 4) runs that many model calls at once (typing escalation, foreign-key validation, both Describe passes; bounded by your API rate limit, measured 7.2x at 8) and `--query-workers N` runs that many foreign-key queries at once *in your warehouse* (default 4 on a network warehouse, since it spends your compute: measured 3.3x at 4 and 6.7x at 8 on BigQuery; every core on an in-process DuckDB file). `--no-llm` builds still use `--query-workers`. ([measured](docs/scale.md))
 - **Read-only, minimal-grant**: `semlayer init` generates the grant script; the reader persona is proved unable to write — on PostgreSQL by a test that runs in ordinary CI against a real server (`tests/test_postgres.py`, no credentials needed), and on Snowflake by a live suite runnable against your own account (`tests/test_snowflake_live.py`).
 - **Model-response cache, on your disk and nowhere else**: each model response is cached in `semlayer/cassettes` under your platform cache directory (`$XDG_CACHE_HOME` or `~/.cache`, `~/Library/Caches` on macOS, `%LOCALAPPDATA%` on Windows), so an interrupted whole-warehouse run resumes without paying for the same prompts twice. The files hold what the model wrote *about* your schema — descriptions, inferred types, and the enum decodes it returned, which do quote the coded values it was shown (`X=Cancelled`). No credentials, no result sets, and nothing is sent to us. Switch it off with `--no-llm-cache` or `SEMLAYER_LLM_CACHE=off`, move it with `SEMLAYER_LLM_CACHE=<dir>`, or keep cell values out of the prompts entirely with `--no-sample-egress`.
-- **Telemetry**: anonymous usage statistics — command, duration, outcome, warehouse type, bucketed table/column counts, version, OS, and for `semlayer mcp` which MCP client connected and which of our tools it called (one of seven fixed words for the client, never its own name; tool names only, never their arguments). Never names, SQL, or data. See exactly what is sent with `semlayer telemetry --show`; opt out with `semlayer telemetry --off`, or per-shell with `SEMLAYER_TELEMETRY=off`. ([what and why](docs/telemetry.md))
+- **Telemetry**: anonymous usage statistics — command, duration, outcome, warehouse type, bucketed table/column counts, version, OS, whether an `infer` was started from the CLI or from an agent, and for `semlayer mcp` which MCP client connected and which of our tools it called (one of seven fixed words for the client, never its own name; tool names only, never their arguments). Never names, SQL, or data. See exactly what is sent with `semlayer telemetry --show`; opt out with `semlayer telemetry --off`, or per-shell with `SEMLAYER_TELEMETRY=off`. ([what and why](docs/telemetry.md))
 
 ## Honest scope (beta)
 

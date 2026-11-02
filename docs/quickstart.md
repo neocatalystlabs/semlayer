@@ -1,9 +1,17 @@
 # Quickstart
 
+Install from PyPI: `pip install "semlayer[warehouses]"` — the extra brings the
+Snowflake, BigQuery and Postgres drivers, which are optional because DuckDB
+needs none of them. Working on semlayer itself instead? Clone it and
+`pip install -e ".[warehouses]"`; every command below is the same.
+
+The `fixtures/build.py` line in the DuckDB section is the one thing that needs
+a checkout — it builds the sample warehouse from this repo.
+
 ## DuckDB (60 seconds, no accounts)
 
 ```bash
-pip install -e .
+pip install semlayer
 python fixtures/build.py fan_trap
 semlayer infer duckdb:fixtures/build/fan_trap.duckdb -o layer.yaml --no-llm
 semlayer review layer.yaml --list
@@ -21,7 +29,7 @@ Nothing to create, no role to make, no key to issue. Use the account you
 already have:
 
 ```bash
-pip install -e ".[warehouses]"
+pip install "semlayer[warehouses]"
 export SNOWFLAKE_ACCOUNT=ORG-ACCOUNT SNOWFLAKE_READER_USER=me \
        SNOWFLAKE_READER_AUTHENTICATOR=externalbrowser \
        SNOWFLAKE_WAREHOUSE=wh_xs SNOWFLAKE_DATABASE=analytics
@@ -75,7 +83,7 @@ the full `abc12345.us-east-1.snowflakecomputing.com` hostname.
 ## BigQuery
 
 ```bash
-pip install -e ".[warehouses]"
+pip install "semlayer[warehouses]"
 semlayer init bigquery --project my-project   # run output with gcloud
 export GCP_PROJECT=my-project \
        GOOGLE_APPLICATION_CREDENTIALS_READER=/path/semlayer-reader.json
@@ -100,7 +108,7 @@ Also covers Redshift and other Postgres-protocol engines, though their catalogs
 differ in places and are not covered by our tests.
 
 ```bash
-pip install -e ".[warehouses]"
+pip install "semlayer[warehouses]"
 semlayer init postgres --database analytics --schema mart  # run output as a superuser
 export PG_READER_DSN=postgresql://semlayer_reader:...@host:5432/analytics
 semlayer infer postgres -o layer.yaml
