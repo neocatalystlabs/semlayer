@@ -128,7 +128,9 @@ class McpTools:
 # is a cassette key: leaving them in would change the recorded conversations
 # and with them the numbers this example is cited for.
 _SESSION_TOOLS = ("status", "discover_connections", "load_layer",
-                  "infer", "cancel_infer", "context_for_question", "run_sql")
+                  "infer", "cancel_infer", "context_for_question", "run_sql",
+                  "review_questions", "review_question", "review_answer",
+                  "review_decisions", "save_layer", "export_layer")
 
 _SQL_KEYS = ("sql", "query", "statement")
 

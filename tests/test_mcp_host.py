@@ -227,3 +227,13 @@ def test_what_the_user_typed_never_reaches_the_event(doc):
     out = ts.serialize(telemetry._pending)
     assert "hunter2" not in json.dumps(out)
     assert "acme" not in json.dumps(out)
+
+
+def test_invoking_the_setup_prompt_is_noted(doc):
+    """A prompt is a surface too, and the one we most need to know about: an
+    optional walkthrough nobody invokes is a walkthrough to delete."""
+    srv = mcp_server.build_server(doc)
+    _in_a_request("Claude Code", lambda: srv.get_prompt("setup", {}))
+    out = ts.serialize(telemetry._pending)
+    assert out["tools"] == ["setup"]
+    assert out["host"] == "claude-code"
