@@ -358,6 +358,34 @@ class QueryExecutor(Protocol):
         ...
 
 
+# What an agent's own query may cost. Small on purpose: this runs inside a
+# chat turn, the rows are going into a model's context, and a query that
+# needs more than this is one a person should run in their own client.
+RUN_SQL_ROWS = 200
+RUN_SQL_TIMEOUT_S = 30
+
+
+@runtime_checkable
+class AgentQueryExecutor(Protocol):
+    """Read-only SQL execution on behalf of an agent, with a cap and a clock.
+
+    Separate from `query` for three reasons, all of which an agent needs and
+    profiling does not: column NAMES (rows without them are unreadable to a
+    model), a row cap that reports truncation instead of silently losing
+    rows, and a timeout the driver itself enforces.
+
+    The SQL is never rewritten. No LIMIT is appended and no filter is
+    injected -- the cap is applied by fetching at most `limit` rows, so what
+    ran is exactly what the agent wrote and what the user was shown.
+    """
+
+    def query_capped(self, sql: str, limit: int = RUN_SQL_ROWS,
+                     timeout_s: float = RUN_SQL_TIMEOUT_S,
+                     ) -> tuple[list[str], list[tuple], bool]:
+        """Run `sql`; return (column names, rows, whether rows were truncated)."""
+        ...
+
+
 class DuckDBSource:
     """MetadataProvider + QueryExecutor over a DuckDB connection.
 
@@ -543,6 +571,27 @@ class DuckDBSource:
     def query(self, sql: str) -> list[tuple]:
         """Execute `sql` on the underlying DuckDB connection and fetch all rows."""
         return self.con.execute(sql).fetchall()
+
+    def query_capped(self, sql: str, limit: int = RUN_SQL_ROWS,
+                     timeout_s: float = RUN_SQL_TIMEOUT_S,
+                     ) -> tuple[list[str], list[tuple], bool]:
+        """`query` for an agent: named columns, capped rows, interrupted on time.
+
+        DuckDB has no statement timeout, so the clock is a watchdog that
+        calls `interrupt()` -- the same mechanism the benchmark's executor
+        uses. `fetchmany(limit + 1)` is how truncation is detected without
+        appending a LIMIT to someone else's SQL.
+        """
+        import threading
+        timer = threading.Timer(timeout_s, self.con.interrupt)
+        timer.start()
+        try:
+            cur = self.con.execute(sql)
+            columns = [d[0] for d in cur.description or []]
+            rows = cur.fetchmany(limit + 1)
+        finally:
+            timer.cancel()
+        return columns, rows[:limit], len(rows) > limit
 
     def for_worker(self) -> WorkerExecutor:
         """An executor one thread may use while others use the connection.

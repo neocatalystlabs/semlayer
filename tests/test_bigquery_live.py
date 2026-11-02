@@ -126,3 +126,31 @@ def test_the_whole_deterministic_pipeline_runs_on_bigquery(reader):
     # would need re-recording against a live model -- see the comment at the
     # query in enrich/run.py.
     assert cid.get("enum_values"), "the capped decode query should have run"
+
+
+def test_the_agent_read_path_caps_and_times_out(reader):
+    """`run_sql` reports a row cap and a timeout to the agent, which repeats
+    them to the user, so both have to be real on this engine too.
+
+    BigQuery's `job_timeout_ms` cancels the JOB -- the scan and the bill stop
+    -- but the client can wait longer than that before being told, measured
+    at 14s for a 2s limit, which is why the wait is bounded as well.
+    """
+    import time
+
+    columns, rows, truncated = reader.query_capped(
+        "select n from unnest(generate_array(1, 100)) as n order by n", limit=4)
+    assert columns == ["n"]
+    assert rows == [(1,), (2,), (3,), (4,)]
+    assert truncated is True
+
+    columns, rows, truncated = reader.query_capped("select 1 as one")
+    assert (columns, rows, truncated) == (["one"], [(1,)], False)
+
+    slow = ("select count(*) as n from unnest(generate_array(1, 1000000)) a "
+            "cross join unnest(generate_array(1, 2000)) b")
+    t0 = time.time()
+    with pytest.raises(Exception):
+        reader.query_capped(slow, timeout_s=2)
+    assert time.time() - t0 < 30
+    assert reader.query_capped("select 1 as one")[1] == [(1,)]

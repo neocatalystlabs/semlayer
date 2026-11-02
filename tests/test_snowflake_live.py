@@ -115,3 +115,33 @@ def test_profile_fan_trap_on_snowflake_meets_floor(reader):
     print(f"\n[snowflake:fan_trap] type_acc={s.type_accuracy:.3f} role_acc={s.role_accuracy:.3f} pk_r={s.pk_recall:.3f}")
     assert s.type_accuracy >= 0.85   # parity floor vs DuckDB's 0.929
     assert s.pk_recall >= 0.99
+
+
+def test_the_agent_read_path_caps_and_times_out(reader):
+    """The timeout here is `STATEMENT_TIMEOUT_IN_SECONDS`, not the driver's
+    `execute(timeout=...)`: measured 2026-11-02, a `timeout=3` on a slow
+    cross join ran for 69 SECONDS and then returned normally. A limit we
+    report in the result and do not enforce is worse than no limit, because
+    the agent repeats it to the user.
+    """
+    import time
+
+    columns, rows, truncated = reader.query_capped(
+        "select seq4() as n from table(generator(rowcount => 50)) order by n",
+        limit=4)
+    assert columns == ["N"]
+    assert rows == [(0,), (1,), (2,), (3,)]
+    assert truncated is True
+
+    slow = ("select count(*) as n from "
+            "(select seq4() a from table(generator(rowcount => 200000))) x "
+            "cross join "
+            "(select seq4() b from table(generator(rowcount => 200000))) y")
+    t0 = time.time()
+    with pytest.raises(Exception):
+        reader.query_capped(slow, timeout_s=3)
+    elapsed = time.time() - t0
+    assert elapsed < 30, f"the server-side timeout did not fire ({elapsed:.0f}s)"
+    # the session survives its own cancellation, which matters because the
+    # MCP session keeps this connection for the next question
+    assert reader.query_capped("select 1 as one")[1] == [(1,)]

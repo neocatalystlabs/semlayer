@@ -9,7 +9,12 @@ from __future__ import annotations
 
 import os
 
-from semlayer.source import ColumnMeta, TableMeta
+from semlayer.source import (
+    RUN_SQL_ROWS,
+    RUN_SQL_TIMEOUT_S,
+    ColumnMeta,
+    TableMeta,
+)
 
 _EXTRA_HINT = "pip install 'semlayer[warehouses]'"
 
@@ -216,6 +221,35 @@ class BigQuerySource:
     def query(self, sql: str) -> list[tuple]:
         """Run sql and return plain row tuples."""
         return [tuple(row.values()) for row in self.client.query(sql).result()]
+
+    def query_capped(self, sql: str, limit: int = RUN_SQL_ROWS,
+                     timeout_s: float = RUN_SQL_TIMEOUT_S,
+                     ) -> tuple[list[str], list[tuple], bool]:
+        """`query` for an agent: named columns, capped rows, a job timeout.
+
+        `job_timeout_ms` is BigQuery's own limit on the job, which matters
+        more here than elsewhere because the bill is the scan: a runaway
+        query an agent wrote is cancelled server-side instead of running to
+        completion while nobody is listening. The cap is applied by stopping
+        the row iterator, so the SQL is never rewritten.
+        """
+        from google.cloud import bigquery
+        config = bigquery.QueryJobConfig(job_timeout_ms=max(1, int(timeout_s * 1000)))
+        # Both halves, deliberately. `job_timeout_ms` is what stops the WORK
+        # -- BigQuery cancels the job, so the scan and the bill stop -- but
+        # measured against a deliberately slow query it took 14s to surface a
+        # 2s limit, because the client was still waiting on the API. So the
+        # wait is bounded too, with slack for the cancellation to land.
+        result = self.client.query(sql, job_config=config).result(
+            timeout=timeout_s + 5)
+        columns = [f.name for f in result.schema]
+        rows, truncated = [], False
+        for n, row in enumerate(result):
+            if n >= limit:
+                truncated = True
+                break
+            rows.append(tuple(row.values()))
+        return columns, rows, truncated
 
     def for_worker(self):
         """Per-worker executor: the BigQuery client is thread-safe; every worker may share it."""
