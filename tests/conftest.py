@@ -14,6 +14,7 @@ cannot be reloaded out from under us.
 
 from __future__ import annotations
 
+import os
 import urllib.request
 
 import pytest
@@ -61,3 +62,29 @@ def _no_network_telemetry(monkeypatch, request):
         return real(req, *a, **kw)
 
     monkeypatch.setattr(urllib.request, "urlopen", guard)
+
+
+@pytest.fixture
+def nowhere(tmp_path, monkeypatch):
+    """A machine with no warehouse configured: empty cwd, empty home, no env.
+
+    For the session and MCP tests, where the subject is discovery -- which
+    reads the working directory, the environment, and files under $HOME, so
+    all three have to be moved for a test to be about what it stubs.
+
+    The environment is cleared by PREFIX rather than by a list of names, which
+    matters: `tests/test_review_mcp.py` loads the developer's own `.env` into
+    the process with `load_dotenv`, so by the time these tests run in a full
+    suite, every SNOWFLAKE_* and GCP_* variable on this laptop is set. Two
+    tests passed alone and failed in the batch before this was prefix-based.
+    """
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("SEMLAYER_HOME", str(tmp_path / "home" / ".semlayer"))
+    (tmp_path / "home").mkdir()
+    (tmp_path / "cwd").mkdir()
+    monkeypatch.chdir(tmp_path / "cwd")
+    for var in list(os.environ):
+        if var.startswith(("PG_", "SNOWFLAKE_", "GCP_", "DBT_", "CLOUDSDK_",
+                           "GOOGLE_APPLICATION_CREDENTIALS")):
+            monkeypatch.delenv(var, raising=False)
+    return tmp_path
