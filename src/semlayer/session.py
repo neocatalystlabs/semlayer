@@ -687,6 +687,28 @@ def visible_layers() -> list[dict]:
     return out
 
 
+# What `generated_by.model` says when a run had no model: statistics, naming
+# rules and inclusion tests, and no sentence written by anything.
+_NO_MODEL = {"", "none", "none/heuristic"}
+
+
+def built_without_model(doc: dict) -> bool | None:
+    """Whether THIS engine built the layer with no model. None if unknown.
+
+    Three states, and the third is why this is not a boolean. A document we
+    produced records `generated_by.model`, so "none/heuristic" is a fact. A
+    document with no `generated_by` at all was not written by us -- every
+    hand-authored gold in fixtures is one -- and we know nothing about how it
+    was made. Claiming "no descriptions" there would tell someone their
+    hand-written layer was statistics-only, and counting descriptions does
+    not save us: the messy_mart gold has none at table level either.
+    """
+    generated = (doc.get("semantic_layer") or {}).get("generated_by")
+    if not generated:
+        return None
+    return str(generated.get("model") or "").strip().lower() in _NO_MODEL
+
+
 def save_document(path: str | Path, doc: dict) -> None:
     """Write a semantic layer document. The sibling of `load_document`.
 
@@ -1155,6 +1177,13 @@ class Session:
         # `for_worker` exists because of it), and an agent's query arriving
         # mid-inference would be a second user of the same handle.
         self._in_use = threading.Lock()
+        # Whether a question has been answered yet, and whether the one
+        # sentence about the model key has been said. Both exist so that
+        # sentence lands AFTER the first answer and exactly once: a stranger
+        # has no key, so day 1 has to work keyless and the suggestion must
+        # never read as a precondition.
+        self.answered_once = False
+        self.told_about_key = False
 
     @classmethod
     def of(cls, layer: Session | dict) -> Session:
@@ -1562,9 +1591,39 @@ class Session:
         try:
             dialect = agent_query.dialect_for(family(self.connection or ""))
             source = self.open_source()
-            return agent_query.run(doc, source, sql, dialect=dialect)
+            out = agent_query.run(doc, source, sql, dialect=dialect)
         finally:
             self._in_use.release()
+        if out.get("ran"):
+            self.answered_once = True
+            note = self._model_key_note(doc)
+            if note:
+                out["next"] = f"{out['next']} {note}"
+        return out
+
+    def _model_key_note(self, doc: dict) -> str | None:
+        """The one sentence about what a model key would add, said once.
+
+        After the first answer, never before it: suggesting a key as a
+        precondition turns a keyless day 1 -- which works, and is what a
+        stranger has -- into a setup step. And once only, because the second
+        time it is nagging.
+        """
+        if self.told_about_key or not built_without_model(doc):
+            return None
+        self.told_about_key = True
+        if self._api_key():
+            # They have a key now; the layer predates it. Telling them to
+            # add one would be wrong, and re-inferring is the actual fix.
+            return ("Say once, after your answer: this layer was built from "
+                    "statistics only, so nothing in it has a written "
+                    "description -- `infer` again and it will add them, now "
+                    "that a model key is set.")
+        return (f"Say once, after your answer: this layer was built from "
+                f"statistics only -- measured columns, inferred keys, no "
+                f"written descriptions. A model key in {_tilde(env_path())} "
+                "adds them next time it is built. Do not make it sound "
+                "required; everything here works without one.")
 
     def cancel_infer(self) -> dict:
         """Ask a running inference to stop, and say what happened.
@@ -1625,6 +1684,9 @@ class Session:
                             or (_mtime(self.layer_path) if self.layer_path else None)),
             "engine": generated.get("engine"),
             "model": generated.get("model"),
+            # Unmistakable rather than a string the agent has to recognise:
+            # `model: "none/heuristic"` is us saying it, not them reading it.
+            "built_without_model": built_without_model(self.doc),
             "undecided_review_items": self._undecided(),
         }
 
