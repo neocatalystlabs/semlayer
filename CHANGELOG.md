@@ -2,6 +2,52 @@
 
 ## Unreleased
 
+### `semlayer mcp` starts with nothing and tells your agent what to do
+
+The server used to demand a layer path, so the only order that worked was
+infer first, serve second. That is not the order people arrive in: the MCP
+server is what gets added to Claude Desktop, Claude Code or Cursor first, and
+for most installs it is the only thing that ever runs.
+
+```bash
+semlayer mcp                                # no layer, no arguments, still useful
+semlayer mcp --connection snowflake:prod    # the layer cached for one warehouse
+semlayer mcp layer.yaml                     # unchanged, and still wins
+```
+
+**`status`** is the new first tool. It says whether a layer is loaded — with its
+size, its age, and how many claims nobody has reviewed — which warehouse
+connections are visible from this machine, and what to do next in one sentence
+an agent can act on.
+
+**Every other tool answers with `status` when no layer is loaded.** They used to
+raise, and an agent handed a raw error can only retry or give up.
+
+**`discover_connections`** lists the warehouses reachable from this machine:
+DuckDB files in the working directory, `PG_READER_DSN`, a BigQuery project or
+application default credentials, dbt's `profiles.yml` (every profile and target,
+mapped to a connection where it can be), `SNOWFLAKE_ACCOUNT`, and the sections
+of `~/.snowflake/connections.toml`. It opens no connection and reads no
+credential: passwords, key paths, DSN values, account identifiers and hostnames
+are not reported, even where the file being read has them in plain sight. Each
+entry says whether semlayer can open it and what it would need if not — a dbt
+target built from `{{ env_var(...) }}` is reported as unresolvable rather than
+silently skipped, and an adapter we have no connector for says so.
+
+[docs/mcp.md](docs/mcp.md) is rewritten around this, including a correction: the
+page said the server never touches your warehouse, which was a claim about the
+serving tools stated as a claim about the product. Inference reads metadata and
+sample values under the credential you give it — there is no semantic layer
+without that — and the page now says where the line actually falls.
+
+Also: `via` on `infer` events, `cli` or `mcp`, says which front door an
+inference came through. Only `cli` is emitted today. Event schema version is
+now `4`; disclosure is in [docs/telemetry.md](docs/telemetry.md), in the same
+release as the field.
+
+Not in this release: starting an inference from inside a session. `status` tells
+you the command to run.
+
 ### Connectors: run as yourself, and failures that stop reading as our bug
 
 **Snowflake no longer refuses to connect without a role.** `SNOWFLAKE_READER_ROLE`

@@ -21,7 +21,7 @@ parks the rest rather than rejecting a batch it does not fully understand.
 
 from __future__ import annotations
 
-SCHEMA = 3
+SCHEMA = 4
 
 # (lower_bound, label), highest first. A value is labelled by the first bound
 # it reaches.
@@ -55,7 +55,24 @@ FLAGS = {"no_llm", "no_sample_egress", "no_declared_constraints", "apply",
 # exists to answer.
 TOOLS = {"semantic_search", "get_domains", "get_tables", "table_detail",
          "get_metrics", "route_intent", "check_sql", "compile_metric",
+         # The two that work with no layer loaded. Worth telling apart from
+         # the rest: a session that called `status` and nothing else is one
+         # that asked what we had and was told "nothing yet", which is the
+         # onboarding failure we are trying to measure.
+         "status", "discover_connections",
          "other"}
+
+# Which front door an `infer` came through: the CLI, or the MCP server's own
+# infer tool. A two-value enum rather than a boolean because a third door is
+# already foreseeable (the browser page), and because `via=cli` reads as a
+# fact where `from_mcp=false` reads as an absence.
+#
+# This is the measurement that decides whether MCP-first onboarding worked.
+# Today every install that launches the server and stops is indistinguishable
+# from one that was never going to infer anything; once inference can start
+# from inside a session, `via` is what separates "they found it" from "they
+# went to a terminal and read the docs".
+VIA = {"cli", "mcp"}
 
 # Which MCP client launched the server. NOT a pass-through enum like the
 # others: a client name is arbitrary vendor text, so `_host` CLASSIFIES it
@@ -221,6 +238,7 @@ FIELDS = {
     "duration_s":  _int,
     "ci":          _bool,
     "flags":       _flags,
+    "via":         lambda v: _enum(VIA, v),
     "host":        _host,
     "tools":       _tools,
     "stages":      _stage_times,

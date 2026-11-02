@@ -135,7 +135,17 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_stitch_parser(sub)
 
     p = sub.add_parser("mcp", help="Serve a semantic layer over MCP (stdio)")
-    p.add_argument("doc", help="semantic layer YAML path")
+    # Optional, which is the point: a client that launches the server before
+    # anything has been inferred is the common case, not a mistake. With no
+    # path the server comes up empty and its `status` tool says what it can
+    # see and what to do next.
+    p.add_argument("doc", nargs="?", default=None,
+                   help="semantic layer YAML path. Without it the server starts "
+                        "empty: `status` reports what it found and what to do")
+    p.add_argument("--connection", metavar="NAME|URI", default=None,
+                   help="the warehouse this session is about: duckdb:<path> | "
+                        "postgresql://... | snowflake[:conn] | bigquery[:project]. "
+                        "Loads the layer cached for it, if there is one")
 
     p = sub.add_parser("lint", help="Check SQL against a semantic layer (deterministic, no LLM)")
     p.add_argument("doc", help="semantic layer YAML path")
@@ -303,26 +313,16 @@ def _add_review_parser(sub) -> None:
 
 
 def _load_doc(path: str) -> dict:
-    import yaml
+    """Load a document. The body moved to `session.load_document`.
 
-    from semlayer.validate import load_yaml
+    Which layer is loaded is the session's business now, and the session is
+    what the MCP server holds -- so the loader lives there and the CLI is one
+    of its callers. Kept as a one-line wrapper rather than renamed at twenty
+    call sites.
+    """
+    from semlayer.session import load_document
 
-    try:
-        doc = load_yaml(Path(path).read_text())
-    except FileNotFoundError as e:
-        raise SpecError(f"document not found: {path}",
-                            hint="run `semlayer infer` first, or check the path") from e
-    except yaml.YAMLError as e:
-        raise SpecError(f"document is not valid YAML: {path} ({e})") from e
-    if not isinstance(doc, dict) or "semantic_layer" not in doc:
-        raise SemlayerError(f"not a semantic layer document: {path}",
-                            hint="expected a top-level `semantic_layer:` mapping")
-    from semlayer.setdoc import is_hub, load_set
-    if is_hub(doc):
-        # a hub and its members become one document; every command below
-        # then works on the set exactly as it does on one file
-        return load_set(path).doc
-    return doc
+    return load_document(path)
 
 
 def _save_doc(path: str, doc: dict) -> None:
@@ -931,9 +931,26 @@ def _cmd_telemetry(args: argparse.Namespace) -> int:
 
 
 def _cmd_mcp(args: argparse.Namespace) -> int:
-    from semlayer.mcp_server import build_server
+    """Serve over stdio, with a layer, with a connection, or with neither.
 
-    build_server(_load_doc(args.doc)).run()
+    Order matters: `--connection` selects the warehouse and loads whatever
+    layer is cached for it, then an explicit path overrides the document --
+    someone who named a file wants that file, which is how this command has
+    always behaved.
+
+    Nothing is inferred and nothing is connected to here. Selecting a
+    connection records which warehouse the session is about; opening it is
+    the next slice of this work.
+    """
+    from semlayer.mcp_server import build_server
+    from semlayer.session import Session
+
+    session = Session()
+    if args.connection:
+        session.select(args.connection)
+    if args.doc:
+        session.load(args.doc)
+    build_server(session).run()
     return 0
 
 
@@ -1010,8 +1027,9 @@ _HANDLERS = {
 
 _TELEMETRY_NOTICE = """\
 semlayer now sends anonymous usage statistics: command, duration, outcome,
-warehouse type, table/column counts, version, OS, and which MCP client
-connects and uses. Never names, SQL, or data.
+warehouse type, table/column counts, version, OS, whether an inference was
+started from the CLI or from an agent, and which MCP client connects and
+uses. Never names, SQL, or data.
   See exactly what is sent:  semlayer telemetry --show
   Turn it off permanently:   semlayer telemetry --off
 Details: https://github.com/neocatalystlabs/semlayer/blob/main/docs/telemetry.md
@@ -1087,6 +1105,11 @@ def _note_invocation(args: argparse.Namespace) -> None:
         flags=[f for f in ("no_llm", "no_sample_egress",
                            "no_declared_constraints", "apply", "json", "share")
                if getattr(args, f, False)],
+        # Which front door an inference came through. Only this one exists
+        # today; the MCP server's infer tool will note `mcp` from its own call
+        # site. None on every other command, and the serializer drops it --
+        # `via` on a `validate` event would mean nothing.
+        via="cli" if getattr(args, "command", None) == "infer" else None,
     )
 
 

@@ -6,12 +6,21 @@ table summaries -> full table detail. The consumer contract is enforced at
 the surface: deprecated/orphaned objects are flagged unusable, confidence +
 lifecycle ride along on every answer, required filters are always included
 in table detail.
+
+The server holds a `Session`, not a document: it starts with or without a
+layer, and `status` is the tool that says which. Every other tool answers
+with `status()` when there is no layer to query, so an agent that arrives
+before an inference has happened is told what to do rather than handed an
+error. The pure query functions below are unchanged by that -- they take a
+document, and a session is only what chooses one.
 """
 
 from __future__ import annotations
 
 import json
 import re
+
+from semlayer.session import Session
 
 # ---------- pure query functions (unit-tested; MCP tools are thin wrappers) --
 
@@ -340,44 +349,104 @@ def _server_class():
     return _Server
 
 
-def build_server(doc: dict):
-    """Wire the pure query functions above as MCP tools on a FastMCP server."""
-    srv = _server_class()("semlayer",
-                  instructions="Semantic layer for this warehouse. Start with "
-                               "semantic_search or list_domains; use get_table before writing SQL. "
-                               "ALWAYS apply required_filters; never use UNUSABLE objects; run "
-                               "check_sql on every query before executing it; caveat "
-                               "answers built on lifecycle=inferred elements.")
+_INSTRUCTIONS = (
+    "Semantic layer for this warehouse. CALL status FIRST: it says whether a "
+    "layer is loaded, which warehouse connections are visible from here, and "
+    "what to do next -- and every other tool answers with it when no layer is "
+    "loaded, so read the `next` field and act on it rather than retrying. "
+    "With a layer loaded: start with semantic_search or get_domains, and "
+    "table_detail before you write any SQL. ALWAYS apply required_filters; "
+    "never use UNUSABLE objects; run check_sql on every query before "
+    "executing it; caveat answers built on lifecycle=inferred elements."
+)
+
+
+def _answer(session: Session, query) -> str:
+    """Run a query function against the loaded layer, or say why you cannot.
+
+    The fallback is the contract: a tool call never dead-ends. Before this,
+    every tool indexed into `doc["semantic_layer"]`, so a server started
+    without a layer raised on the first call -- and an agent's only options
+    then are to retry or to give up. Most of the population this server
+    actually has is in exactly that state.
+    """
+    if session.doc is None:
+        return json.dumps(session.status(), default=str)
+    return json.dumps(query(session.doc), default=str)
+
+
+def _register_session_tools(srv, session: Session) -> None:
+    """The two tools that answer with no layer loaded.
+
+    Registered apart from the rest because every tool is a nested function
+    and `build_server` is at the complexity limit -- and because these two
+    are about the SESSION, where the eight below are about a document.
+    """
+
+    @srv.tool()
+    def status() -> str:
+        """What this server has, what it can see, and what to do next.
+
+        Call this first. It answers with the loaded layer (its size, age, and
+        how many claims nobody has reviewed yet), the warehouse connections
+        visible from this machine, and a `next` field saying what to do --
+        including when there is no layer at all, which is the state a fresh
+        install is in.
+        """
+        return json.dumps(session.status(), default=str)
+
+    @srv.tool()
+    def discover_connections() -> str:
+        """Which warehouses are reachable from this machine, by name.
+
+        Reads DuckDB files in the working directory, warehouse environment
+        variables, dbt's profiles.yml and Snowflake's connections.toml. Names
+        only: no credential is read, no value that could be one is reported,
+        and no connection is opened. Each entry says whether semlayer can open
+        it (`supported`) and what it would need if not (`note`).
+        """
+        return json.dumps(session.discover(), default=str)
+
+
+def build_server(layer: Session | dict):
+    """Wire the pure query functions above as MCP tools on a FastMCP server.
+
+    Takes a session, or a bare document for the in-process callers that have
+    one and no connection -- `Session.of` normalises both.
+    """
+    session = Session.of(layer)
+    srv = _server_class()("semlayer", instructions=_INSTRUCTIONS)
+    _register_session_tools(srv, session)
 
     @srv.tool()
     def semantic_search(query: str) -> str:
         """Search tables, columns, and metrics by keywords. The starting point."""
-        return json.dumps(search(doc, query), default=str)
+        return _answer(session, lambda doc: search(doc, query))
 
     @srv.tool()
     def get_domains() -> str:
         """List warehouse domains (table groupings) for navigation."""
-        return json.dumps(list_domains(doc), default=str)
+        return _answer(session, list_domains)
 
     @srv.tool()
     def get_tables(domain: str = "") -> str:
         """List table summaries, optionally within a domain."""
-        return json.dumps(list_tables(doc, domain or None), default=str)
+        return _answer(session, lambda doc: list_tables(doc, domain or None))
 
     @srv.tool()
     def table_detail(name: str) -> str:
         """Full detail for one table: columns, keys, relationships, REQUIRED FILTERS."""
-        return json.dumps(get_table(doc, name), default=str)
+        return _answer(session, lambda doc: get_table(doc, name))
 
     @srv.tool()
     def get_metrics() -> str:
         """List defined metrics (name, measure, aggregation, filter)."""
-        return json.dumps(list_metrics(doc), default=str)
+        return _answer(session, list_metrics)
 
     @srv.tool()
     def route_intent(intent: str) -> str:
         """Which tables to use (and avoid) for an analytical intent."""
-        return json.dumps(routing(doc, intent), default=str)
+        return _answer(session, lambda doc: routing(doc, intent))
 
     @srv.tool()
     def check_sql(sql: str, dialect: str = "duckdb") -> str:
@@ -389,7 +458,7 @@ def build_server(doc: dict):
         (each finding carries a fix hint), then re-check.
         """
         from semlayer.lint import lint_sql
-        return json.dumps(lint_sql(doc, sql, dialect=dialect), default=str)
+        return _answer(session, lambda doc: lint_sql(doc, sql, dialect=dialect))
 
     @srv.tool()
     def compile_metric(name: str, group_by: str = "", time_grain: str = "",  # noqa: PLR0913, PLR0917 — tool schema is intentionally flat
@@ -408,12 +477,12 @@ def build_server(doc: dict):
         meant rather than guessing.
         """
         from semlayer.compile import compile_metric as _compile
-        result = _compile(doc, name,
-                          group_by=[g.strip() for g in group_by.split(",") if g.strip()],
-                          time_grain=time_grain or None,
-                          time_start=time_start or None, time_end=time_end or None,
-                          extra_filter=filter or None, dialect=dialect,
-                          calendar=calendar or None, scd=scd or None)
-        return json.dumps(result, default=str)
+        return _answer(session, lambda doc: _compile(
+            doc, name,
+            group_by=[g.strip() for g in group_by.split(",") if g.strip()],
+            time_grain=time_grain or None,
+            time_start=time_start or None, time_end=time_end or None,
+            extra_filter=filter or None, dialect=dialect,
+            calendar=calendar or None, scd=scd or None))
 
     return srv
