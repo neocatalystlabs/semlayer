@@ -220,8 +220,16 @@ connection the session is already using:
 - **Your SQL is never rewritten.** No `LIMIT` is appended and no filter is
   injected. A required filter is reported; applying it is the agent's job, so
   what ran is what you can be shown.
-- **Capped and timed**, both stated in the result, along with whether rows
-  were truncated. Nothing is persisted anywhere.
+- **Capped rows, and no time limit.** The cap and whether rows were
+  truncated are stated in the result. There is deliberately no clock: a real
+  analytical query takes minutes, and the warehouse is yours — your resource
+  monitors, your query limits, your bill. Capping it here would be us
+  enforcing where we said we only record. Nothing is persisted anywhere.
+- **Refused while an inference is running.** One warehouse connection is not
+  shared between a profiling run and an agent's query — DuckDB forbids two
+  threads on one connection outright, and on every engine the two would
+  interleave. The inference waits for a query; a query does not wait for an
+  inference, because a query is seconds and the agent can simply ask again.
 
 **The document tools still touch nothing.** `semantic_search`, `table_detail`,
 `check_sql`, `compile_metric` and the rest read the layer file and nothing
@@ -340,7 +348,7 @@ measured:
    `open_questions`: the claims underneath that nobody has confirmed.
 2. **`check_sql`** on the SQL the agent writes.
 3. **`run_sql`**, which lints again and refuses to execute anything with an
-   error in it.
+   error in it. It takes as long as your warehouse takes.
 4. **The answer first, assumptions under it.** Every result carries
    `assumptions` — each unconfirmed claim the answer rested on, with what the
    engine saw and whether accepting it would change any behaviour. Your agent

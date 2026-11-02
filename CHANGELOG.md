@@ -38,10 +38,19 @@ plus `open_questions`, the claims underneath that nobody has confirmed.
 - Your SQL is never rewritten: no `LIMIT` appended, no filter injected. A
   required filter is reported and left undone, so what ran is what you can be
   shown.
-- Capped rows and a timeout, both stated in the result along with whether
-  rows were truncated, and both enforced by the engine itself — DuckDB's
-  interrupt, PostgreSQL's `statement_timeout`, BigQuery's `job_timeout_ms`,
-  Snowflake's `STATEMENT_TIMEOUT_IN_SECONDS`. Nothing is persisted.
+- Capped rows, reported with whether the result was truncated — the cap is
+  about what fits in a model's context. **No time limit**: a real analytical
+  query takes minutes, and the warehouse is yours, billed to you and
+  governed by your own resource monitors, so capping it here would be
+  enforcing where this product records. A caller that wants a limit can pass
+  one, and it is then enforced by the engine itself — DuckDB's interrupt,
+  PostgreSQL's `statement_timeout`, BigQuery's `job_timeout_ms` plus a
+  bounded client wait, Snowflake's `STATEMENT_TIMEOUT_IN_SECONDS`.
+- Refused while an inference is running. One warehouse connection is not
+  shared between a profiling run and an agent's query: DuckDB forbids two
+  threads on one connection, and on every engine the two would interleave.
+  The inference waits for a query; a query does not wait for an inference.
+- Nothing is persisted.
 - Every result carries **`assumptions`**: the unconfirmed claims the answer
   rested on, each with what the engine saw and whether accepting it would
   change behaviour. Answer first, assumptions under it.
