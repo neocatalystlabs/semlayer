@@ -314,11 +314,15 @@ def run(doc: dict, source, sql: str, *, dialect: str = "duckdb",
         "rows": [[_jsonable(v) for v in r] for r in rows],
         "row_count": len(rows),
         "truncated": truncated,
-        # Reported so the agent can repeat it accurately rather than
-        # guessing at it.
+        # Both limits, and a sentence to repeat: the agent tells the user
+        # what applied, and it should not have to assemble that from two
+        # numbers and guess at the units.
         "limits": {"rows": limit, "timeout_s": timeout_s,
-                   "time_limit": (f"{int(timeout_s)}s" if timeout_s else
-                                  "none -- your warehouse's own limits apply")},
+                   "in_words": (f"at most {limit} rows, and up to "
+                                f"{int(timeout_s)}s on the warehouse"
+                                if timeout_s else
+                                f"at most {limit} rows, and no time limit "
+                                "beyond your warehouse's own")},
         "assumptions": assumptions(doc, touched),
     }
     if lint["warnings"]:

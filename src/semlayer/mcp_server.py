@@ -20,6 +20,8 @@ from __future__ import annotations
 import json
 import re
 
+from mcp.server.fastmcp import Context
+
 from semlayer.session import Session
 
 # ---------- pure query functions (unit-tested; MCP tools are thin wrappers) --
@@ -477,6 +479,59 @@ def _register_session_tools(srv, session: Session) -> None:
         return json.dumps(session.load_layer(ref), default=str)
 
 
+# How often to look at the job while an `infer` call is open. Twice a second
+# is below what a person notices and far above what the notifications cost.
+_WATCH_TICK_S = 0.5
+
+
+async def _watch(job, wait_seconds: float, ctx) -> None:
+    """Wait for the job without blocking the server, reporting as it goes.
+
+    This is why `infer` is async. FastMCP calls a SYNC tool function
+    directly on the event loop, so the `thread.join` this used to do made
+    the whole server unresponsive for the length of the wait -- measured
+    2026-11-02: a `status` call sent one second into a run was not answered
+    for 5.9 more. With a 60-second cap that is a minute of dead server, and
+    no progress notification could be sent either, since sending one needs
+    the loop.
+
+    `report_progress` is best-effort. A client that did not send a progress
+    token gets nothing and must not see a failed tool call because of it.
+    """
+    import anyio
+
+    from semlayer.session import INFER_WAIT_CAP_S
+
+    deadline = min(max(0.0, float(wait_seconds)), INFER_WAIT_CAP_S)
+    waited, last = 0.0, None
+    while job.running and waited < deadline:
+        await anyio.sleep(_WATCH_TICK_S)
+        waited += _WATCH_TICK_S
+        if ctx is None:
+            continue
+        here = (job.fraction, job.label or job.stage)
+        if here == last:
+            continue            # nothing moved; do not spend a notification
+        last = here
+        try:
+            await ctx.report_progress(progress=job.fraction, total=1.0,
+                                      message=_progress_message(job))
+        except Exception:
+            # No progress token, or a client that closed the stream. The run
+            # is unaffected and the result still comes back.
+            pass
+
+
+def _progress_message(job) -> str:
+    """One line for a progress bar: what it is doing, and how far in."""
+    from semlayer.session import STAGE_WORDS
+
+    doing = job.label or STAGE_WORDS.get(job.stage or "") or "starting"
+    eta = job.eta_s
+    return f"{doing} ({round(job.fraction * 100)}%" + (
+        f", roughly {eta}s left)" if eta else ")")
+
+
 def _register_answer_tools(srv, session: Session) -> None:
     """Build a layer, and answer a question with it.
 
@@ -487,8 +542,9 @@ def _register_answer_tools(srv, session: Session) -> None:
     """
 
     @srv.tool()
-    def infer(connection: str = "", question: str = "", scope: str = "",
-              wait_seconds: int = 25, use_llm: bool = True) -> str:
+    async def infer(connection: str = "", question: str = "", scope: str = "",
+                    wait_seconds: int = 25, use_llm: bool = True,
+                    ctx: Context | None = None) -> str:
         """Build the semantic layer for a warehouse. Ask the user first.
 
         This READS THEIR WAREHOUSE -- metadata and sample values -- under the
@@ -509,12 +565,19 @@ def _register_answer_tools(srv, session: Session) -> None:
         use_llm: false for a statistics-only layer -- no descriptions, no
         decode validation, no cost, and much faster.
 
-        Nothing will wake you when a long run finishes. Tell the user that,
-        and call `status` when they next speak.
+        While this call is open it streams progress notifications, so a
+        client that renders them shows a bar. Nothing will wake you AFTER it
+        returns. Tell the user that, and call `status` when they next speak.
         """
-        return json.dumps(session.start_infer(
+        out = session.start_infer(
             connection or None, question=question or None, scope=scope or None,
-            wait_seconds=wait_seconds, use_llm=use_llm), default=str)
+            wait_seconds=0, use_llm=use_llm)
+        job = session.job
+        if job is None or out.get("error") or not job.running:
+            return json.dumps(out, default=str)
+        await _watch(job, wait_seconds, ctx)
+        return json.dumps(session.after_infer(job, session.target() or ""),
+                          default=str)
 
     @srv.tool()
     def cancel_infer() -> str:

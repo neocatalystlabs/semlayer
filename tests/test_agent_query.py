@@ -144,7 +144,14 @@ def test_a_good_query_returns_named_columns_and_rows(doc, source):
     assert out["truncated"] is False
     assert out["limits"]["rows"] == 200
     assert out["limits"]["timeout_s"] == 600
-    assert out["limits"]["time_limit"] == "600s"
+    # A sentence the agent repeats, so it does not have to assemble one from
+    # two numbers and guess at the units.
+    assert out["limits"]["in_words"] == "at most 200 rows, and up to 600s on the warehouse"
+
+
+def test_the_limits_read_correctly_with_the_clock_off(doc, source):
+    out = aq.run(doc, source, "select ord_id from ord_hdr", timeout_s=None)
+    assert "no time limit" in out["limits"]["in_words"]
 
 
 def test_the_row_cap_truncates_and_says_so(doc, source):

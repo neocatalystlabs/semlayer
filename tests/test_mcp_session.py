@@ -440,3 +440,96 @@ def test_the_handshake_now_names_inference_and_the_answer_order():
     assert "run_sql" in text
     assert "ASK THEM FIRST" in text
     assert "Never ask the user for a password or a key in chat." in text
+
+
+# --- the server must answer while a run is going -------------------------
+
+def test_status_is_answered_while_infer_is_waiting(_nowhere, built_fixture):
+    """The defect this fixes: FastMCP calls a SYNC tool function directly on
+    the event loop, so the `thread.join` inside `infer` made the WHOLE server
+    unresponsive for the length of its wait. Measured over stdio on
+    2026-11-02: a `status` sent one second into a run was not answered for
+    5.9 more, and with a 60-second cap that is a minute of dead server.
+
+    `infer` is async for this reason, and sending a progress notification
+    needs the loop too.
+    """
+    import shutil
+    import time
+    shutil.copy(built_fixture("messy_mart"), _nowhere / "cwd" / "warehouse.duckdb")
+    srv = mcp_server.build_server(Session())
+    answered: dict = {}
+
+    async def drive():
+        started = time.time()
+
+        async def run_infer():
+            await srv.call_tool("infer", {"connection": "duckdb:warehouse.duckdb",
+                                          "wait_seconds": 30, "use_llm": False})
+            answered["infer_at"] = time.time() - started
+
+        async def ask_status():
+            await anyio.sleep(0.8)
+            content, _ = await srv.call_tool("status", {})
+            answered["status_at"] = time.time() - started
+            answered["payload"] = json.loads(content[0].text)
+
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(run_infer)
+            tg.start_soon(ask_status)
+
+    anyio.run(drive)
+    # WHEN status was answered, not how long its own call took: with a
+    # blocking `infer` the status call itself is fast, because it does not
+    # even begin until the run is over. The first version of this test
+    # measured the call and passed against the defect.
+    assert answered["infer_at"] > 2.0, "the run was too quick to prove anything"
+    assert answered["status_at"] < answered["infer_at"] - 1.0, (
+        f"status answered at {answered['status_at']:.1f}s, after the run "
+        f"finished at {answered['infer_at']:.1f}s -- the loop was blocked")
+    assert answered["payload"]["state"] == "inferring"
+
+
+def test_infer_streams_progress_to_a_client_that_asked(_nowhere, built_fixture):
+    import shutil
+    shutil.copy(built_fixture("messy_mart"), _nowhere / "cwd" / "warehouse.duckdb")
+    srv = mcp_server.build_server(Session())
+    reported: list[tuple] = []
+
+    class _Ctx:
+        async def report_progress(self, progress, total=None, message=None):
+            reported.append((progress, message))
+
+    async def drive():
+        tool = {t.name: t for t in await srv.list_tools()}["infer"]
+        assert tool is not None
+        out = await srv._tool_manager.get_tool("infer").fn(
+            connection="duckdb:warehouse.duckdb", wait_seconds=30,
+            use_llm=False, ctx=_Ctx())
+        return json.loads(out)
+
+    out = anyio.run(drive)
+    assert out["state"] == "ready", out.get("error")
+    assert reported, "no progress was reported"
+    fractions = [p for p, _ in reported]
+    assert fractions == sorted(fractions), fractions
+    assert all(m for _, m in reported), reported
+    assert any("%" in m for _, m in reported)
+
+
+def test_a_client_that_cannot_take_progress_is_not_an_error(_nowhere, built_fixture):
+    """No progress token, or a stream that closed. The run is unaffected."""
+    import shutil
+    shutil.copy(built_fixture("fan_trap"), _nowhere / "cwd" / "warehouse.duckdb")
+    srv = mcp_server.build_server(Session())
+
+    class _Broken:
+        async def report_progress(self, progress, total=None, message=None):
+            raise RuntimeError("no progress token")
+
+    async def drive():
+        return json.loads(await srv._tool_manager.get_tool("infer").fn(
+            connection="duckdb:warehouse.duckdb", wait_seconds=30,
+            use_llm=False, ctx=_Broken()))
+
+    assert anyio.run(drive)["state"] == "ready"

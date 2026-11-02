@@ -134,13 +134,21 @@ def infer_with_report(source, llm=None, options: InferOptions | None = None, *,
     consults it only to break ties statistics cannot.
     `state`: a state store for partition-wise incremental profiling.
     `progress`: called with `{"stage": name, "event": "start"}` as each stage
-    begins and `{"stage": name, "event": "done", "seconds": n}` as it ends.
+    begins, `{"stage": name, "event": "done", "seconds": n}` as it ends, and
+    `{"stage": name, "event": "unit", "done": n, "total": n, "within": f,
+    "label": text}` from inside the four loops that take the time -- the
+    tables being profiled, the inclusion queries, the model's corroboration
+    of candidates, and the tables being described. `within` is each stage's
+    own view of how far through itself it is, because only the stage knows
+    its shape (describe runs two passes; link splits between queries and the
+    model).
+
     For a caller that is not waiting on the return value -- the MCP server
-    runs this on a thread and reports the stage in `status` -- and for
-    cancellation: raising from the callback unwinds the run at a stage
-    boundary, which is the only way to stop it, since a Python thread cannot
-    be killed and a half-run holding a warehouse connection is worse than a
-    late stop.
+    runs this on a thread, reports it in `status` and streams it to the
+    client -- and for cancellation: raising from the callback unwinds the run
+    at a stage boundary, which is the only way to stop it, since a Python
+    thread cannot be killed and a half-run holding a warehouse connection is
+    worse than a late stop.
     Prose excerpts ride into typing/describe evidence; CSV dictionaries seed
     descriptions; doc decode claims reconcile post-enrich (conflicts on
     contradiction — priors, never truth).
@@ -178,18 +186,20 @@ def infer_with_report(source, llm=None, options: InferOptions | None = None, *,
     doc, stats = _timed("profile", lambda: profile_with_stats(
         source, no_sample_values=no_sample_egress, llm=llm, context=context, only=only,
         state=state, lineage=lineage, llm_workers=llm_workers,
-        schema=set(opt.schema) if opt.schema else None, name=opt.name))
+        schema=set(opt.schema) if opt.schema else None, name=opt.name,
+        progress=notify))
     if context is not None and context.dictionary:
         from semlayer.context import apply_dictionary
         apply_dictionary(doc, context.dictionary)
     _timed("link", lambda: link_source(source, doc, stats, llm=llm, lineage=lineage,
                                        use_declared=use_declared,
                                        query_workers=query_workers,
-                                       llm_workers=llm_workers))
+                                       llm_workers=llm_workers,
+                                       progress=notify))
     if llm is not None:
         _timed("describe", lambda: describe_source(
             doc, stats, llm, no_samples=no_sample_egress, context=context,
-            llm_workers=llm_workers))
+            llm_workers=llm_workers, progress=notify))
     _timed("enrich", lambda: enrich_source(source, doc, stats))
     if context is not None and context.chunks:
         from semlayer.context import apply_doc_decodes, apply_doc_ratios

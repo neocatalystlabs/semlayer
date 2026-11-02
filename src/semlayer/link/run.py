@@ -37,6 +37,20 @@ REVIEW_CONFIDENCE = 0.45
 _REC_HINT = ("mgr", "manager", "parent", "sup", "boss", "report", "referrer", "ref_by")
 
 
+def _tick(progress, verb: str, done: int, total: int, base: float,
+          share: float) -> None:
+    """One link event, mapped onto the stage fraction its phase occupies.
+
+    The phase knows its unit counts and this knows where the phase sits in
+    the stage, which is the only place both are known.
+    """
+    if progress is None:
+        return
+    progress({"stage": "link", "event": "unit", "done": done, "total": total,
+              "within": max(0.0, min(1.0, base + share * (done / total if total else 1.0))),
+              "label": f"{verb}: {min(done + 1, max(total, 1))} of {total}"})
+
+
 def _affinity(tn: str, cn: str) -> int:
     """Count name tokens `cn` shares with its own table `tn` (self-affinity)."""
     return len(_name_tokens(cn, tn) & _name_tokens(tn, tn))
@@ -629,9 +643,17 @@ def _apply_composite_pks(source, doc: dict, stats_by_table: dict) -> None:
                       f"{ts.row_count} rows; no member is unique alone",
         })
 
+# How link's time divides between its two phases, for progress reporting
+# only. Measured live on the 116-table dbt_synthea warehouse (docs/scale.md,
+# 2026-10-28): of link's 142 s, about 22 s were the inclusion queries and the
+# rest was model validation of the candidates they produced. With no model
+# there is no second phase, so inclusion is the whole stage.
+_INCLUSION_SHARE_WITH_LLM = 0.15
+
+
 def link_source(source, doc: dict, stats_by_table: dict, llm=None, lineage=None,  # noqa: PLR0913, PLR0917
                 use_declared: bool = True, query_workers: int = 1,
-                llm_workers: int = 1) -> dict:
+                llm_workers: int = 1, progress=None) -> dict:
     """Run the Link stage over a profiled document.
 
     Mutates and returns doc: adds foreign_key blocks, relationships,
@@ -668,7 +690,14 @@ def link_source(source, doc: dict, stats_by_table: dict, llm=None, lineage=None,
 
     # BEFORE candidate generation, which reads primary_key to decide parents.
     _apply_composite_pks(source, doc, stats_by_table)
-    candidates = generate_candidates(source, stats_by_table, doc, query_workers=query_workers)
+    # Link is the longest stage of a run with no model (76% of it, measured
+    # across the fixtures), so it reports from inside both of its phases
+    # rather than leaving a bar still for most of the run.
+    share = _INCLUSION_SHARE_WITH_LLM if llm is not None else 1.0
+    candidates = generate_candidates(
+        source, stats_by_table, doc, query_workers=query_workers,
+        on_done=lambda done, total: _tick(progress, "checking inclusion",
+                                          done, total, 0.0, share))
     # A declared FK settles that column; rediscovering it wastes an inclusion
     # check and risks asserting a second, different parent for the same column.
     if declared_edges:
@@ -680,7 +709,11 @@ def link_source(source, doc: dict, stats_by_table: dict, llm=None, lineage=None,
     verdicts = {}
     if llm is not None and candidates:
         from semlayer.link.validate_llm import validate_candidates
-        verdicts = validate_candidates(llm, candidates, workers=max(1, llm_workers))
+        verdicts = validate_candidates(
+            llm, candidates, workers=max(1, llm_workers),
+            on_done=lambda done, total: _tick(
+                progress, "corroborating foreign keys", done, total,
+                _INCLUSION_SHARE_WITH_LLM, 1.0 - _INCLUSION_SHARE_WITH_LLM))
 
     cols = {
         (t["name"], c["name"]): c
