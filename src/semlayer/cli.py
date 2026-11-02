@@ -1122,35 +1122,15 @@ def _note_invocation(args: argparse.Namespace) -> None:
 
 
 def _error_class(e: BaseException) -> str:
-    """Map an exception TYPE to the reported class. Never the message.
+    """The telemetry error class for `e`. Lives in `errors` now.
 
-    The message is where warehouse names, hostnames and SQL live, so it is
-    not read here at all. That is why this maps types, and why it is coarser
-    than the enum allows: `auth` is declared in the schema but unreachable,
-    because SourceError covers a bad URI, a refused login and a missing
-    grant alike and telling them apart would mean parsing text.
-
-    Builtins are mapped too. A missing file or an unreadable one is an
-    ordinary user mistake, and calling it "internal" would make that bucket
-    -- which should mean OUR bug -- mean nothing.
+    Kept as a name here because this module's own call sites and the
+    connector docstrings refer to it, and because the MCP server needs the
+    same classification without importing the CLI.
     """
-    from semlayer.errors import DriftError, LLMError, SourceError, SpecError
+    from semlayer.errors import error_class
 
-    # Most specific first: FileNotFoundError and PermissionError are both
-    # OSError, and SourceError/SpecError are both SemlayerError.
-    for kinds, label in (
-        ((SourceError,), "connection"),
-        ((SpecError,), "invalid_input"),
-        ((LLMError,), "llm"),
-        ((DriftError, SemlayerError), "other"),
-        ((PermissionError,), "permission"),
-        ((FileNotFoundError, IsADirectoryError, NotADirectoryError), "invalid_input"),
-        ((TimeoutError,), "timeout"),
-        ((ConnectionError,), "connection"),
-    ):
-        if isinstance(e, kinds):
-            return label
-    return "internal"
+    return error_class(e)
 
 
 def main(argv: list[str] | None = None) -> int:

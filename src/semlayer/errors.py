@@ -32,3 +32,38 @@ class LLMError(SemlayerError):
 
 class DriftError(SemlayerError):
     """Drift-loop failures: snapshot/diff/apply problems."""
+
+
+def error_class(e: BaseException) -> str:
+    """Map an exception TYPE to the reported telemetry class. Never the message.
+
+    The message is where warehouse names, hostnames and SQL live, so it is
+    not read here at all. That is why this maps types, and why it is coarser
+    than the enum allows: `auth` is declared in the schema but unreachable,
+    because SourceError covers a bad URI, a refused login and a missing
+    grant alike and telling them apart would mean parsing text.
+
+    Builtins are mapped too. A missing file or an unreadable one is an
+    ordinary user mistake, and calling it "internal" would make that bucket
+    -- which should mean OUR bug -- mean nothing.
+
+    Here rather than in the CLI because the MCP server now records its own
+    `infer` events, and both front doors must classify a failure the same
+    way or the two are not comparable -- which is the entire point of the
+    `via` field they are separated by.
+    """
+    # Most specific first: FileNotFoundError and PermissionError are both
+    # OSError, and SourceError/SpecError are both SemlayerError.
+    for kinds, label in (
+        ((SourceError,), "connection"),
+        ((SpecError,), "invalid_input"),
+        ((LLMError,), "llm"),
+        ((DriftError, SemlayerError), "other"),
+        ((PermissionError,), "permission"),
+        ((FileNotFoundError, IsADirectoryError, NotADirectoryError), "invalid_input"),
+        ((TimeoutError,), "timeout"),
+        ((ConnectionError,), "connection"),
+    ):
+        if isinstance(e, kinds):
+            return label
+    return "internal"
