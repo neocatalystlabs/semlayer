@@ -447,7 +447,10 @@ def test_the_test_database_default_is_called_out(monkeypatch):
     monkeypatch.setenv("SNOWFLAKE_READER_USER", "svc")
     monkeypatch.setenv("SNOWFLAKE_READER_PRIVATE_KEY_PATH", "/keys/k.p8")
     found = sess.discover()
-    assert "SNOWFLAKE_DATABASE is unset" in found[0]["note"]
+    assert "without SNOWFLAKE_DATABASE" in found[0]["note"]
+    assert "SEMLAYER_TEST" in found[0]["note"]
+    # Called out, but not blocking: the connector runs, it just runs against
+    # the wrong database, which is the whole reason the note exists.
     assert found[0]["supported"] is True
 
 

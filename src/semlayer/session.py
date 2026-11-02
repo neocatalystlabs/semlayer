@@ -79,6 +79,20 @@ def environment() -> Mapping[str, str]:
     return env_file.environment(env_path())
 
 
+def _env_hint(keys: str = "") -> str:
+    """Where to put a variable, written for an agent that has no shell.
+
+    Every note in a discovery row is read out by the agent to the user, so a
+    note saying "export it" prescribes the one thing that cannot work: a
+    server an MCP client launched never sees a shell. The file is the answer
+    everywhere, and saying so here keeps the advice identical across sources.
+    """
+    where = _tilde(env_path())
+    what = f"add {keys} to {where}" if keys else f"add the missing lines to {where}"
+    return (f"{what} and call status again -- a shell export is invisible to a "
+            "server your MCP client launched, so that file is the place")
+
+
 def _where(env: Mapping[str, str], var: str) -> str:
     """Where a variable was seen: the process, or the file we read.
 
@@ -1123,7 +1137,8 @@ def _bigquery_in_env(env: Mapping[str, str]) -> list[dict]:
     note = (f"project {project}, from GCP_PROJECT; {credential}" if project
             else f"{credential}; no GCP_PROJECT is set, so the project comes "
                  "from the credential's own quota project -- pass "
-                 "bigquery:<project> to be sure of it")
+                 "bigquery:<project> to be sure of it, or "
+                 + _env_hint("GCP_PROJECT=<project>"))
     return [{
         "uri": f"bigquery:{project}" if project else "bigquery",
         "kind": "bigquery",
@@ -1294,15 +1309,26 @@ def _snowflake_in_env(env: Mapping[str, str]) -> list[dict]:
     """
     if not env.get("SNOWFLAKE_ACCOUNT"):
         return []
-    missing = [v for v in (_SF_USER,) if not env.get(v)]
+    # What is missing, as the LINES to add rather than the names of the
+    # variables: an agent relaying "SNOWFLAKE_READER_USER is not set" leaves
+    # the user to guess the spelling and the file. One hint at the end, once,
+    # because the whole note is read out loud.
+    needs, blocking = [], False
+    if not env.get(_SF_USER):
+        needs.append(f"{_SF_USER}=<user>")
+        blocking = True
     if not any(env.get(v) for v in _SF_CREDENTIAL_VARS):
-        missing.append(f"one of {', '.join(_SF_CREDENTIAL_VARS[:2])}")
+        needs.append("SNOWFLAKE_READER_PRIVATE_KEY_PATH=<path to the .p8 key> "
+                     "(or SNOWFLAKE_READER_PASSWORD=<password>)")
+        blocking = True
     note = "account from SNOWFLAKE_ACCOUNT"
     if not env.get("SNOWFLAKE_DATABASE"):
-        note += "; SNOWFLAKE_DATABASE is unset, so the connector falls back to "
-        note += "its test default -- export it"
-    if missing:
-        note += f"; not set: {', '.join(missing)}"
+        note += ("; without SNOWFLAKE_DATABASE the connector falls back to its "
+                 "test default (SEMLAYER_TEST)")
+        needs.append("SNOWFLAKE_DATABASE=<database>")
+    if needs:
+        note += f"; {_env_hint('; '.join(needs))}"
+    missing = blocking
     return [{
         "uri": "snowflake",
         "kind": "snowflake",

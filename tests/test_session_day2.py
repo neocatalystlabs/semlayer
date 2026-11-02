@@ -434,3 +434,42 @@ def test_a_long_preamble_is_not_read_forever(tmp_path):
     path = tmp_path / "notalayer.yaml"
     path.write_text("# comment\n" * (sess._MAX_PREAMBLE_LINES + 5) + "semantic_layer:\n")
     assert sess.scan_layer(path) is None
+
+
+# --- what a note may tell the user to do ---------------------------------
+
+def test_no_note_tells_the_user_to_export_a_variable(_nowhere, monkeypatch):
+    """Every note is read out by the agent, and a server its client launched
+    never sees a shell -- so "export it" prescribes the one thing that cannot
+    work. The file is the answer everywhere."""
+    monkeypatch.setenv("SNOWFLAKE_ACCOUNT", "ORG-ACCT")
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", "/tmp/key.json")
+    monkeypatch.setenv("PG_READER_DSN", "postgresql://r@h:5432/db")
+    import re
+    # An imperative: "export it", "export SNOWFLAKE_DATABASE". The word
+    # itself is allowed, because the hint explains that a shell export is
+    # invisible -- which is the opposite of prescribing one.
+    prescribes = re.compile(r"\bexport (it|[A-Z][A-Z_]+)")
+    notes = [c["note"] or "" for c in sess.discover()]
+    assert notes
+    for note in notes:
+        assert not prescribes.search(note), note
+
+
+def test_a_missing_snowflake_variable_names_the_file(_nowhere, monkeypatch):
+    monkeypatch.setenv("SNOWFLAKE_ACCOUNT", "ORG-ACCT")
+    note = next(c["note"] for c in sess.discover() if c["kind"] == "snowflake")
+    assert ".env" in note
+    assert "SNOWFLAKE_DATABASE=<database>" in note
+    assert "SNOWFLAKE_READER_USER=<user>" in note
+    assert "SNOWFLAKE_READER_PRIVATE_KEY_PATH=<path to the .p8 key>" in note
+    assert "SEMLAYER_TEST" in note          # the fallback it would otherwise use
+    # One hint, not one per missing thing: the whole note is read out loud.
+    assert note.count("call status again") == 1
+
+
+def test_the_bigquery_project_hint_names_the_file(_nowhere, monkeypatch):
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", "/tmp/key.json")
+    note = next(c["note"] for c in sess.discover() if c["kind"] == "bigquery")
+    assert "GCP_PROJECT=<project>" in note
+    assert ".env" in note
