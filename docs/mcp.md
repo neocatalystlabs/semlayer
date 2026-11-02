@@ -319,9 +319,16 @@ and no terminal is involved:
 
 What to know about it:
 
-- **It reads your warehouse and it costs money.** Metadata and sample values,
-  under the connection you gave, plus your own LLM key for the descriptions.
-  Your agent is told to ask before starting.
+- **It reads your warehouse. It costs money only if you have a model key.**
+  Metadata and sample values under the connection you gave; descriptions come
+  from your own LLM key if one is set, and the run completes without one. Your
+  agent is told to ask before starting.
+- **No key is a supported way to work, not a half-finished setup.** You get
+  measured columns, the keys and joins nobody declared, metrics, routing
+  knowledge and the lint — everything except written descriptions. `status`
+  says so (`built_without_model`), and your agent is told to mention once,
+  *after* it has answered something, that a key would add them. It is not
+  asked for up front, because nothing here needs it.
 - **A small warehouse finishes inside the call.** A DuckDB file with
   `use_llm: false` takes seconds, so discovery, inference and the answer
   happen in one turn.
@@ -440,6 +447,12 @@ the server never saw it — Claude Desktop on macOS launches servers with a
 minimal environment. Put the line in `~/.semlayer/.env` instead and ask your
 agent to call `status` again; that file is re-read on every call and needs no
 restart.
+
+**Nothing has a description.** The layer was built without a model —
+`status.layer.built_without_model` — so you have statistics, keys, metrics
+and routing, and no written sentences. `semantic_search` then matches on
+names alone, which on a warehouse with cryptic names finds less. Put
+`ANTHROPIC_API_KEY=...` in `~/.semlayer/.env` and build again.
 
 **Every answer is caveated as inferred.** That is correct until someone reviews
 the layer: `semlayer review layer.yaml --list`, then promote what is right.

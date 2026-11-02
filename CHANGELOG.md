@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### A layer built without a model says so
+
+Running with no `ANTHROPIC_API_KEY` already worked — statistics, keys,
+joins, metrics, routing knowledge and the lint, with no written
+descriptions, and the run still reaches `ready`. What was missing was
+anything saying so.
+
+`status.layer.built_without_model` is now a fact rather than a string an
+agent has to recognise in `model: none/heuristic`. It has three states, and
+the third matters: a document with no `generated_by` was not written by this
+engine — every hand-authored layer is one — so it reports `null` rather than
+claiming anything. Counting descriptions would not have done: the
+`messy_mart` gold has none at table level either, and labelling somebody's
+hand-written layer "statistics only" would be worse than saying nothing.
+
+And after the first answer, once, the agent is told to mention that a model
+key would add descriptions. After, never before: a stranger has no key, so a
+keyless day one has to work, and the suggestion must not read as a setup
+step. Once, because the second time is nagging. If a key is already set the
+sentence changes to what is actually true — the layer predates the key, and
+`infer` again is the fix.
+
 ### A progress bar on `infer`, and a server that answers while it runs
 
 Building a layer is minutes of silence, and the only thing the server could
