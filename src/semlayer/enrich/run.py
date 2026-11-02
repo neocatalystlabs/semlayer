@@ -155,15 +155,17 @@ def _upgrade_enum_decodes(source, sl, stats) -> None:
                 continue
             ts = stats[ptn].table
             q = getattr(source, "qualify", lambda s, n: f'"{s}"."{n}"')(ts.schema, ts.name)
-            # NOT ordered, deliberately, and it should be -- see HANDOFF.
+            # NOT ordered, deliberately, and it arguably should be.
             # This is a capped SELECT whose rows go into the document, so
             # without ORDER BY the decode order is whatever the warehouse
             # feels like: DuckDB returns insertion order, BigQuery its own,
             # and past 100 rows an unordered LIMIT takes a different SUBSET
-            # each run. Adding `ORDER BY 1` fixes it and changes the layer,
-            # which changes the agent-pipeline prompts, which needs the
-            # example's cassettes re-recorded -- a paid run. Held back so the
-            # BigQuery quoting fix is not blocked behind a spend decision.
+            # each run. `ORDER BY 1` fixes both, and changes the layer --
+            # which changes the prompts in examples/agent_pipeline, whose
+            # cassettes would then need re-recording against a live model.
+            # Deferred on that basis, not forgotten. Revisit when a real
+            # BigQuery layer churns in someone's diff, or when a dimension
+            # passes 100 values and the subset genuinely changes.
             pairs = source.query(
                 f'SELECT {qcol(source, pcn)}, {qcol(source, label_cols[0])} '
                 f'FROM {q}{row_cap(source, 100)}')

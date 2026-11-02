@@ -68,6 +68,35 @@ def _effective_role(con, asked: str | None) -> str:
     return effective
 
 
+def _prefix(persona: str) -> str:
+    """The env-var prefix for a credential set."""
+    return "PG_READER" if persona == "reader" else "PG_ADMIN"
+
+
+def _asked_role(prefix: str, given: str | None = None) -> str | None:
+    """The role the caller asked for, or None to run as the DSN's own user.
+
+    `given` comes from an explicit argument and wins over the environment,
+    the same precedence `snowflake._asked_role` uses.
+
+    This exists because the two entry points disagreed. `from_env` read
+    `{PREFIX}_ROLE` / `PG_ROLE`; `from_dsn` took a `role` argument and the
+    CLI dispatcher called it without one. So `semlayer infer postgres`
+    honoured PG_ROLE and `semlayer infer postgresql://...` SILENTLY IGNORED
+    it -- and a DSN is how most people hold a Postgres credential, so the
+    documented variable did nothing on the common path. Nothing failed; the
+    run simply profiled under the DSN's user while the person believed
+    otherwise, which is the worst shape a config bug can take.
+
+    Resolved HERE and only here, called from `from_dsn` alone, so the two
+    paths cannot drift apart again -- `from_env` now delegates rather than
+    duplicating the lookup. The divergence, not the missing lookup, was the
+    defect.
+    """
+    return (given or os.environ.get(f"{prefix}_ROLE")
+            or os.environ.get("PG_ROLE"))
+
+
 class PostgresSource:
     """MetadataProvider + QueryExecutor + CatalogProvider over one database."""
 
@@ -86,7 +115,7 @@ class PostgresSource:
         issue it explicitly and record it, for the same reason A4 exists: a
         minimal-grant claim is about the privileges actually in effect.
         """
-        prefix = "PG_READER" if persona == "reader" else "PG_ADMIN"
+        prefix = _prefix(persona)
         dsn = os.environ.get(f"{prefix}_DSN") or os.environ.get("PG_DSN")
         if not dsn:
             from semlayer.errors import SourceError
@@ -95,11 +124,18 @@ class PostgresSource:
                 f"no Postgres connection string: export {prefix}_DSN (or PG_DSN)",
                 hint="e.g. postgresql://user:pass@host:5432/dbname",
             )
-        return cls.from_dsn(dsn, role=os.environ.get(f"{prefix}_ROLE") or os.environ.get("PG_ROLE"))
+        # No role lookup here: from_dsn resolves it. Two lookups is what
+        # let the two paths disagree in the first place.
+        return cls.from_dsn(dsn, persona=persona)
 
     @classmethod
-    def from_dsn(cls, dsn: str, role: str | None = None) -> PostgresSource:
+    def from_dsn(cls, dsn: str, role: str | None = None,
+                 persona: str = "reader") -> PostgresSource:
         """Connect to an explicit connection string.
+
+        `role` defaults to whatever `_asked_role` finds in the environment, so
+        a DSN passed on the command line honours PG_ROLE exactly as the bare
+        `postgres` URI does. It used to ignore it.
 
         `autocommit` matters: without it psycopg opens a transaction on the
         first statement and holds it for the whole scan, which pins the
@@ -115,6 +151,7 @@ class PostgresSource:
         goes looking for.
         """
         from semlayer.errors import SourceError
+        role = _asked_role(_prefix(persona), role)
         try:
             import psycopg
         except ImportError as e:
