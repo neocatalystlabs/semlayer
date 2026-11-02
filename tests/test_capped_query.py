@@ -33,12 +33,13 @@ def duck():
         con.close()
 
 
-def test_the_row_cap_is_small_and_there_is_no_clock():
-    """The rows go into a model's context, so the cap is modest. There is no
-    time limit at all: a real analytical query takes minutes, and the
-    warehouse being billed is the user's, with their own limits on it."""
+def test_the_cap_is_small_and_the_clock_is_generous():
+    """The rows go into a model's context, so the cap is modest. The clock is
+    ten minutes: a real analytical query takes minutes, so the 30 seconds
+    this started at refused legitimate work, while no limit at all holds the
+    session's one connection for as long as the warehouse will run it."""
     assert RUN_SQL_ROWS <= 500
-    assert RUN_SQL_TIMEOUT_S is None
+    assert RUN_SQL_TIMEOUT_S == 600
 
 
 def test_duckdb_returns_named_columns(duck):
@@ -138,23 +139,32 @@ def test_postgres_resets_the_timeout_it_set(postgres):
     assert postgres.query("show statement_timeout")[0][0] in ("0", "0ms")
 
 
-def test_nothing_is_armed_by_default_on_duckdb(duck):
-    """A watchdog that fired by default would interrupt whatever this
-    connection is running, including a query it was not asked about."""
+def test_nothing_is_armed_when_the_clock_is_turned_off(duck):
+    """`timeout_s=None` has to arm NOTHING. A watchdog left running would
+    interrupt the connection -- not the statement -- and so could land on a
+    query it was never asked about."""
     import threading
     before = {t.name for t in threading.enumerate()}
-    duck.query_capped("select 1 as one")
+    duck.query_capped("select 1 as one", timeout_s=None)
     assert {t.name for t in threading.enumerate()} == before
 
 
-def test_postgres_does_not_touch_the_setting_by_default(postgres):
-    """With no timeout asked for, the user's own server configuration is
-    what applies -- so the session setting must be left alone."""
+def test_the_default_clock_is_actually_applied_on_postgres(postgres):
+    """Read back from inside the capped call: the setting is live only for
+    the duration of the statement, so `show` run through `query_capped` is
+    exactly how to see what it set."""
+    _cols, rows, _trunc = postgres.query_capped("show statement_timeout")
+    assert rows[0][0] == "10min"
+
+
+def test_turning_the_clock_off_leaves_the_users_setting_alone(postgres):
+    """With None, the user's own server or role configuration is what
+    applies, so the session setting must not be touched."""
     # through the raw connection: the connector's `query` always fetches,
     # and a SET returns no rows.
     postgres.con.execute("SET statement_timeout = 7000")
     try:
-        postgres.query_capped("select 1 as one")
+        postgres.query_capped("select 1 as one", timeout_s=None)
         assert postgres.query("show statement_timeout")[0][0] == "7s"
     finally:
         postgres.con.execute("SET statement_timeout = DEFAULT")

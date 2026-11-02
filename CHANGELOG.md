@@ -38,14 +38,16 @@ plus `open_questions`, the claims underneath that nobody has confirmed.
 - Your SQL is never rewritten: no `LIMIT` appended, no filter injected. A
   required filter is reported and left undone, so what ran is what you can be
   shown.
-- Capped rows, reported with whether the result was truncated — the cap is
-  about what fits in a model's context. **No time limit**: a real analytical
-  query takes minutes, and the warehouse is yours, billed to you and
-  governed by your own resource monitors, so capping it here would be
-  enforcing where this product records. A caller that wants a limit can pass
-  one, and it is then enforced by the engine itself — DuckDB's interrupt,
-  PostgreSQL's `statement_timeout`, BigQuery's `job_timeout_ms` plus a
-  bounded client wait, Snowflake's `STATEMENT_TIMEOUT_IN_SECONDS`.
+- Capped rows and a **ten-minute** time limit, both reported along with
+  whether the result was truncated. The cap is about what fits in a model's
+  context; the clock is chosen from both ends — a real analytical query
+  takes minutes, so the 30 seconds this started at refused honest work,
+  while no limit at all holds the session's one warehouse connection for as
+  long as the warehouse will run the query. It is a default rather than a
+  rule, and turning it off leaves your own resource monitors as the only
+  limits. Enforced by the engine itself: DuckDB's interrupt, PostgreSQL's
+  `statement_timeout`, BigQuery's `job_timeout_ms` plus a bounded client
+  wait, Snowflake's `STATEMENT_TIMEOUT_IN_SECONDS`.
 - Refused while an inference is running. One warehouse connection is not
   shared between a profiling run and an agent's query: DuckDB forbids two
   threads on one connection, and on every engine the two would interleave.

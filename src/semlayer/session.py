@@ -31,7 +31,8 @@ import hashlib
 import os
 import threading
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from pathlib import Path
 
 from semlayer import env_file
@@ -1261,6 +1262,25 @@ class Session:
             out["credential"] = pasted_credential_reply(target)
         return out
 
+    @contextmanager
+    def _exclusive(self, job: InferJob | None = None) -> Iterator[None]:
+        """Take the warehouse connection for one operation.
+
+        A run WAITS for a query rather than refusing, because a query is
+        seconds and a run is minutes -- but a query may now hold the
+        connection for as long as its own time limit, so the wait is
+        reported: `status` says the run is waiting for the connection
+        instead of claiming it is still starting.
+        """
+        if not self._in_use.acquire(blocking=False):
+            if job is not None:
+                job.stage = "waiting for the warehouse connection"
+            self._in_use.acquire()
+        try:
+            yield
+        finally:
+            self._in_use.release()
+
     def _run_infer(self, job: InferJob, use_llm: bool) -> None:
         """The job body. Runs on its own thread; never raises out of it."""
         import time as _time
@@ -1268,7 +1288,7 @@ class Session:
         try:
             # Held for the whole run: an agent query arriving mid-inference
             # is refused rather than allowed onto the same connection.
-            with self._in_use:
+            with self._exclusive(job):
                 doc = self._infer_once(job, use_llm)
             path = layer_cache_path(self.target() or "")
             save_document(path, doc)

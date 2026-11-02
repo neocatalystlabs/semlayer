@@ -225,12 +225,12 @@ class BigQuerySource:
     def query_capped(self, sql: str, limit: int = RUN_SQL_ROWS,
                      timeout_s: float | None = RUN_SQL_TIMEOUT_S,
                      ) -> tuple[list[str], list[tuple], bool]:
-        """`query` for an agent: named columns, capped rows, no clock by default.
+        """`query` for an agent: named columns, capped rows, a job timeout.
 
-        With None -- the default -- the project's own limits apply, which is
-        the user's configuration rather than ours.
+        With None, the project's own limits apply, which is the user's
+        configuration rather than ours.
 
-        A `timeout_s` arms BOTH halves, deliberately. `job_timeout_ms` is
+        `timeout_s` arms BOTH halves, deliberately. `job_timeout_ms` is
         what stops the WORK, since BigQuery cancels the job and the scan and
         the bill stop with it -- but measured against a deliberately slow
         query it took 14s to surface a 2s limit, because the client was

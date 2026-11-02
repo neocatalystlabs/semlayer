@@ -204,9 +204,9 @@ class PostgresSource:
     def query_capped(self, sql: str, limit: int = RUN_SQL_ROWS,
                      timeout_s: float | None = RUN_SQL_TIMEOUT_S,
                      ) -> tuple[list[str], list[tuple], bool]:
-        """`query` for an agent: named columns, capped rows, no clock by default.
+        """`query` for an agent: named columns, capped rows, a server-side clock.
 
-        A `timeout_s` becomes `statement_timeout`, which PostgreSQL enforces
+        `timeout_s` becomes `statement_timeout`, which PostgreSQL enforces
         itself -- a query that hangs on the server is cancelled there rather
         than leaving us on a socket. It is a session setting any role may
         change, so it needs no privilege the reader does not have, and it is

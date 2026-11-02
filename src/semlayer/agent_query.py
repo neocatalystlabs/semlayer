@@ -259,12 +259,16 @@ def run(doc: dict, source, sql: str, *, dialect: str = "duckdb",
     `cq.answer.answer_with_repair` feeds back in the benchmark loop, which is
     where we learned that agents fix their own SQL when shown the error.
 
-    There is NO time limit by default. A real analytical query on a real
-    warehouse takes minutes, so a short cap would refuse legitimate work --
-    and the warehouse is the user's, billed to them and governed by their own
-    resource monitors. Capping it here would be enforcing where this product
-    records. The row cap stays, because that is about what fits in a model's
-    context rather than about the warehouse.
+    The time limit is ten minutes, and it is a default rather than a rule.
+    A real analytical query takes minutes, so the 30 seconds this started at
+    refused legitimate work; no limit at all holds the session's one
+    warehouse connection for as long as the warehouse will run the query,
+    which on a mistake is a bill and a blocked conversation. `timeout_s=None`
+    turns it off for a caller who wants their warehouse's limits to be the
+    only ones.
+
+    The row cap is separate and stays: that is about what fits in a model's
+    context, not about the warehouse.
     """
     from semlayer.lint import lint_sql, render_findings
 
@@ -310,11 +314,11 @@ def run(doc: dict, source, sql: str, *, dialect: str = "duckdb",
         "rows": [[_jsonable(v) for v in r] for r in rows],
         "row_count": len(rows),
         "truncated": truncated,
-        # Reported so the agent can repeat it accurately: the row cap is
-        # ours, the clock is the warehouse's unless a caller passed one.
+        # Reported so the agent can repeat it accurately rather than
+        # guessing at it.
         "limits": {"rows": limit, "timeout_s": timeout_s,
-                   "time_limit": ("none -- your warehouse's own limits apply"
-                                  if not timeout_s else f"{timeout_s}s")},
+                   "time_limit": (f"{int(timeout_s)}s" if timeout_s else
+                                  "none -- your warehouse's own limits apply")},
         "assumptions": assumptions(doc, touched),
     }
     if lint["warnings"]:

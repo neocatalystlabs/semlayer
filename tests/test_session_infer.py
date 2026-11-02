@@ -427,3 +427,20 @@ def test_a_refused_query_still_releases_the_connection(warehouse):
     s.start_infer(warehouse, wait_seconds=60, use_llm=False)
     assert s.run_query(s.doc, "delete from customers")["ran"] is False
     assert s.run_query(s.doc, "select 1 as one")["ran"] is True
+
+
+def test_a_run_waiting_for_the_connection_says_so(warehouse):
+    """A query may now hold the connection for as long as its own time
+    limit, so a run queued behind one must not report itself as `starting`
+    for ten minutes."""
+    s = sess.Session()
+    s.select(warehouse)
+    s._in_use.acquire()                      # as a long query would
+    try:
+        out = s.start_infer(warehouse, wait_seconds=0.3, use_llm=False)
+        assert out["state"] == "inferring"
+        assert out["job"]["stage"] == "waiting for the warehouse connection"
+    finally:
+        s._in_use.release()
+    s.job.thread.join(timeout=60)
+    assert s.job.state == "done", "and it proceeds once the query is done"

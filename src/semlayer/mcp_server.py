@@ -545,11 +545,11 @@ def _register_answer_tools(srv, session: Session) -> None:
         rows because they are about whether the number means what the user
         thinks.
 
-        Rows are capped, and the cap and whether rows were truncated are
-        stated in the result. There is NO time limit: a real query takes as
-        long as the warehouse takes, and their own limits apply. Nothing is
-        written, nothing is persisted, and your SQL is never rewritten: a
-        required filter is reported, never silently applied.
+        Rows are capped and there is a ten-minute time limit; the cap, the
+        limit and whether rows were truncated are all stated in the result,
+        so you can tell the user what actually applied. Nothing is written,
+        nothing is persisted, and your SQL is never rewritten: a required
+        filter is reported, never silently applied.
 
         Refused while an inference is running -- one connection is not shared
         between the two. Ask again when `status` says `ready`.

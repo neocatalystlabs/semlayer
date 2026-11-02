@@ -486,13 +486,12 @@ class SnowflakeSource:
     def query_capped(self, sql: str, limit: int = RUN_SQL_ROWS,
                      timeout_s: float | None = RUN_SQL_TIMEOUT_S,
                      ) -> tuple[list[str], list[tuple], bool]:
-        """`query` for an agent: named columns, capped rows, no clock by default.
+        """`query` for an agent: named columns, capped rows, Snowflake's clock.
 
-        With None -- the default -- the account's and the warehouse's own
-        timeouts are what apply, which is the user's configuration rather
-        than ours.
+        With None, the account's and the warehouse's own timeouts are what
+        apply, which is the user's configuration rather than ours.
 
-        A `timeout_s` becomes `STATEMENT_TIMEOUT_IN_SECONDS` on the session.
+        `timeout_s` becomes `STATEMENT_TIMEOUT_IN_SECONDS` on the session.
         NOT the driver's `execute(timeout=...)`, which was what this used
         first: measured against a deliberately slow cross join on
         2026-11-02, a `timeout=3` ran for **69 seconds** and then returned
