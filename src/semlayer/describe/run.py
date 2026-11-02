@@ -14,6 +14,7 @@ takes over, with a conflict record.
 
 from __future__ import annotations
 
+import itertools
 import json
 import re
 from concurrent.futures import ThreadPoolExecutor
@@ -80,8 +81,31 @@ def _evidence(t: dict, stats, neighbors: dict[str, str], no_samples: bool,
     return json.dumps(ev, indent=1)
 
 
-def describe_source(doc: dict, stats: dict, llm, no_samples: bool = False,
-                    passes: int = 2, context=None, llm_workers: int = 1) -> dict:
+def _pass_ticker(progress, pass_n: int, passes: int):
+    """Report within describe: each PASS covers an equal slice of the stage.
+
+    Pass 2 makes fewer calls than pass 1 -- a table with no described
+    neighbour keeps its first answer -- so the slices are equal by pass
+    rather than by call, and `done/total` is per pass. The alternative was a
+    total that shrank once pass 2's job list was known, which is a bar that
+    goes backwards.
+    """
+    if progress is None:
+        return None
+
+    def report(done: int, total: int) -> None:
+        progress({"stage": "describe", "event": "unit", "done": done,
+                  "total": total,
+                  "within": (pass_n + (done / total if total else 1.0)) / passes,
+                  "label": f"describing table {min(done + 1, max(total, 1))} "
+                           f"of {total} (pass {pass_n + 1} of {passes})"})
+
+    return report
+
+
+def describe_source(doc: dict, stats: dict, llm, no_samples: bool = False,  # noqa: PLR0913, PLR0917
+                    passes: int = 2, context=None, llm_workers: int = 1,
+                    progress=None) -> dict:
     """Describe every table via iterative context propagation (see module docstring).
 
     `context` (v0.2): a semlayer.context.ContextBundle of knowledge-doc priors;
@@ -111,6 +135,10 @@ def describe_source(doc: dict, stats: dict, llm, no_samples: bool = False,
         neigh_map.setdefault(b, set()).add(a)
 
     descriptions: dict[str, str] = {}
+
+    def tick(pass_n: int):
+        return _pass_ticker(progress, pass_n, passes)
+
     for pass_n in range(passes):
         if pass_n == 0:
             # Workers do only the pure part -- build evidence, call the model,
@@ -120,7 +148,8 @@ def describe_source(doc: dict, stats: dict, llm, no_samples: bool = False,
             evidence = [_evidence(t, stats, {}, no_samples, context=context)
                         for t in tables]
             budgets = [_budget(t) for t in tables]
-            results = _complete_many(llm, evidence, budgets, max(1, llm_workers))
+            results = _complete_many(llm, evidence, budgets, max(1, llm_workers),
+                                     on_done=tick(pass_n))
             for t, ev, parsed in zip(tables, evidence, results, strict=True):
                 if not parsed:
                     continue
@@ -135,7 +164,7 @@ def describe_source(doc: dict, stats: dict, llm, no_samples: bool = False,
         # the prompts a pure function of the pass input, and the pool safe.
         jobs = _pass_jobs(tables, neigh_map, dict(descriptions), stats, no_samples, context)
         results = _complete_many(llm, [ev for _, ev in jobs], [_budget(t) for t, _ in jobs],
-                                 max(1, llm_workers))
+                                 max(1, llm_workers), on_done=tick(pass_n))
         for (t, _ev), parsed in zip(jobs, results, strict=True):
             if not parsed:
                 continue
@@ -168,7 +197,8 @@ def _budget(t: dict) -> int:
     return output_budget(len(t["columns"]), per_item=110, base=400)
 
 
-def _complete_many(llm, evidence: list[str], budgets: list[int], workers: int) -> list[dict]:
+def _complete_many(llm, evidence: list[str], budgets: list[int], workers: int,
+                   on_done=None) -> list[dict]:
     """One parsed response per evidence string, in input order.
 
     A worker that raises fails the run: `executor.map` re-raises when its
@@ -176,8 +206,14 @@ def _complete_many(llm, evidence: list[str], budgets: list[int], workers: int) -
     that died. The cassette layer already writes atomically, so concurrent
     recorders cannot interleave a file.
     """
+    counted = itertools.count(1)
+
     def one(ev: str, budget: int) -> dict:
-        return _parse(llm.complete(SYSTEM, ev, max_tokens=budget))
+        out = _parse(llm.complete(SYSTEM, ev, max_tokens=budget))
+        if on_done is not None:
+            # atomic without a lock; see link.candidates._inclusion_many
+            on_done(next(counted), len(evidence))
+        return out
 
     if workers <= 1 or len(evidence) <= 1:
         return [one(ev, b) for ev, b in zip(evidence, budgets, strict=True)]

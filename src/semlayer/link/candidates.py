@@ -11,6 +11,7 @@ statistics alone NEVER auto-include an FK.
 
 from __future__ import annotations
 
+import itertools
 import logging
 import re
 import threading
@@ -589,7 +590,7 @@ def last_timing() -> dict:
 def generate_candidates(ex, stats_by_table: dict, doc: dict,
                         query_workers: int = 1,
                         only_children: set[tuple[str, str]] | None = None,
-                        parent_ok=None) -> list[FKCandidate]:
+                        parent_ok=None, on_done=None) -> list[FKCandidate]:
     """stats_by_table: {table_name: TableStats}; doc: profile-stage document.
 
     `only_children`: restrict the child columns tested to these (table,
@@ -623,7 +624,7 @@ def generate_candidates(ex, stats_by_table: dict, doc: dict,
         plan.extend((ctn, ccn, ptn, pcn) for ptn, pcn in testable)
     t_plan = time.perf_counter()
 
-    ratios = _inclusion_many(ex, stats_by_table, plan, query_workers)
+    ratios = _inclusion_many(ex, stats_by_table, plan, query_workers, on_done=on_done)
     assert len(ratios) == len(plan)
     t_query = time.perf_counter()
     # Where Link's time goes, before any verdict: the index and the per-child
@@ -674,7 +675,7 @@ def _group_plan(plan: list[tuple[str, str, str, str]]
 
 
 def _inclusion_many(ex, stats_by_table, plan: list[tuple[str, str, str, str]],
-                    workers: int) -> list[float]:
+                    workers: int, on_done=None) -> list[float]:
     """One inclusion ratio per planned test, in plan order.
 
     The unit of work is a CHILD COLUMN with all its candidate parents, tested
@@ -692,7 +693,12 @@ def _inclusion_many(ex, stats_by_table, plan: list[tuple[str, str, str, str]],
         if workers > 1 and for_worker is None:
             logger.info("source %s has no per-worker executor; inclusion tests run serially",
                         type(ex).__name__)
-        return [r for g in groups for r in _inclusion_batch(ex, stats_by_table, *g)]
+        out = []
+        for n, g in enumerate(groups):
+            if on_done is not None:
+                on_done(n, len(groups))
+            out += _inclusion_batch(ex, stats_by_table, *g)
+        return out
 
     local = threading.local()
     made: list = []
@@ -703,8 +709,15 @@ def _inclusion_many(ex, stats_by_table, plan: list[tuple[str, str, str, str]],
         with lock:
             made.append(local.ex)
 
+    counted = itertools.count(1)
+
     def one(group) -> list[float]:
-        return _inclusion_batch(local.ex, stats_by_table, *group)
+        out = _inclusion_batch(local.ex, stats_by_table, *group)
+        if on_done is not None:
+            # `next` on an itertools counter is atomic, so the workers can
+            # report without a lock of their own.
+            on_done(next(counted), len(groups))
+        return out
 
     try:
         with ThreadPoolExecutor(max_workers=min(workers, len(groups)), initializer=init) as pool:

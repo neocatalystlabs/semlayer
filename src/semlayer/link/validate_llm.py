@@ -9,6 +9,7 @@ trap case: high inclusion ratio, absurd semantics (shoe_size ⊆ dept_id).
 
 from __future__ import annotations
 
+import itertools
 import json
 import logging
 import re
@@ -34,7 +35,8 @@ Abbreviations are common: cust=customer, ord=order, prod=product, whs=warehouse.
 
 logger = logging.getLogger(__name__)
 
-def validate_candidates(provider, candidates: list, workers: int = 1) -> dict[tuple, dict]:
+def validate_candidates(provider, candidates: list, workers: int = 1,
+                        on_done=None) -> dict[tuple, dict]:
     """Returns {candidate.key(): {"verdict", "confidence", "reason"}}.
 
     One call per chunk of BATCH candidates. `workers` chunks are in flight
@@ -49,11 +51,20 @@ def validate_candidates(provider, candidates: list, workers: int = 1) -> dict[tu
     thread that died.
     """
     chunks = [candidates[i:i + BATCH] for i in range(0, len(candidates), BATCH)]
+    counted = itertools.count(1)
+
+    def judge(chunk):
+        out = _judge_chunk(provider, chunk)
+        if on_done is not None:
+            # atomic without a lock of its own; see candidates.generate_candidates
+            on_done(next(counted), len(chunks))
+        return out
+
     if workers <= 1 or len(chunks) <= 1:
-        parsed = [_judge_chunk(provider, chunk) for chunk in chunks]
+        parsed = [judge(chunk) for chunk in chunks]
     else:
         with ThreadPoolExecutor(max_workers=min(workers, len(chunks))) as ex:
-            parsed = list(ex.map(lambda chunk: _judge_chunk(provider, chunk), chunks))
+            parsed = list(ex.map(judge, chunks))
     out: dict[tuple, dict] = {}
     for chunk, verdicts in zip(chunks, parsed, strict=True):
         for v in verdicts:

@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 from semlayer.errors import SemlayerError
 from semlayer.profile.stats import ColumnStats, TableStats, profile_table
 from semlayer.profile.typing_rules import ALWAYS_ESCALATE, classify
+from semlayer.progress import ticker
 from semlayer.source import document_name, warehouse_uri
 from semlayer.tier import infer_tier, is_informational
 
@@ -154,7 +155,7 @@ def profile_source(source, no_sample_values: bool = False, llm=None,
 def profile_with_stats(source, no_sample_values: bool = False, llm=None, context=None,  # noqa: PLR0913, PLR0917
                        only: set[str] | None = None, state=None, lineage=None,
                        llm_workers: int = 1, schema: set[str] | None = None,
-                       name: str | None = None):
+                       name: str | None = None, progress=None):
     """Returns (document, stats_by_table) — Link consumes both.
 
     `schema`: profile only tables in these schemas. The document's `name`
@@ -210,7 +211,10 @@ def profile_with_stats(source, no_sample_values: bool = False, llm=None, context
     pending: list[tuple[TableStats, dict]] = []   # escalation, after the scan
     shallow_total = 0
     doc_names = _doc_table_names(tables_meta)
-    for t in sorted(tables_meta, key=lambda x: (x.schema, x.name)):
+    ordered = sorted(tables_meta, key=lambda x: (x.schema, x.name))
+    tick = ticker(progress, "profile", len(ordered), "profiling table")
+    for done, t in enumerate(ordered):
+        tick(done)
         doc_table_name = doc_names[(t.schema, t.name)]
         parts = partitions.get((t.schema, t.name)) if partitions else None
         inc = None
