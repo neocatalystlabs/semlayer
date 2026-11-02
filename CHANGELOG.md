@@ -761,6 +761,27 @@ most recent.
 `coverage` is a new optional field, so this is a MINOR spec bump and existing
 documents remain valid.
 
+### `semlayer init snowflake` creates a user that can actually log in
+
+The template created the reader as `{prefix}_reader_svc` with a password and
+no `TYPE`. On a current account that user cannot connect at all: Snowflake
+enforces MFA on password sign-ins for users of the default (person) type, so
+the first connection is refused with `390197 Multi-factor authentication is
+required` — and there is nobody to approve a prompt for a service account.
+
+It now emits a `TYPE = SERVICE` user with an `RSA_PUBLIC_KEY` and no password,
+the two `openssl` lines that make the key pair, and the detail that trips up
+the next attempt: the public key is pasted without its `BEGIN`/`END` lines.
+The exports block names `SNOWFLAKE_READER_PRIVATE_KEY_PATH`, which the
+connector already honoured. Same change in the quickstart's service-account
+block, with the key-pair step ahead of `init` because the public key has to
+exist before the script can be run.
+
+Two stale lines in the same block are corrected with it: the template still
+said the session role was required, which [#78] made optional, and gave
+`DEFAULT_ROLE` inheritance as the reason for naming it rather than
+`CURRENT_ROLE()` agreeing with what was asked for.
+
 ## v0.6.0-beta.1 (2026-10-20)
 
 ### Telemetry is now sent, and here is how to stop it
