@@ -27,12 +27,27 @@ from semlayer.pipeline import open_source_from_uri
 
 
 class _FakeClient:
+    """Models the real client's LAZINESS, which is the whole point.
+
+    `bigquery.Client()` makes no network call, so every refusal a project id
+    can earn arrives on the first API call instead. A stub that raised from
+    `__init__` tested a client that does not exist.
+    """
+
+    datasets_raise: Exception | None = None
+
     def __init__(self, project=None, credentials=None):
         self.project = project
         self.credentials = credentials
+        self.closed = False
+
+    def list_datasets(self, max_results=None):
+        if self.datasets_raise is not None:
+            raise self.datasets_raise
+        return iter(())
 
     def close(self):
-        pass
+        self.closed = True
 
 
 def _stub_driver(monkeypatch, *, client=_FakeClient, adc=("ADC_CREDS", "adc-project"),
@@ -169,17 +184,68 @@ def test_an_unreadable_key_file_names_the_file_and_the_variable(monkeypatch):
     assert "GOOGLE_APPLICATION_CREDENTIALS_READER" in e.value.hint
 
 
-def test_a_refused_client_names_the_project(monkeypatch):
-    """`bigquery.Client()` is where a wrong project id actually surfaces, and
-    it was bare."""
-    def boom(project=None, credentials=None):
-        raise RuntimeError("404 project not found")
+def test_a_project_that_does_not_exist_names_it_rather_than_crashing(monkeypatch):
+    """Found by running the connector against a real project, after #78 had
+    already claimed to have fixed it.
 
-    _stub_driver(monkeypatch, client=boom)
+    The claim rested on this file's earlier stub, which raised from
+    `Client(project=...)`. The real client does not: it is lazy, constructs
+    without touching the network, and the 404 arrives later inside
+    `list_tables` as `google.api_core.exceptions.NotFound` -- unwrapped, and
+    therefore recorded as `internal`. The stub modelled what I believed
+    instead of what the library does, so the test passed while the product
+    was broken. Hence the open-time check, and hence this test raising from
+    the API call rather than the constructor.
+    """
+    class _Ghost(_FakeClient):
+        datasets_raise = RuntimeError(
+            "404 Not found: Project ghost-project")
+
+    _stub_driver(monkeypatch, client=_Ghost)
     with pytest.raises(SourceError) as e:
         open_source_from_uri("bigquery:ghost-project")
     assert "ghost-project" in str(e.value)
-    assert "404 project not found" in e.value.hint
+    assert "404 Not found" in e.value.hint
+    assert "bigquery.datasets.list" in e.value.hint
+
+
+def test_a_constructor_that_does_refuse_is_still_caught(monkeypatch):
+    """Belt and braces: the driver is free to start validating eagerly in
+    some future version, and that must not become an unwrapped crash."""
+    def boom(project=None, credentials=None):
+        raise RuntimeError("bad credentials object")
+
+    _stub_driver(monkeypatch, client=boom)
+    with pytest.raises(SourceError) as e:
+        open_source_from_uri("bigquery:p")
+    assert "p" in str(e.value)
+    assert "bad credentials object" in e.value.hint
+
+
+def test_a_refusal_at_open_time_releases_the_client(monkeypatch):
+    """Same rule the Postgres SET ROLE path follows: do not leak a live
+    handle on the way out."""
+    made = []
+
+    class _Ghost(_FakeClient):
+        datasets_raise = RuntimeError("403 denied")
+
+        def __init__(self, project=None, credentials=None):
+            super().__init__(project, credentials)
+            made.append(self)
+
+    _stub_driver(monkeypatch, client=_Ghost)
+    with pytest.raises(SourceError):
+        open_source_from_uri("bigquery:p")
+    assert made and made[0].closed
+
+
+def test_a_project_with_no_datasets_at_all_is_not_a_failure(monkeypatch):
+    """The open-time check consumes one page of an iterator that is allowed
+    to be empty -- a brand new project is the first thing someone points us
+    at, and it must open."""
+    _stub_driver(monkeypatch)
+    assert open_source_from_uri("bigquery:fresh").project == "fresh"
 
 
 def test_a_key_file_is_preferred_over_adc_and_reaches_the_client(monkeypatch):

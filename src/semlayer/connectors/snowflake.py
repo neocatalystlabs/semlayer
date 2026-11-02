@@ -185,8 +185,16 @@ def _connect(**kw):
             "the Snowflake driver is not installed",
             hint="pip install 'semlayer[warehouses]'",
         ) from e
+    # Annotated because `except` accepts a class OR a tuple of classes, and
+    # the two branches below supply one of each. Without the annotation mypy
+    # infers the type from the first assignment and rejects the second -- but
+    # only where the driver is INSTALLED, since `ignore_missing_imports`
+    # makes the import Any everywhere else. CI installs `.[dev]` without
+    # `[warehouses]`, so CI's mypy cannot see this file's types at all.
+    _DriverError: type[BaseException] | tuple[type[BaseException], ...]
     try:
-        from snowflake.connector.errors import Error as _DriverError
+        from snowflake.connector.errors import Error as _SnowflakeError
+        _DriverError = _SnowflakeError
     except Exception:            # a stub or a driver without the module
         _DriverError = ()        # an empty tuple catches nothing
     try:

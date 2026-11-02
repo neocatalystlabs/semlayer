@@ -95,7 +95,11 @@ def test_bigquery_falls_back_to_application_default_credentials(monkeypatch):
     def Client(project=None, credentials=None):   # capitalised to mirror the SDK
         captured["project"] = project
         captured["credentials"] = credentials
-        return types.SimpleNamespace()
+        # `list_datasets` because opening a BigQuery source now proves it can
+        # reach the project: the real client is lazy, so without one cheap
+        # call a wrong project id was only discovered deep inside list_tables.
+        return types.SimpleNamespace(list_datasets=lambda max_results=None: iter(()),
+                                     close=lambda: None)
 
     bq.Client = Client
     gc.bigquery = bq

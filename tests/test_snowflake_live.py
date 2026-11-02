@@ -22,17 +22,18 @@ try:
 except ImportError:
     pass
 
-# SNOWFLAKE_READER_ROLE is as much a credential as the password: the connector
-# refuses to connect without an explicit session role, deliberately, so that the
-# minimal-grant claim is about a role we named rather than whatever DEFAULT_ROLE
-# the account carries. An unset role is therefore "not configured" and skips,
-# the same as an absent password -- it was raising SemlayerError and turning
-# three tests into ERRORs in every suite run.
+# The role is NOT part of this guard any more. It used to be: the connector
+# refused to connect without an explicit session role, so an unset role raised
+# rather than skipped and turned three tests into ERRORs in every suite run.
+# #78 made the role optional -- the session is asked what it is actually
+# running as, instead of being told -- so gating on the role now skips the one
+# tier that could exercise that code for want of a variable the product no
+# longer wants. A run with no role set is a case worth covering, not a reason
+# to cover nothing.
 pytestmark = pytest.mark.skipif(
     not os.environ.get("SNOWFLAKE_ACCOUNT")
-    or not os.environ.get("SNOWFLAKE_READER_PASSWORD")
-    or not (os.environ.get("SNOWFLAKE_READER_ROLE") or os.environ.get("SNOWFLAKE_ROLE")),
-    reason="Snowflake credentials not configured (.env: ACCOUNT, READER_PASSWORD, READER_ROLE)",
+    or not os.environ.get("SNOWFLAKE_READER_PASSWORD"),
+    reason="Snowflake credentials not configured (.env: ACCOUNT, READER_PASSWORD)",
 )
 
 
@@ -44,18 +45,27 @@ def reader():
     Snowflake trial that has expired suspends every warehouse, and the
     connection then fails with "Your free trial has ended". That turned three
     tests into ERRORs in every suite run, which reads as a regression and is
-    not one -- the tests are unrunnable, not failing. Config problems
-    (SemlayerError, e.g. an unset session role) still fail loudly, because
-    those are ours to fix.
+    not one -- the tests are unrunnable, not failing.
+
+    The discriminator used to be `isinstance(e, SemlayerError)`: a raw driver
+    exception meant unreachable, one of ours meant misconfigured. #78 wrapped
+    `driver.connect` so that a refusal records as `connection` rather than as
+    our bug -- and in doing so made the refusal a SourceError, i.e. one of
+    ours, so this skip became unreachable and the expired trial went back to
+    erroring. The fix is to discriminate on what SourceError now MEANS: the
+    source refused us. A problem in our own arguments is a SpecError or a bare
+    SemlayerError, and those still fail loudly.
+
+    The skip reason carries the driver's own hint rather than a summary.
+    A tier that skips without saying why is how a tier stays skipped.
     """
     from semlayer.connectors.snowflake import SnowflakeSource
+    from semlayer.errors import SourceError
     try:
         src = SnowflakeSource.from_env(persona="reader")
-    except Exception as e:
-        from semlayer.errors import SemlayerError
-        if isinstance(e, SemlayerError):
-            raise                                # our own misconfiguration
-        pytest.skip(f"Snowflake account not reachable: {str(e)[:120]}")
+    except SourceError as e:
+        detail = (getattr(e, "hint", "") or str(e)).strip()
+        pytest.skip(f"Snowflake not reachable: {e} -- {detail[:200]}")
     yield src
     src.close()
 

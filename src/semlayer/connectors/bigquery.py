@@ -77,19 +77,41 @@ def _adc_creds(key: str):
 
 
 def _client(project: str, creds):
-    """Build the client, translating a refusal into a connection error.
+    """Build the client, and prove it can actually reach the project.
 
-    `bigquery.Client()` validates the project and the credentials, so this is
-    where a wrong project id or a revoked key actually surfaces -- and it was
-    bare, so both read as our bug.
+    `bigquery.Client()` is LAZY: it performs no network call, so a project
+    that does not exist, a revoked key and a principal without
+    `bigquery.datasets.list` all construct a perfectly good client object.
+    The failure then surfaced several frames away inside `list_tables`, raw,
+    as `google.api_core.exceptions.NotFound` -- which `cli._error_class` files
+    as `internal`, the class that is supposed to mean a defect in semlayer.
+
+    Measured, against a real project: `Client()` returns in 0.000s and
+    `list_datasets(max_results=1)` in 0.36s for one free metadata call. So
+    one cheap call at open time buys the same contract the other two
+    connectors already have -- `from_uri` either hands back a source that
+    works, or raises `SourceError`. An empty project is a valid answer here,
+    which is why the iterator is consumed with a default rather than indexed.
     """
     from semlayer.errors import SourceError
     bigquery = _driver()
     try:
-        return bigquery.Client(project=project, credentials=creds)
+        client = bigquery.Client(project=project, credentials=creds)
     except Exception as e:
         raise SourceError(f"BigQuery refused the connection for project "
                           f"{project}", hint=str(e).strip()) from e
+    try:
+        next(iter(client.list_datasets(max_results=1)), None)
+    except Exception as e:
+        try:
+            client.close()
+        except Exception:        # releasing the handle is best-effort; the
+            pass                 # refusal above is the error worth reporting
+        raise SourceError(
+            f"could not open the BigQuery project {project}",
+            hint=f"{str(e).strip()} -- check the project id, and that the "
+                 f"principal has bigquery.datasets.list on it") from e
+    return client
 
 
 class BigQuerySource:

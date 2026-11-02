@@ -1,8 +1,16 @@
 name: Nightly (live)
 
-# Live tier: real warehouse connectors + live LLM sanity. Requires repo
-# secrets (GOOGLE_*, ANTHROPIC_API_KEY); jobs skip cleanly when absent so
-# forks stay green.
+# Live tier: real warehouse connectors + live LLM sanity. Jobs skip cleanly
+# when the secrets are absent, so forks stay green.
+#
+# THE BIGQUERY TIER IS CURRENTLY SKIPPING HERE, AND HAS BEEN ALL ALONG.
+# tests/test_bigquery_live.py skips unless GOOGLE_APPLICATION_CREDENTIALS_READER
+# names a key file, and nothing below sets it or writes one -- only GCP_PROJECT
+# is passed. The tier passes locally against the real project, so the gap is
+# the wiring, not the tests. To close it, add the reader key JSON as a repo
+# secret and write it to a file in a step before pytest (or set up workload
+# identity federation and have the test accept ADC). Until then `-rs` makes
+# the skip say so in the log rather than reading as a pass.
 #
 # Snowflake live tests (tests/test_snowflake_live.py) are not run in CI —
 # the project does not maintain a Snowflake account. Run them against your
@@ -34,4 +42,6 @@ jobs:
         env:
           GCP_PROJECT: ${{ secrets.GCP_PROJECT }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: pytest tests/test_bigquery_live.py -q
+        # -rs: print skip REASONS. Without it `-q` reports "3 skipped" and a
+        # green tick, which is indistinguishable from a tier that ran.
+        run: pytest tests/test_bigquery_live.py -q -rs
