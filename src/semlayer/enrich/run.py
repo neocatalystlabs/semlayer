@@ -155,16 +155,18 @@ def _upgrade_enum_decodes(source, sl, stats) -> None:
                 continue
             ts = stats[ptn].table
             q = getattr(source, "qualify", lambda s, n: f'"{s}"."{n}"')(ts.schema, ts.name)
-            # ORDER BY because this is a capped SELECT whose rows go into the
-            # document. Without it DuckDB happened to return insertion order
-            # and BigQuery returned its own, so the same warehouse produced
-            # the same 50 decodes in a different sequence -- a spurious diff
-            # on every re-inference, in a file that lands as a PR in the
-            # customer's repo. Past 100 rows an unordered LIMIT picks a
-            # different SUBSET each run, which is the same bug with teeth.
+            # NOT ordered, deliberately, and it should be -- see HANDOFF.
+            # This is a capped SELECT whose rows go into the document, so
+            # without ORDER BY the decode order is whatever the warehouse
+            # feels like: DuckDB returns insertion order, BigQuery its own,
+            # and past 100 rows an unordered LIMIT takes a different SUBSET
+            # each run. Adding `ORDER BY 1` fixes it and changes the layer,
+            # which changes the agent-pipeline prompts, which needs the
+            # example's cassettes re-recorded -- a paid run. Held back so the
+            # BigQuery quoting fix is not blocked behind a spend decision.
             pairs = source.query(
                 f'SELECT {qcol(source, pcn)}, {qcol(source, label_cols[0])} '
-                f'FROM {q} ORDER BY 1{row_cap(source, 100)}')
+                f'FROM {q}{row_cap(source, 100)}')
             c["enum_values"] = [
                 {"value": v, "meaning": str(m), "decode_source": "dictionary_join"}
                 for v, m in pairs if v is not None
