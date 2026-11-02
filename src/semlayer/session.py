@@ -79,6 +79,19 @@ def environment() -> Mapping[str, str]:
     return env_file.environment(env_path())
 
 
+def _where(env: Mapping[str, str], var: str) -> str:
+    """Where a variable was seen: the process, or the file we read.
+
+    Not cosmetic. A variable exported in a shell is invisible to a server
+    that Claude Desktop launched, so an agent telling the user "it is
+    already set" would be wrong in the one case that matters -- and the
+    advice for fixing it is different for each.
+    """
+    if var in getattr(env, "from_file", ()):
+        return f"{_tilde(env_path())}: {var}"
+    return f"environment: {var}"
+
+
 def family(connection: str) -> str | None:
     """The connector family a connection string names, or None if unknown.
 
@@ -452,36 +465,78 @@ def _layer_candidates() -> list[Path]:
     return out
 
 
+# A document may open with a licence header, a `---`, or a wall of comments
+# before it says what it is -- every hand-authored gold in this repo does, and
+# a layer somebody has edited by hand usually will. Bounded, because the
+# alternative is reading all of a file that is not a layer at all.
+_MAX_PREAMBLE_LINES = 50
+
+
+def _opens_a_layer(fh: object) -> bool:
+    """Whether a file's first real line is `semantic_layer:`.
+
+    Comments, blanks and a YAML document marker are skipped. The engine's own
+    output starts with the key, which is exactly why this needed a test
+    against a hand-authored file: the first version of this function demanded
+    line one, and every gold in fixtures/golds was invisible to it.
+    """
+    for _ in range(_MAX_PREAMBLE_LINES):
+        line = fh.readline()                        # type: ignore[attr-defined]
+        if not line:
+            return False
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or stripped == "---":
+            continue
+        return stripped.startswith("semantic_layer:")
+    return False
+
+
 def _scalar(value: str) -> str | None:
     """A YAML scalar as written on one line, unquoted. Nothing fancier."""
     return value.strip().strip("'\"") or None
 
 
-def _scan_line(line: str, section: str, out: dict) -> str:
-    """Fold one line of a document's head into `out`. Returns the section.
+def _scan_key(stripped: str, indent: int, state: dict, out: dict) -> None:
+    """One of `semantic_layer`'s own keys: note the section, keep what we want."""
+    key, _, value = stripped.partition(":")
+    state["top"] = indent
+    state["section"] = key
+    state["item"] = None
+    if key in ("name", "warehouse"):
+        out[key] = _scalar(value)
+    elif key == "tables":
+        out["tables"] = 0
 
-    Three indents carry everything we want: a key of `semantic_layer` at two
-    spaces, a table entry at `  - name:`, and `generated_by`'s own keys at
-    four. Anything deeper is a table's innards, which is the bulk of the
-    file and is skipped by not matching.
+
+def _scan_line(line: str, state: dict, out: dict) -> None:
+    """Fold one line of a document's head into `out`.
+
+    Two indents carry what we want, and neither is fixed: a key of
+    `semantic_layer` sits at one level, and the entries of `tables:` at
+    another. Both 2-space and 4-space list indentation are legal YAML and
+    both are in this repo -- the engine emits the first, every hand-authored
+    gold uses the second. So the item indent is LEARNED from the first entry
+    rather than assumed, and only entries at that same indent are counted;
+    a column's `- name:`, nested deeper, is not a table.
     """
-    top = line.startswith("  ") and not line.startswith("   ")
-    if top and not line.startswith("  -"):
-        key, _, value = line.strip().partition(":")
-        if key in ("name", "warehouse"):
-            out[key] = _scalar(value)
-        if key == "tables":
-            out["tables"] = 0
-        return key
-    if section == "tables" and line.startswith("  - name:"):
-        out["tables"] += 1
-    elif section == "generated_by" and line.startswith("    "):
-        key, _, value = line.strip().partition(":")
+    stripped = line.lstrip()
+    indent = len(line) - len(stripped)
+    if not stripped.strip():
+        return
+    if indent <= state["top"] and not stripped.startswith("- "):
+        _scan_key(stripped, indent, state, out)
+        return
+    if state["section"] == "tables" and stripped.startswith("- name:"):
+        if state["item"] is None:
+            state["item"] = indent
+        if indent == state["item"]:
+            out["tables"] += 1
+    elif state["section"] == "generated_by" and indent > state["top"]:
+        key, _, value = stripped.partition(":")
         if key == "engine":
             out["engine"] = _scalar(value)
         elif key == "generated_at":
             out["inferred_at"] = _scalar(value)
-    return section
 
 
 def scan_layer(path: Path) -> dict | None:
@@ -504,15 +559,17 @@ def scan_layer(path: Path) -> dict | None:
                  "engine": None, "tables": None, "inferred_at": None}
     try:
         with path.open(encoding="utf-8", errors="replace") as fh:
-            if not fh.readline().startswith("semantic_layer:"):
+            if not _opens_a_layer(fh):
                 return None
-            section = ""
+            # `top` is the indent of `semantic_layer`'s own keys, learned
+            # from the first one rather than assumed to be two spaces.
+            state = {"section": "", "top": 10 ** 6, "item": None}
             for n, line in enumerate(fh):
                 if n > _MAX_SCAN_LINES:
                     break
-                if line.strip() and not line.startswith(" "):
+                if line.strip() and not line.startswith((" ", "\t")):
                     break                       # left the semantic_layer block
-                section = _scan_line(line, section, out)
+                _scan_line(line, state, out)
     except OSError:
         return None
     if out["inferred_at"] is None:
@@ -631,6 +688,23 @@ def _next_ready(payload: dict) -> str:
             "Apply every required_filter, and run check_sql before any SQL runs.")
 
 
+def _describe(layer: dict) -> str:
+    """One layer in words a person would recognise.
+
+    The `ref` of a cached layer is a path with a hash in it, which is the
+    right thing for `load_layer` to take and the wrong thing to read out to
+    a user. So the sentence names the layer and its warehouse, and the agent
+    takes the ref from the list.
+    """
+    bits = [layer.get("name") or Path(layer["ref"]).name]
+    if layer.get("connection"):
+        bits.append(str(layer["connection"]))
+    if layer.get("tables"):
+        bits.append(f"{layer['tables']} tables")
+    bits.append("in your project" if layer.get("source") == "repo" else "cached")
+    return f"{bits[0]} ({', '.join(bits[1:])})"
+
+
 def _name_some(values: list[str]) -> str:
     """Name a few things, then count the rest. The full list is in the payload."""
     named = ", ".join(values[:_NAMED_IN_NEXT])
@@ -668,13 +742,13 @@ def next_step(payload: dict) -> str:
         return _next_ready(payload)
     layers = payload.get("layers") or []
     if layers:
-        refs = _name_some([x["ref"] for x in layers])
-        usual = next((x["ref"] for x in layers if x.get("last_used")), None)
-        sentence = (f"No layer is loaded, but these are already on this machine: "
-                    f"{refs}. Ask the user which warehouse they mean, then call "
-                    "load_layer with that ref.")
+        named = _name_some([_describe(x) for x in layers])
+        usual = next((_describe(x) for x in layers if x.get("last_used")), None)
+        sentence = ("No layer is loaded, but these are already on this machine: "
+                    f"{named}. Ask the user which one they mean, then call "
+                    "load_layer with that layer's `ref` from the list above.")
         if usual:
-            sentence += f" The one they used last is {usual}."
+            sentence += f" They used {usual} last."
         return sentence
     usable = [c["uri"] for c in (payload.get("connections") or [])
               if c.get("supported")]
@@ -978,7 +1052,7 @@ def _postgres_in_env(env: Mapping[str, str]) -> list[dict]:
             return [{
                 "uri": "postgres",
                 "kind": "postgres",
-                "source": f"environment: {var}",
+                "source": _where(env, var),
                 "supported": True,
                 "note": (f"semlayer reads the DSN from {var} itself; its value "
                          "is never reported here"),
@@ -1044,8 +1118,8 @@ def _bigquery_in_env(env: Mapping[str, str]) -> list[dict]:
     return [{
         "uri": f"bigquery:{project}" if project else "bigquery",
         "kind": "bigquery",
-        "source": f"environment: {key_var}" if key_var
-                  else "environment: GCP_PROJECT" if project and not adc
+        "source": _where(env, key_var) if key_var
+                  else _where(env, "GCP_PROJECT") if project and not adc
                   else f"gcloud: {_ADC_FILE}",
         "supported": True,
         "note": note,
@@ -1223,7 +1297,7 @@ def _snowflake_in_env(env: Mapping[str, str]) -> list[dict]:
     return [{
         "uri": "snowflake",
         "kind": "snowflake",
-        "source": "environment: SNOWFLAKE_ACCOUNT",
+        "source": _where(env, "SNOWFLAKE_ACCOUNT"),
         "supported": not missing,
         "note": note,
     }]

@@ -191,7 +191,11 @@ def test_two_layers_are_a_question_not_a_default(_nowhere):
     assert s.state == "no_layer"
     nxt = s.status()["next"]
     assert "load_layer" in nxt
-    assert "which warehouse" in nxt
+    assert "which one they mean" in nxt
+    # Named in words, not by ref: a cached layer's ref is a path with a hash
+    # in it, which is right for the tool call and wrong to read to a user.
+    assert "duckdb:/tmp/a.duckdb" in nxt
+    assert "cached" in nxt
 
 
 def test_a_named_connection_is_not_overridden_by_a_found_layer(_nowhere):
@@ -383,3 +387,82 @@ def test_a_tool_call_never_sees_a_half_loaded_layer(_nowhere):
         reader.join(timeout=5)
     assert set(counts) <= {1, 9}, sorted(set(counts))
     assert len(counts) > 1
+
+
+# --- where a variable was seen -------------------------------------------
+
+def test_a_connection_from_the_file_says_the_file(_nowhere):
+    """Not cosmetic: a variable exported in a shell is invisible to a server
+    an MCP client launched, so "it is already set" would be wrong in the one
+    case that matters, and the fix differs."""
+    env = _nowhere / "home" / ".semlayer" / ".env"
+    env.parent.mkdir(parents=True, exist_ok=True)
+    env.write_text("PG_READER_DSN=postgresql://r@h:5432/db\n")
+    row = next(c for c in sess.discover() if c["kind"] == "postgres")
+    assert row["source"].endswith(".env: PG_READER_DSN")
+
+
+def test_a_connection_from_the_shell_says_the_environment(_nowhere, monkeypatch):
+    monkeypatch.setenv("PG_READER_DSN", "postgresql://r@h:5432/db")
+    row = next(c for c in sess.discover() if c["kind"] == "postgres")
+    assert row["source"] == "environment: PG_READER_DSN"
+
+
+def test_the_file_still_wins_when_both_are_set(_nowhere, monkeypatch):
+    monkeypatch.setenv("SNOWFLAKE_ACCOUNT", "FROM-SHELL")
+    env = _nowhere / "home" / ".semlayer" / ".env"
+    env.parent.mkdir(parents=True, exist_ok=True)
+    env.write_text("SNOWFLAKE_ACCOUNT=FROM-FILE\n")
+    row = next(c for c in sess.discover() if c["kind"] == "snowflake")
+    assert row["source"].endswith(".env: SNOWFLAKE_ACCOUNT")
+    assert "FROM-FILE" not in json.dumps(row)
+    assert "FROM-SHELL" not in json.dumps(row)
+
+
+def test_a_plain_dict_is_still_a_valid_environment():
+    """`discover(env)` takes a mapping, and a test should not have to build
+    the subclass to use it."""
+    rows = sess.discover({"PG_READER_DSN": "postgresql://r@h/db"})
+    assert next(c["source"] for c in rows if c["kind"] == "postgres") == \
+        "environment: PG_READER_DSN"
+
+
+# --- a document that does not announce itself on line one ----------------
+
+def _golds():
+    from pathlib import Path
+    return sorted((Path(__file__).resolve().parents[1] / "fixtures" / "golds")
+                  .glob("*.yaml"))
+
+
+@pytest.mark.parametrize("path", _golds(), ids=lambda p: p.stem)
+def test_every_hand_authored_gold_scans_exactly(path):
+    """Two defects the walkthrough found, both invisible to a test written
+    against this engine's own output:
+
+      * `scan_layer` demanded `semantic_layer:` on line ONE, and every gold
+        opens with a comment header.
+      * it counted table entries at a fixed two-space indent, and every gold
+        indents list items by four. Both are legal YAML.
+
+    So the count is checked against the parsed truth, on files this engine
+    did not write.
+    """
+    import yaml
+    info = sess.scan_layer(path)
+    assert info is not None, path
+    truth = yaml.safe_load(path.read_text())["semantic_layer"].get("tables") or []
+    assert info["tables"] == len(truth)
+    assert info["name"]
+
+
+def test_a_leading_document_marker_is_skipped(tmp_path):
+    path = tmp_path / "layer.yaml"
+    path.write_text("---\n# mine\n\nsemantic_layer:\n  name: x\n  tables:\n  - name: t\n")
+    assert sess.scan_layer(path)["name"] == "x"
+
+
+def test_a_long_preamble_is_not_read_forever(tmp_path):
+    path = tmp_path / "notalayer.yaml"
+    path.write_text("# comment\n" * (sess._MAX_PREAMBLE_LINES + 5) + "semantic_layer:\n")
+    assert sess.scan_layer(path) is None

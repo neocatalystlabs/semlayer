@@ -122,7 +122,21 @@ def read(path: str | Path) -> dict[str, str]:
         return {}
 
 
-def environment(env_path: str | Path) -> Mapping[str, str]:
+class Environment(dict):
+    """A merged environment that remembers which keys came from the file.
+
+    Discovery reports where it saw a connection, and "your shell" and "the
+    file semlayer reads" need different advice: a variable set in a shell is
+    invisible to a server an MCP client launches, which is the trap this
+    whole module exists for. A dict subclass so a test can pass a plain one.
+    """
+
+    def __init__(self, values: Mapping[str, str], from_file: frozenset[str]):
+        super().__init__(values)
+        self.from_file = from_file
+
+
+def environment(env_path: str | Path) -> Environment:
     """The real environment with the `.env` file layered on top.
 
     The file WINS over the process environment, which looks backwards until
@@ -133,7 +147,8 @@ def environment(env_path: str | Path) -> Mapping[str, str]:
     advice "add this line and tell me" would silently fail for exactly the
     person who already has a wrong value set.
     """
-    return {**os.environ, **read(env_path)}
+    from_file = read(env_path)
+    return Environment({**os.environ, **from_file}, frozenset(from_file))
 
 
 @contextmanager
