@@ -118,14 +118,17 @@ class McpTools:
         self.loop.call_soon_threadsafe(self.loop.stop)
 
 
-# The server's session tools: what layer is loaded, which warehouses could
-# be inferred from here, and loading a different one. Onboarding, not
-# querying -- this demo hands the agent a layer that already exists, so none
-# of them has anything to add to the comparison it measures. Excluded rather
-# than ignored because the system prompt lists every signature the server
-# offers, and that prompt is a cassette key: leaving them in would change the
-# recorded conversations and with them the numbers this example is cited for.
-_SESSION_TOOLS = ("status", "discover_connections", "load_layer")
+# The server's session and front-door tools: what layer is loaded, which
+# warehouses could be inferred from here, loading a different one, building
+# one, and running SQL through the server. Onboarding and execution, not
+# querying -- this demo hands the agent a layer that already exists and its
+# OWN `run_sql` on the warehouse, which is what makes the comparison
+# like-for-like with the raw-schema arm. Excluded rather than ignored because
+# the system prompt lists every signature the server offers, and that prompt
+# is a cassette key: leaving them in would change the recorded conversations
+# and with them the numbers this example is cited for.
+_SESSION_TOOLS = ("status", "discover_connections", "load_layer",
+                  "infer", "cancel_infer", "context_for_question", "run_sql")
 
 _SQL_KEYS = ("sql", "query", "statement")
 

@@ -61,6 +61,11 @@ TOOLS = {"semantic_search", "get_domains", "get_tables", "table_detail",
          # onboarding failure we are trying to measure. `load_layer` says the
          # opposite -- a layer from a previous day was found and used.
          "status", "discover_connections", "load_layer",
+         # The front-door four. `infer` here is the whole point of the
+         # MCP-first work -- a session that called it is one where somebody
+         # built a layer without opening a terminal -- and `run_sql` says the
+         # answer was produced here rather than in a second server.
+         "infer", "cancel_infer", "context_for_question", "run_sql",
          "other"}
 
 # Which front door an `infer` came through: the CLI, or the MCP server's own

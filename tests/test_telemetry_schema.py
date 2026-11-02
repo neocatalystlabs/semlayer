@@ -443,3 +443,19 @@ def test_the_session_tools_are_declared():
     the whitelist silently merges with the unknown ones."""
     from semlayer.telemetry_schema import TOOLS
     assert {"status", "discover_connections", "load_layer"} <= TOOLS
+
+
+def test_the_front_door_tools_are_declared():
+    """`_tools` maps an undeclared name to `other`, so a tool missing here
+    merges with the unknown ones -- and `infer` is the single most important
+    name in this field: a session that called it is one where somebody built
+    a layer without opening a terminal."""
+    from semlayer.telemetry_schema import TOOLS
+    assert {"infer", "cancel_infer", "context_for_question", "run_sql"} <= TOOLS
+
+
+def test_via_mcp_is_now_reachable():
+    """Slice 1 declared `via` and could only ever emit `cli`. The MCP infer
+    tool emits `mcp`, which is the measurement the phase exists for."""
+    assert ts.serialize({"via": "mcp"}) == {"via": "mcp"}
+    assert ts.serialize({"via": "browser"}) == {}, "a third door nobody built"
