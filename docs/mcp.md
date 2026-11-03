@@ -428,6 +428,15 @@ where this becomes visible: `agent` means nobody has confirmed it yet.
 `semlayer review <layer> --list` is the same queue in a terminal, and writes
 the same verdicts.
 
+**A set is read here and recorded in the terminal.** If your layer is a hub
+with member files, the session stitches it into one document to answer
+from — but a verdict belongs in the member file that owns the column, and
+writing the stitched version back would flatten every member into the hub.
+So `review_questions` and `review_question` work normally, and
+`review_answer` and `save_layer` tell you to run
+`semlayer review <hub.yaml> --members`, which puts each verdict in the right
+file. `export_layer` works on a set, since it writes somewhere new.
+
 ## Keeping it, and handing it on
 
 **`save_layer`** writes the layer into your project. The cache under

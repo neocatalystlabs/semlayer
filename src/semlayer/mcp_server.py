@@ -681,6 +681,10 @@ def _register_review_tools(srv, session: Session) -> None:
         exclude: comma-separated object locations the verdict should skip.
         note: your reasoning, kept on the question whether or not the verdict
         was recorded. This is how you PROPOSE one you may not decide.
+
+        If the layer is a set (a hub with members) this is refused and tells
+        the user which terminal command records it, so do not promise them it
+        is kept until you have the result.
         """
         skip = [x.strip() for x in exclude.split(",") if x.strip()]
         if session.doc is None:
@@ -706,6 +710,9 @@ def _register_review_tools(srv, session: Session) -> None:
         The cache is per-machine; a file in the repository is what a
         colleague reads. From then on this session's verdicts land there.
         Ask where they want it rather than choosing for them.
+
+        Refused on a set: a hub and its members are several files the user
+        already chose the paths for, and one file cannot hold them.
         """
         if session.doc is None:
             return json.dumps(session.status(), default=str)

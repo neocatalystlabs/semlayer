@@ -668,6 +668,98 @@ def test_save_layer_writes_it_and_follows_it(big_warehouse, _nowhere):
     assert s.layer_path == target
 
 
+def _hub(tmp_path):
+    """A hub and two members on disk, the shape `semlayer stitch` writes."""
+    import yaml
+    member = {"semantic_layer": {
+        "version": "0.1", "name": "sales", "warehouse": "duckdb",
+        "tables": [{"name": "fct_orders", "source": "sales.fct_orders",
+                    "table_type": "fact", "columns": [
+                        {"name": "order_id", "semantic_type": "identifier",
+                         "role": "dimension", "primary_key": True},
+                        {"name": "seg_cd", "semantic_type": "category",
+                         "role": "dimension", "lifecycle": "inferred",
+                         "confidence": 0.55}]}]}}
+    other = {"semantic_layer": {
+        "version": "0.1", "name": "finance", "warehouse": "duckdb",
+        "tables": [{"name": "fct_gl", "source": "finance.fct_gl",
+                    "table_type": "fact", "columns": [
+                        {"name": "gl_id", "semantic_type": "identifier",
+                         "role": "dimension", "primary_key": True}]}]}}
+    hub = {"semantic_layer": {
+        "version": "0.1", "name": "acme", "warehouse": "duckdb",
+        "members": [{"name": "sales", "path": "sales.yaml"},
+                    {"name": "finance", "path": "finance.yaml"}]}}
+    (tmp_path / "sales.yaml").write_text(yaml.safe_dump(member))
+    (tmp_path / "finance.yaml").write_text(yaml.safe_dump(other))
+    hub_path = tmp_path / "acme.yaml"
+    hub_path.write_text(yaml.safe_dump(hub))
+    return hub_path
+
+
+def test_a_verdict_on_a_set_is_refused_rather_than_flattening_the_hub(tmp_path):
+    """The resolved set is a READING surface. Writing it back over the hub
+    file leaves `members` in place AND adds every member's tables, so the
+    next load stitches them in again -- two members became four tables
+    before this was refused. The verdict also never reached the member that
+    owns the object, which is the file a colleague reviews.
+    """
+    from semlayer import agent_review
+
+    hub_path = _hub(tmp_path)
+    before = hub_path.read_text()
+    s = sess.Session()
+    s.doc, s.layer_path = sess.load_document(hub_path), hub_path
+
+    # reading and answering questions still work on a set
+    qs = agent_review.questions(s.doc, limit=100)["questions"]
+    assert qs, "a set must still show its questions"
+    q = next(x for x in qs if x["decidable"])
+
+    out = s.review_answer(q["key"], "accept", "agent", by="claude-code/opus")
+    assert out["recorded"] is False
+    assert "set" in out["why"]
+    assert "semlayer review" in out["next"]
+    assert "--members" in out["next"]
+    assert hub_path.read_text() == before, "the hub file must be untouched"
+
+    # and the proof of what was being prevented: the hub still resolves to
+    # two tables, not four
+    assert len(sess.load_document(hub_path)["semantic_layer"]["tables"]) == 2
+
+
+def test_save_layer_on_a_set_is_refused_too(tmp_path):
+    """Same flattening, different file. A hub is never in our cache -- only
+    `stitch` makes one and the user chose its path -- so there is nothing to
+    copy out of a cache into their repo.
+    """
+    hub_path = _hub(tmp_path)
+    s = sess.Session()
+    s.doc, s.layer_path = sess.load_document(hub_path), hub_path
+
+    target = tmp_path / "models" / "layer.yaml"
+    out = s.save_layer(str(target))
+    assert out["saved"] is False
+    assert "set" in out["why"]
+    assert not target.exists(), "nothing may be written for a set"
+    assert s.layer_path == hub_path, "and the write-through target is unchanged"
+
+
+def test_an_export_of_a_set_is_still_allowed(tmp_path):
+    """Export writes a NEW file in someone else's format and never touches
+    the hub, so there is nothing to protect against -- and a stitched set is
+    exactly what someone wants in dbt.
+    """
+    hub_path = _hub(tmp_path)
+    s = sess.Session()
+    s.doc, s.layer_path = sess.load_document(hub_path), hub_path
+
+    out = s.export_layer("dbt", str(tmp_path / "out" / "semantic.yml"))
+    assert out["exported"] is True
+    assert out["semantic_models"] == 2
+    assert len(sess.load_document(hub_path)["semantic_layer"]["tables"]) == 2
+
+
 def test_save_layer_to_an_impossible_path_says_so(warehouse):
     s = sess.Session()
     s.start_infer(warehouse, wait_seconds=60, use_llm=False)

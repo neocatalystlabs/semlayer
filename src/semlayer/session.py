@@ -1682,6 +1682,36 @@ class Session:
             self.person = _git_user_name(self.layer_path)
         return self.person
 
+    def _refuse_on_a_set(self, flag: str) -> dict | None:
+        """A set is several files, and a write here would flatten them into one.
+
+        The resolved set is a READING surface: the hub's file lists members,
+        the tables belong to the members, and `load_document` stitches them
+        together for the session. Writing that stitched document back over
+        the hub file puts every member's tables in it while leaving the
+        `members` list in place, so the next load stitches them in AGAIN --
+        measured: two members became four tables. The verdict also never
+        reaches the member that owns the object, which is the file a
+        colleague reviews.
+
+        `review.answer` takes `hub`/`members`/`touched` and does this
+        properly, which is how the CLI handles it. The session cannot yet:
+        `load_document` keeps only the resolved document and discards the
+        hub and the member files it came from. So reading and answering
+        questions work on a set; recording and saving say where to go.
+        """
+        if not (self.doc and (self.doc.get("semantic_layer") or {}).get("members")):
+            return None
+        return {flag: False,
+                "why": "this layer is a set: a hub plus member files, and a "
+                       "verdict belongs in the member that owns the object",
+                # --members is what writes into the member files; without it
+                # the command only asks the hub's own questions.
+                "next": "Tell the user to record it in the terminal: "
+                        "`semlayer review <hub.yaml> --members` applies it to "
+                        "the right member file. Reading and answering here "
+                        "still work."}
+
     def review_answer(self, key: str, verdict: str, decided_by: str,
                       by: str | None = None, exclude: list[str] | None = None,
                       note: str | None = None) -> dict:
@@ -1697,6 +1727,9 @@ class Session:
 
         if self.doc is None:
             return self.status()
+        refusal = self._refuse_on_a_set("recorded")
+        if refusal is not None:
+            return refusal
         name = by
         if decided_by == "person":
             name = self.who_decides(by)
@@ -1724,6 +1757,9 @@ class Session:
         """
         if self.doc is None:
             return self.status()
+        refusal = self._refuse_on_a_set("saved")
+        if refusal is not None:
+            return refusal
         target = Path(path).expanduser()
         try:
             save_document(target, self.doc)
