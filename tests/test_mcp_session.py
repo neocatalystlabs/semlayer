@@ -444,7 +444,8 @@ def test_the_handshake_now_names_inference_and_the_answer_order():
 
 # --- the server must answer while a run is going -------------------------
 
-def test_status_is_answered_while_infer_is_waiting(_nowhere, built_fixture):
+def test_status_is_answered_while_infer_is_waiting(_nowhere, built_fixture,
+                                                   monkeypatch):
     """The defect this fixes: FastMCP calls a SYNC tool function directly on
     the event loop, so the `thread.join` inside `infer` made the WHOLE server
     unresponsive for the length of its wait. Measured over stdio on
@@ -453,10 +454,27 @@ def test_status_is_answered_while_infer_is_waiting(_nowhere, built_fixture):
 
     `infer` is async for this reason, and sending a progress notification
     needs the loop too.
+
+    The run is slowed DELIBERATELY. This test needs the inference to still be
+    going when `status` arrives, and it used to get that by hoping the real
+    messy_mart run took longer than two seconds -- true on a developer's
+    machine, false on a fast CI runner, where it came in at 1.5s and the
+    premise assertion failed with "too quick to prove anything". The test was
+    reporting the runner's speed, not the server's behaviour. Two extra
+    seconds inside the worker thread makes the window exist everywhere, and
+    none of it touches the loop this test is about.
     """
     import shutil
     import time
     shutil.copy(built_fixture("messy_mart"), _nowhere / "cwd" / "warehouse.duckdb")
+
+    real = Session._infer_once
+
+    def slow(self, job, use_llm):
+        time.sleep(2)
+        return real(self, job, use_llm)
+
+    monkeypatch.setattr(Session, "_infer_once", slow)
     srv = mcp_server.build_server(Session())
     answered: dict = {}
 
