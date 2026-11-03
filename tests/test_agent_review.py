@@ -126,6 +126,37 @@ def test_a_refusal_still_keeps_the_agent_s_reasoning(fresh):
     assert any(n["note"] for n in ar.decisions(fresh)["notes"])
 
 
+def test_a_refused_person_s_note_is_signed_human_not_person(fresh):
+    """The file knows two signals, `human` and `agent`. `person` is the
+    TOOL's word, and the refusal path wrote it straight through -- a third
+    value nothing in the format reads. Only the agent case was covered,
+    which is why it passed.
+
+    A person's `set` IS refused when the value is not spec vocabulary, and a
+    note can ride along with that refusal, so this path is reachable.
+    """
+    q = _pick(fresh, gating=False)
+    out = ar.answer(fresh, q["key"], "set:not-a-real-semantic-type", "person",
+                    by="Raj Devnath", note="pretty sure it is a currency")
+    assert out["recorded"] is False
+    assert out["note_recorded"]["signal"] == "human", out["note_recorded"]
+    assert out["note_recorded"]["by"] == "Raj Devnath"
+
+
+def test_a_refusal_does_not_leave_the_author_set(fresh):
+    """set_author is process-global. The refusal path never reset it, so the
+    next verdict written by anything in this process -- including the CLI --
+    inherited the name of whoever was last refused.
+    """
+    from semlayer import review
+
+    q = _pick(fresh, gating=True)
+    ar.answer(fresh, q["key"], "accept", "agent", by="claude-code/opus",
+              note="leaving my reasoning")
+    assert review._AUTHOR is None
+    assert review._SIGNAL == "human"
+
+
 def test_a_person_may_accept_what_unlocks_behaviour(fresh):
     q = _pick(fresh, gating=True)
     out = ar.answer(fresh, q["key"], "accept", "person", by="Raj Devnath")

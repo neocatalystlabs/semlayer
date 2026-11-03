@@ -35,6 +35,17 @@ PERSON_ONLY = ("reject, set, and accepting anything that unlocks behaviour: "
                f"{', '.join(sorted(review.GATING_KINDS))}")
 
 
+def _signal(decided_by: str) -> str:
+    """`decided_by` is the tool's word; `signal` is the file's. Translate once.
+
+    The format defines two signals, `human` and `agent`, and the tool takes
+    `person` or `agent`. Writing that mapping at each call site is how a
+    note once reached the file signed `signal: person` -- a third value
+    nothing reads -- so every site goes through here.
+    """
+    return "human" if decided_by == "person" else "agent"
+
+
 def _open_questions(doc: dict) -> int:
     """How many QUESTIONS are still open, not how many objects they cover.
 
@@ -203,8 +214,11 @@ def answer(doc: dict, key: str, verdict: str, decided_by: str,
     refusal = _check(q, verdict, decided_by, doc)
     if refusal is not None:
         if note:
-            review.set_author(by or None, signal=decided_by)
-            entry = review.note(doc, q, note)
+            review.set_author(by or None, signal=_signal(decided_by))
+            try:
+                entry = review.note(doc, q, note)
+            finally:
+                review.set_author(None)
             refusal["note_recorded"] = entry
             refusal["next"] = (f"{refusal['next']} Your note is on the "
                                "question and shows up in review_decisions.")
@@ -217,13 +231,13 @@ def answer(doc: dict, key: str, verdict: str, decided_by: str,
             "guess it, and never use your client's name. For yourself: pass "
             "something a human would recognise, like 'claude-code/opus'.")
 
-    review.set_author(by, signal="human" if decided_by == "person" else "agent")
+    review.set_author(by, signal=_signal(decided_by))
     try:
         n = review.answer(doc, q, verdict, set(exclude) if exclude else None)
     finally:
         review.set_author(None)
     if note:
-        review.set_author(by, signal="human" if decided_by == "person" else "agent")
+        review.set_author(by, signal=_signal(decided_by))
         try:
             review.note(doc, q, note)
         finally:
@@ -234,7 +248,7 @@ def answer(doc: dict, key: str, verdict: str, decided_by: str,
         "key": key,
         "verdict": verdict,
         "objects_changed": n,
-        "signal": "human" if decided_by == "person" else "agent",
+        "signal": _signal(decided_by),
         "by": by,
         "open_questions_left": left,
         "next": ("It is in the document and in effect now -- this claim stops "
