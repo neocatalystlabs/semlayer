@@ -22,12 +22,20 @@ below still describes 0.6.0b1, and 0.7.0b1 does not restate it. The engine has
 since moved in a way that reaches the prompts: metrics are now kept on every
 rollup, which puts one more `METRIC` line into the context for 8 of
 messy_mart's 38 questions, and the cassette key is a hash of the prompt — so
-the recordings for those 8 no longer replay, and the Sonnet row's were never
-committed at all. The release workflow still runs the replay step and prints
-its result, but at this release it does not block the publish: holding the
-whole MCP-first phase off PyPI over a claim about the *previous* release would
-be the wrong trade. What that owes, before any number here can carry 0.7.0b1:
-record the ~100 invalidated answers, re-measure this table, and make the step
+the recordings for those 8 no longer replay. Checking that turned up a second
+and older break, unrelated to it: the Sonnet row's two semantic cells stopped
+replaying on 2026-10-30, when a metric-name change rewrote the `METRIC` lines
+for every question. Haiku was re-recorded for it and Sonnet was not, because
+`python -m semlayer.benchmark` only produces the Haiku rows — the Sonnet row
+needs an explicit `answer_model`, so a re-record driven by the documented
+command refreshes one model and silently leaves the other stale. Its
+`schema_only` cell is unaffected and still replays exactly. The release
+workflow still runs the replay step and prints its result, but at this release
+it does not block the publish: holding the whole MCP-first phase off PyPI over
+a claim about the *previous* release would be the wrong trade. What that owes,
+before any number here can carry 0.7.0b1: re-record the 8 invalidated Haiku
+answers and the 76 stale Sonnet ones — naming every published row explicitly,
+not via the default command — re-measure this table, and make the step
 blocking again in the same change. Until then, read every row as 0.6.0b1.
 
 | Fixture | CQs | Answerer | schema_only | semantic | semantic+lint | semantic+ontology |
