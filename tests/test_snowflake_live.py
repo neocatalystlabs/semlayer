@@ -30,10 +30,18 @@ except ImportError:
 # tier that could exercise that code for want of a variable the product no
 # longer wants. A run with no role set is a case worth covering, not a reason
 # to cover nothing.
+# The credential may be a key pair rather than a password, and after the init
+# template change it usually will be: `init` now creates a SERVICE user, which
+# cannot hold a password at all. Gating on READER_PASSWORD alone would skip
+# this whole tier for anyone who set their account up the way the quickstart
+# now tells them to.
 pytestmark = pytest.mark.skipif(
     not os.environ.get("SNOWFLAKE_ACCOUNT")
-    or not os.environ.get("SNOWFLAKE_READER_PASSWORD"),
-    reason="Snowflake credentials not configured (.env: ACCOUNT, READER_PASSWORD)",
+    or not (os.environ.get("SNOWFLAKE_READER_PASSWORD")
+            or os.environ.get("SNOWFLAKE_READER_PRIVATE_KEY_PATH")
+            or os.environ.get("SNOWFLAKE_READER_AUTHENTICATOR")),
+    reason="Snowflake credentials not configured (.env: ACCOUNT, plus a "
+           "READER_PASSWORD, READER_PRIVATE_KEY_PATH or READER_AUTHENTICATOR)",
 )
 
 
