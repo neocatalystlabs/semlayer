@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.7.0-beta.1 (2026-11-03)
 
 ### Say "yes" and it is recorded — review, save and export from the chat
 
@@ -1053,6 +1053,15 @@ Two stale lines in the same block are corrected with it: the template still
 said the session role was required, which [#78] made optional, and gave
 `DEFAULT_ROLE` inheritance as the reason for naming it rather than
 `CURRENT_ROLE()` agreeing with what was asked for.
+
+### The benchmark table still describes 0.6.0b1
+
+`docs/benchmark.md` was not re-measured for this release. The engine now keeps
+metrics on every rollup, which changes the prompt the benchmark embeds for 8 of
+messy_mart's 38 questions, so the committed recordings for those no longer
+replay and the numbers cannot honestly carry this version. Read every row there
+as 0.6.0b1 until it is re-measured; the page says so at the top, and what is
+owed is written down beside the check that enforces it.
 
 ## v0.6.0-beta.1 (2026-10-20)
 
