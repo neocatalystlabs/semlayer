@@ -459,3 +459,18 @@ def test_via_mcp_is_now_reachable():
     tool emits `mcp`, which is the measurement the phase exists for."""
     assert ts.serialize({"via": "mcp"}) == {"via": "mcp"}
     assert ts.serialize({"via": "browser"}) == {}, "a third door nobody built"
+
+
+def test_the_review_and_output_tools_are_declared():
+    from semlayer.telemetry_schema import TOOLS
+    assert {"review_questions", "review_question", "review_answer",
+            "review_decisions", "save_layer", "export_layer"} <= TOOLS
+
+
+def test_the_setup_prompt_is_declared_alongside_the_tools():
+    """Not a tool, but the field answers "which of our surfaces did this
+    session use" -- and whether the walkthrough is invoked at all is the
+    same question that started the MCP-first work."""
+    from semlayer.telemetry_schema import TOOLS
+    assert "setup" in TOOLS
+    assert ts.serialize({"tools": ["setup"]}) == {"tools": ["setup"]}

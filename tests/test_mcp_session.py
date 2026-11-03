@@ -533,3 +533,106 @@ def test_a_client_that_cannot_take_progress_is_not_an_error(_nowhere, built_fixt
             use_llm=False, ctx=_Broken()))
 
     assert anyio.run(drive)["state"] == "ready"
+
+
+# --- review, and getting the layer out, through the tools ---------------
+
+def test_the_review_and_output_tools_are_registered():
+    srv = mcp_server.build_server(Session())
+    names = {t.name for t in anyio.run(srv.list_tools)}
+    assert {"review_questions", "review_question", "review_answer",
+            "review_decisions", "save_layer", "export_layer"} <= names
+
+
+def test_the_setup_prompt_is_offered():
+    """A prompt, not a questionnaire: optional, user-invoked, and shown as
+    /semlayer:setup in Claude Code."""
+    srv = mcp_server.build_server(Session())
+    prompts = {p.name: p for p in anyio.run(srv.list_prompts)}
+    assert "setup" in prompts
+    assert prompts["setup"].description
+
+
+def test_the_setup_prompt_forbids_asking_for_a_secret():
+    srv = mcp_server.build_server(Session())
+    got = anyio.run(lambda: srv.get_prompt("setup", {}))
+    text = got.messages[0].content.text
+    assert "NEVER ask for a password" in text
+    assert "status" in text
+    assert "infer" in text
+
+
+def test_the_setup_prompt_names_no_terminal_command():
+    """The whole point of the MCP-first work: a stranger never opens one."""
+    srv = mcp_server.build_server(Session())
+    text = anyio.run(lambda: srv.get_prompt("setup", {})).messages[0].content.text
+    for forbidden in ("semlayer infer ", "pip install", "$ ", "semlayer mcp"):
+        assert forbidden not in text, forbidden
+
+
+def test_review_through_the_tools_end_to_end(_nowhere, built_fixture):
+    import shutil
+    shutil.copy(built_fixture("messy_mart"), _nowhere / "cwd" / "warehouse.duckdb")
+    srv = mcp_server.build_server(Session())
+    call(srv, "infer", {"connection": "duckdb:warehouse.duckdb",
+                        "wait_seconds": 60, "use_llm": False})
+
+    queue = call(srv, "review_questions", {"limit": 100})
+    assert queue["open"] > 0 and queue["gating"] > 0
+    gating = next(q for q in queue["questions"] if q["gates_behaviour"])
+    plain = next(q for q in queue["questions"]
+                 if not q["gates_behaviour"] and q["decidable"])
+
+    detail = call(srv, "review_question", {"key": plain["key"]})
+    assert detail["objects_covered"]
+
+    mine = call(srv, "review_answer", {"key": plain["key"], "verdict": "accept",
+                                       "decided_by": "agent",
+                                       "by": "claude-code/opus"})
+    assert mine["recorded"] is True and mine["signal"] == "agent"
+
+    refused = call(srv, "review_answer", {"key": gating["key"], "verdict": "accept",
+                                          "decided_by": "agent",
+                                          "by": "claude-code/opus",
+                                          "note": "the codes look right"})
+    assert refused["recorded"] is False
+    assert refused["propose_instead"] is True
+
+    theirs = call(srv, "review_answer", {"key": gating["key"], "verdict": "accept",
+                                         "decided_by": "person", "by": "Raj"})
+    assert theirs["recorded"] is True and theirs["signal"] == "human"
+
+    out = call(srv, "review_decisions")
+    assert out["by_agent"] > 0 and out["by_person"] > 0
+    assert out["notes"]
+
+
+def test_save_and_export_through_the_tools(_nowhere, built_fixture):
+    import shutil
+    shutil.copy(built_fixture("fan_trap"), _nowhere / "cwd" / "warehouse.duckdb")
+    srv = mcp_server.build_server(Session())
+    call(srv, "infer", {"connection": "duckdb:warehouse.duckdb",
+                        "wait_seconds": 60, "use_llm": False})
+
+    saved = call(srv, "save_layer", {"path": str(_nowhere / "cwd" / "layer.yaml")})
+    assert saved["saved"] is True
+    assert (_nowhere / "cwd" / "layer.yaml").is_file()
+
+    exported = call(srv, "export_layer", {"target": "dbt",
+                                          "path": str(_nowhere / "cwd" / "dbt.yml")})
+    assert exported["exported"] is True
+    assert (_nowhere / "cwd" / "dbt.yml").is_file()
+    assert "snapshot" in exported["next"]
+
+
+def test_the_review_tools_fall_back_to_status_with_no_layer():
+    srv = mcp_server.build_server(Session())
+    for tool, args in (("review_questions", {}),
+                       ("review_question", {"key": "q-x"}),
+                       ("review_decisions", {}),
+                       ("review_answer", {"key": "q-x", "verdict": "accept",
+                                          "decided_by": "agent", "by": "me"}),
+                       ("save_layer", {"path": "/tmp/x.yaml"}),
+                       ("export_layer", {"target": "dbt", "path": "/tmp/x.yml"})):
+        out = call(srv, tool, args)
+        assert out["state"] == "no_layer", tool

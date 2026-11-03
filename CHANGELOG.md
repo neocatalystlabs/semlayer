@@ -2,6 +2,58 @@
 
 ## Unreleased
 
+### Say "yes" and it is recorded — review, save and export from the chat
+
+The assumptions under an answer are now answerable, which closes the loop
+the whole MCP-first phase was built for: ask, answer, correct, keep.
+
+**`review_answer` records a verdict and it takes effect immediately** — the
+document in memory is the one the tools answer from, so the claim stops
+appearing as an assumption on the very next answer — and it is written
+through to the layer file, because a verdict that dies with the server is
+worse than no verdict: the user believes it was kept. If the file cannot be
+written the result says so plainly rather than implying it saved.
+
+**Who may decide what.** Nobody can verify who typed anything, so instead
+the file records which it was and the agent is held to a line. It may accept
+a claim where accepting changes no behaviour, signed with its own name. It
+may NOT accept anything that unlocks behaviour — a decode guess a metric's
+filter is written against, an aggregate table becoming routable, a
+discovered filter, a conflict, two columns being the same thing: there it
+proposes with its reasoning, `note` keeps that reasoning on the question
+either way, and a person confirms. Rejecting and setting are always the
+person's, because both assert something the engine never claimed.
+
+A person's name comes from `git config user.name` where the layer lives —
+the same name the CLI records, so a verdict from a chat and one from a
+terminal are signed identically — or the agent asks once and it is
+remembered. Never invented, and never the MCP client's name.
+
+**`review_questions`** is the queue, and it is PULLED: the tool's own
+description tells the agent not to recite it after inference, because the
+claims that matter are the ones an answer rested on and `run_sql` already
+hands those over. **`review_decisions`** shows every verdict with its
+`signal`, which is the column that matters.
+
+**`save_layer`** writes the layer into the user's project, and this
+session's verdicts follow it there — the cache is per-machine, a file in the
+repository is what a colleague reads. **`export_layer`** writes a snapshot
+in another tool's format (`dbt` today), on request only, and lists what the
+format could not carry: deprecated tables, hierarchies, aggregate routing,
+repo knowledge, confidence and provenance. Nothing keeps an export in step
+with the layer and the agent keeps answering from the layer.
+
+**And an MCP prompt, `setup`**, for someone who would rather be walked
+through it — `/semlayer:setup` in Claude Code. Optional, because the lazy
+flow IS the setup: a person who asks a data question never sees it. Its text
+is written for the agent and reuses the same tools and the same `next`
+sentences, so there is one path and not two. It names no terminal command
+and forbids asking for a secret, both of which are tested.
+
+Telemetry: the six tools and the prompt join the `tools` whitelist. A prompt
+is a surface too, and whether an optional walkthrough gets invoked at all is
+the same question that started this work — one nobody could answer before.
+
 ### A layer built without a model says so
 
 Running with no `ANTHROPIC_API_KEY` already worked — statistics, keys,

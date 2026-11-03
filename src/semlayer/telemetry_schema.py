@@ -66,6 +66,16 @@ TOOLS = {"semantic_search", "get_domains", "get_tables", "table_detail",
          # built a layer without opening a terminal -- and `run_sql` says the
          # answer was produced here rather than in a second server.
          "infer", "cancel_infer", "context_for_question", "run_sql",
+         # Review, and getting the layer out. `review_answer` is the one
+         # that says somebody trusted this enough to correct it.
+         "review_questions", "review_question", "review_answer",
+         "review_decisions", "save_layer", "export_layer",
+         # Not a tool: the `setup` PROMPT, noted here because the field is
+         # "which of our surfaces did this session use" and a prompt nobody
+         # invokes is a prompt to delete. Without it we cannot tell whether
+         # the walkthrough is used at all, which is the same blindness that
+         # started this work.
+         "setup",
          "other"}
 
 # Which front door an `infer` came through: the CLI, or the MCP server's own
