@@ -24,23 +24,48 @@ GRANT USAGE ON WAREHOUSE {warehouse} TO ROLE {prefix}_reader;
 -- OPT-IN (drift watching only; EXCEEDS the minimal grant — see docs):
 -- GRANT IMPORTED PRIVILEGES ON DATABASE snowflake TO ROLE {prefix}_reader;
 
-CREATE USER IF NOT EXISTS {prefix}_reader_svc PASSWORD = '<set-a-strong-password>'
-  DEFAULT_ROLE = {prefix}_reader DEFAULT_WAREHOUSE = {warehouse} MUST_CHANGE_PASSWORD = FALSE;
+-- The user is a SERVICE user authenticating with a key pair, NOT a password.
+-- A password user created here cannot log in at all: Snowflake enforces MFA on
+-- password sign-ins for users of the default (person) type, so the first
+-- connection is refused with "390197 Multi-factor authentication is required".
+-- TYPE = SERVICE cannot be given a password or MFA, which is the point -- there
+-- is nothing to phish and nothing for a human to rotate by hand.
+--
+-- First make the key pair, on the machine that will run semlayer:
+--
+--   mkdir -p ~/.snowflake/keys && chmod 700 ~/.snowflake/keys
+--   openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -nocrypt \\
+--     -out ~/.snowflake/keys/{prefix}_reader.p8
+--   openssl rsa -in ~/.snowflake/keys/{prefix}_reader.p8 -pubout \\
+--     -out ~/.snowflake/keys/{prefix}_reader.pub
+--
+-- The .p8 is the private key and never leaves that machine. Paste the contents
+-- of the .pub below WITHOUT its "-----BEGIN PUBLIC KEY-----" and
+-- "-----END PUBLIC KEY-----" lines -- Snowflake wants the key, not the
+-- envelope, and leaving them in fails with an invalid-value error.
+
+CREATE USER IF NOT EXISTS {prefix}_reader_svc
+  TYPE = SERVICE
+  RSA_PUBLIC_KEY = '<paste {prefix}_reader.pub here, without its BEGIN/END lines>'
+  DEFAULT_ROLE = {prefix}_reader DEFAULT_WAREHOUSE = {warehouse};
 GRANT ROLE {prefix}_reader TO USER {prefix}_reader_svc;
 
 -- Then set these before running `semlayer infer snowflake`:
 --
 --   export SNOWFLAKE_ACCOUNT=<your-account>
 --   export SNOWFLAKE_READER_USER={prefix}_reader_svc
---   export SNOWFLAKE_READER_PASSWORD=<the-password-above>
+--   export SNOWFLAKE_READER_PRIVATE_KEY_PATH=~/.snowflake/keys/{prefix}_reader.p8
 --   export SNOWFLAKE_READER_ROLE={prefix}_reader
+--   export SNOWFLAKE_WAREHOUSE={warehouse} SNOWFLAKE_DATABASE={database}
 --
--- The ROLE is required and is not optional. semlayer passes it as the session
--- role rather than relying on the user's DEFAULT_ROLE, because a minimal-grant
--- claim is about the role actually in effect -- and if you run semlayer as your
--- own account instead of this service user, an inherited DEFAULT_ROLE would
--- silently profile under every privilege you hold. The role in effect is
--- recorded in the run report.
+-- If you gave the key a passphrase (drop `-nocrypt` above), also export
+-- SNOWFLAKE_READER_PRIVATE_KEY_PASSPHRASE.
+--
+-- The ROLE is optional and recommended here. semlayer passes it as the session
+-- role rather than relying on DEFAULT_ROLE, and then asks CURRENT_ROLE() what
+-- is actually in effect: naming it is what lets the run report show the role
+-- you asked for and the role you got agreeing. If they disagree -- a secondary
+-- role, an ownership rule -- the run warns and records what actually ran.
 """
 
 BIGQUERY_TEMPLATE = """# semlayer minimal-grant setup (BigQuery). Requires project owner/IAM admin.

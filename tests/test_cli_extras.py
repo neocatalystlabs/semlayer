@@ -101,3 +101,28 @@ def test_snowflake_does_not_require_a_role_to_be_named(monkeypatch):
     assert "refused the connection" in str(e.value), (
         "a missing role must no longer be refused before the driver is reached")
     assert "session role" not in str(e.value)
+
+
+def test_init_snowflake_creates_a_user_that_can_actually_log_in():
+    """A password user created by this script cannot connect at all.
+
+    Snowflake enforces MFA on password sign-ins for users of the default
+    (person) type, so `semlayer infer` was refused on its first connection
+    with "390197 Multi-factor authentication is required" -- and there is
+    nobody to approve a prompt for a service account. Measured on a current
+    account, 2026-11-01.
+
+    `init` renders a string, so what is pinned here is the string: a SERVICE
+    user, a key, and no password anywhere in the script.
+    """
+    from semlayer.init_cmd import render
+    sql = render("snowflake", database="proddb", warehouse_name="wh1")
+    assert "TYPE = SERVICE" in sql
+    assert "RSA_PUBLIC_KEY" in sql
+    assert "PASSWORD" not in sql, "a password user is refused by MFA enforcement"
+    # the key pair has to be makeable from the script alone
+    assert "openssl genrsa 2048" in sql
+    assert "pkcs8 -topk8" in sql
+    assert "-pubout" in sql
+    # and the environment has to name the key rather than a secret
+    assert "SNOWFLAKE_READER_PRIVATE_KEY_PATH" in sql
