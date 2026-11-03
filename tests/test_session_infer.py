@@ -444,3 +444,139 @@ def test_a_run_waiting_for_the_connection_says_so(warehouse):
         s._in_use.release()
     s.job.thread.join(timeout=60)
     assert s.job.state == "done", "and it proceeds once the query is done"
+
+
+# --- what a keyless layer says about itself ------------------------------
+
+def test_a_statistics_only_layer_says_so(warehouse):
+    """The behaviour shipped in #85 -- no key, statistics only, still
+    `ready`. What was missing is the layer admitting it."""
+    s = sess.Session()
+    out = s.start_infer(warehouse, wait_seconds=60, use_llm=False)
+    assert out["layer"]["built_without_model"] is True
+    assert out["layer"]["model"] == "none/heuristic"
+
+
+def test_a_layer_we_did_not_write_claims_nothing(_nowhere):
+    """A hand-authored gold has no `generated_by`, and the messy_mart gold
+    has no table descriptions either -- so counting descriptions would
+    label somebody's hand-written layer statistics-only. Unknown is a
+    third state, not a false."""
+    from pathlib import Path
+    gold = Path(__file__).resolve().parents[1] / "fixtures" / "golds" / "messy_mart.yaml"
+    s = sess.Session()
+    s.load(gold)
+    assert s.status()["layer"]["built_without_model"] is None
+
+
+@pytest.mark.parametrize(("doc", "answer"), [
+    ({"generated_by": {"engine": "0.6.0b1", "model": "none/heuristic"}}, True),
+    ({"generated_by": {"model": "none"}}, True),
+    ({"generated_by": {"engine": "0.6.0b1", "model": "haiku-4-5/escalation"}}, False),
+    # Not a document this engine wrote: ours always records both halves of
+    # `generated_by`, so a missing or empty model is a producer who told us
+    # nothing -- not a producer who told us "no model".
+    ({"generated_by": {"engine": "someone-else"}}, None),
+    ({"generated_by": {"model": None}}, None),
+    ({"generated_by": {"model": "   "}}, None),
+    ({"name": "hand-written"}, None),
+])
+def test_the_claim_is_only_made_where_it_is_recorded(doc, answer):
+    assert sess.built_without_model({"semantic_layer": doc}) is answer
+
+
+def test_a_real_resolved_hub_claims_nothing(tmp_path):
+    """Through `load_document`, which is where the bug actually lived: it
+    resolves a hub into ONE document carrying the HUB's `generated_by`, so
+    a set used to report its members as description-free while one of them
+    had been written by a model."""
+    def member(name, model, description):
+        doc = {"semantic_layer": {
+            "spec_version": "0.6.0", "name": name,
+            "warehouse": "duckdb:w.duckdb",
+            "generated_by": {"engine": "0.6.0b1", "model": model},
+            "tables": [{"name": f"{name}_t", "source": f"main.{name}_t",
+                        "description": description,
+                        "columns": [{"name": "id", "sql_type": "INTEGER"}]}]}}
+        sess.save_document(tmp_path / f"{name}.yaml", doc)
+        return {"name": name, "path": f"{name}.yaml"}
+
+    members = [member("sales", "haiku-4-5/escalation", "written by a model"),
+               member("ops", "none/heuristic", "")]
+    sess.save_document(tmp_path / "hub.yaml", {"semantic_layer": {
+        "spec_version": "0.6.0", "name": "hub",
+        "generated_by": {"engine": "0.6.0b1", "model": "none/heuristic"},
+        "members": members}})
+
+    s = sess.Session()
+    s.load(tmp_path / "hub.yaml")
+    layer = s.status()["layer"]
+    assert layer["tables"] == 2, "the hub resolved to its members' tables"
+    assert layer["model"] == "none/heuristic", "the hub's own line is unchanged"
+    assert layer["built_without_model"] is None
+
+
+def test_a_set_claims_nothing_about_its_members():
+    """A stitched hub records `none/heuristic` because assembling a hub needs
+    no model -- which says nothing about the member documents merged into it.
+    Those may be full of model-written descriptions, and announcing "no
+    descriptions" over a resolved set would be flatly wrong."""
+    hub = {"semantic_layer": {
+        "members": [{"name": "sales", "path": "sales.yaml"}],
+        "generated_by": {"engine": "0.6.0b1", "model": "none/heuristic"},
+    }}
+    assert sess.built_without_model(hub) is None
+
+
+def test_the_key_sentence_comes_after_the_first_answer_not_before(warehouse):
+    """A stranger has no key, so day 1 has to work keyless: the suggestion
+    may never read as a precondition."""
+    s = sess.Session()
+    out = s.start_infer(warehouse, wait_seconds=60, use_llm=False)
+    assert "model key" not in out["next"]
+    assert s.answered_once is False
+
+    ran = s.run_query(s.doc, "select 1 as one")
+    assert ran["ran"] is True
+    assert s.answered_once is True
+    assert "statistics only" in ran["next"]
+    assert ".env" in ran["next"]
+    assert "works without one" in ran["next"]
+
+
+def test_the_key_sentence_is_said_exactly_once(warehouse):
+    s = sess.Session()
+    s.start_infer(warehouse, wait_seconds=60, use_llm=False)
+    said = [("statistics only" in s.run_query(s.doc, "select 1 as one")["next"])
+            for _ in range(3)]
+    assert said == [True, False, False], said
+
+
+def test_a_refused_query_is_not_an_answer(warehouse):
+    """The sentence rides the first ANSWER. A rejected query is not one, and
+    spending the single mention on it would waste it."""
+    s = sess.Session()
+    s.start_infer(warehouse, wait_seconds=60, use_llm=False)
+    refused = s.run_query(s.doc, "delete from customers")
+    assert refused["ran"] is False
+    assert s.answered_once is False
+    assert "statistics only" not in (refused.get("next") or "")
+
+
+def test_nothing_is_said_when_a_model_wrote_the_layer(warehouse):
+    s = sess.Session()
+    s.start_infer(warehouse, wait_seconds=60, use_llm=False)
+    s.doc["semantic_layer"]["generated_by"]["model"] = "claude-haiku-4-5"
+    out = s.run_query(s.doc, "select 1 as one")
+    assert "statistics only" not in out["next"]
+
+
+def test_with_a_key_already_set_it_says_to_infer_again(warehouse, monkeypatch):
+    """Telling someone to add a key they already have is wrong; the layer
+    predates the key, and re-inferring is the actual fix."""
+    s = sess.Session()
+    s.start_infer(warehouse, wait_seconds=60, use_llm=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-not-a-real-key")
+    out = s.run_query(s.doc, "select 1 as one")
+    assert "infer` again" in out["next"]
+    assert ".env" not in out["next"].split("Say once")[-1]
