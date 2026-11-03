@@ -46,7 +46,7 @@ reads your IP address, and no geolocation is performed.
 
 | Field | Example | Notes |
 |---|---|---|
-| `schema` | `4` | version of this field set |
+| `schema` | `5` | version of this field set |
 | `t` | `1760600000` | when the command started, whole seconds |
 | `anon` | `3f9a1c…` | 32 random hex characters, generated once per machine in `~/.semlayer/anon_id`. Not derived from anything about you or your hardware — delete the file and you become a different machine |
 | `event_id` | `8c1d4b…` | 32 random hex characters, generated per event. A dedupe key and nothing else: it lets the receiver recognise a batch that was sent twice after a slow network, instead of counting it twice. Not derived from the event's contents, and it links nothing to anything — a fresh one per event is the opposite of a tracking identifier |
@@ -71,6 +71,7 @@ reads your IP address, and no geolocation is performed.
 | `requested_connector` | `databricks` | on `mcp` events only: when you name a warehouse semlayer cannot open and your agent asks what to do about it, which ENGINE that was, classified into a fixed list — databricks, trino, athena, redshift, mssql, oracle, clickhouse, iceberg, spark, other. **Never the words you typed**: the classifier cannot return its input, so a connection string pasted into that field still arrives as one of those ten words. It is the only record of a warehouse we cannot serve yet, and it is how the next connector gets chosen by evidence instead of by guesswork |
 | `host` | `cursor` | on `mcp` events only: which MCP client connected, from the `initialize` handshake, classified into a fixed list — claude-desktop, claude-code, cursor, vscode, inspector, sdk, other. **Never the client's own name string** and never its version: the classifier cannot return its input, so a client calling itself anything at all still arrives as one of those seven words |
 | `tools` | `["semantic_search", "table_detail"]` | on `mcp` events only: which of our MCP tools the session called, deduped and sorted. The tool **names** only — never their arguments, which carry your query text and table names. A session that called nothing has no `tools` key at all |
+| `run_sql` | `{"ran": 3, "refused": 1, "lint_blocked": 1, "warehouse_error": 0}` | on `mcp` events only: how many of the session's `run_sql` calls ended each of four ways — executed, refused because the statement was not a read-only SELECT or because an inference held the connection, not executed because `check_sql` found errors, or attempted and rejected by the warehouse. Four integers, each capped at 999, all four always present so a zero means zero. **Never the SQL, never the error message, never the table names, and never a per-call timestamp** — a count of outcomes cannot be turned back into a query. It exists because `tools` says `run_sql` was called and cannot say whether anything came back, which is the whole question of whether a layer built without a model key actually answers anything |
 
 ## What is never in an event
 

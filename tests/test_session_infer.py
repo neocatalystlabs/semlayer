@@ -790,3 +790,158 @@ def test_an_unknown_export_target_lists_what_exists(warehouse):
     assert out["exported"] is False
     assert out["available"] == ["dbt"]
     assert "not built" in out["next"]
+
+
+# --- run_sql outcome counts -----------------------------------------------
+#
+# One test per row of the classification table, because the table is the
+# field: a count that lands in the wrong bucket is worse than no count --
+# it reads as a real measurement. Driven through the session rather than
+# asserted against `_query_outcome` directly, so what is checked is what a
+# real `run_sql` call does.
+
+def _counts(s):
+    """The counts as telemetry would see them, not the raw dict."""
+    from semlayer import telemetry_schema as ts
+    return ts.serialize({"event": "mcp", "run_sql": s.query_counts})["run_sql"]
+
+
+def test_a_query_that_runs_is_counted_as_ran(warehouse):
+    s = sess.Session()
+    s.start_infer(warehouse, wait_seconds=60, use_llm=False)
+    s.run_query(s.doc, "select 1 as one")
+    assert _counts(s) == {"ran": 1, "refused": 0,
+                          "lint_blocked": 0, "warehouse_error": 0}
+
+
+def test_a_write_is_counted_as_refused(warehouse):
+    s = sess.Session()
+    s.start_infer(warehouse, wait_seconds=60, use_llm=False)
+    s.run_query(s.doc, "delete from customers")
+    assert _counts(s) == {"ran": 0, "refused": 1,
+                          "lint_blocked": 0, "warehouse_error": 0}
+
+
+def test_a_table_the_layer_does_not_have_is_counted_as_lint_blocked(warehouse):
+    """Stopped by `check_sql` before anything is sent, so it is NOT a
+    warehouse error -- nothing reached the warehouse to reject it."""
+    s = sess.Session()
+    s.start_infer(warehouse, wait_seconds=60, use_llm=False)
+    out = s.run_query(s.doc, "select * from no_such_table_at_all")
+    assert out["ran"] is False and out["lint"]["errors"]
+    assert _counts(s) == {"ran": 0, "refused": 0,
+                          "lint_blocked": 1, "warehouse_error": 0}
+
+
+def test_sql_the_warehouse_rejects_is_counted_as_warehouse_error(warehouse):
+    """Has to pass the lint and then fail at the engine, which is a narrow
+    target: the lint catches unknown tables and columns, so the failure must
+    be one only the warehouse can see. A bad cast is one.
+    """
+    s = sess.Session()
+    s.start_infer(warehouse, wait_seconds=60, use_llm=False)
+    out = s.run_query(s.doc, "select cast('abc' as integer) as x")
+    assert out["ran"] is False and "error" in out
+    assert not (out.get("lint") or {}).get("errors"), (
+        "this must reach the warehouse, or it is testing the lint instead")
+    assert _counts(s) == {"ran": 0, "refused": 0,
+                          "lint_blocked": 0, "warehouse_error": 1}
+
+
+def test_the_busy_refusal_is_counted_as_refused_not_as_an_error(warehouse,
+                                                                monkeypatch):
+    """The row the return shape cannot express.
+
+    The busy branch returns `ran: False` plus `error`, which is identical in
+    shape to a warehouse rejection -- so anything classifying after the fact
+    puts it in the wrong bucket, and "the warehouse is failing" and "we made
+    them wait" become the same number. It is counted at its own branch, and
+    this is the test that holds that.
+    """
+    import time as _t
+
+    real = sess.Session._infer_once
+
+    def slow(self, job, use_llm):
+        _t.sleep(2)
+        return real(self, job, use_llm)
+
+    monkeypatch.setattr(sess.Session, "_infer_once", slow)
+    s = sess.Session()
+    s.start_infer(warehouse, wait_seconds=60, use_llm=False)
+    doc = s.doc
+    s.start_infer(warehouse, wait_seconds=0.2, use_llm=False)
+    assert s.state == "inferring"
+
+    out = s.run_query(doc, "select 1 as one")
+    assert out["ran"] is False and "busy" in out["error"]
+    assert _counts(s) == {"ran": 0, "refused": 1,
+                          "lint_blocked": 0, "warehouse_error": 0}, (
+        "the busy refusal must not be counted as a warehouse error")
+    s.job.thread.join(timeout=60)
+
+
+def test_counts_accumulate_across_a_session(warehouse):
+    """One event per session carries the totals, so the counts are a running
+    tally rather than the last call's outcome."""
+    s = sess.Session()
+    s.start_infer(warehouse, wait_seconds=60, use_llm=False)
+    s.run_query(s.doc, "select 1 as one")
+    s.run_query(s.doc, "select 2 as two")
+    s.run_query(s.doc, "delete from customers")
+    assert _counts(s) == {"ran": 2, "refused": 1,
+                          "lint_blocked": 0, "warehouse_error": 0}
+
+
+def test_a_session_that_never_queried_sends_no_run_sql_at_all(warehouse,
+                                                              monkeypatch):
+    """Absent, not four zeros: `note` is only called after an increment, so
+    "launched and asked nothing" is the absence of the key.
+
+    `_pending` is process-scoped and never reset -- that is deliberate, one
+    CLI process runs one command -- so it has to be replaced here or this
+    test reads whatever an earlier test in the same process deposited.
+    """
+    from semlayer import telemetry
+    monkeypatch.setattr(telemetry, "_pending", {})
+    s = sess.Session()
+    s.start_infer(warehouse, wait_seconds=60, use_llm=False)
+    assert "run_sql" not in telemetry._pending
+
+
+def test_the_counts_reach_the_event_through_note(warehouse, monkeypatch):
+    from semlayer import telemetry
+    monkeypatch.setattr(telemetry, "_pending", {})
+    s = sess.Session()
+    s.start_infer(warehouse, wait_seconds=60, use_llm=False)
+    s.run_query(s.doc, "select 1 as one")
+    assert telemetry._pending["run_sql"]["ran"] == 1
+
+
+def test_no_layer_means_no_query_and_nothing_counted(_nowhere):
+    """The status fallback short-circuits before `agent_run`, so a tool call
+    with no layer loaded is not a query and must not be counted as one."""
+    from semlayer import mcp_server
+    s = sess.Session()
+    assert s.doc is None
+    srv = mcp_server.build_server(s)
+    assert srv is not None
+    assert s.query_counts == {"ran": 0, "refused": 0,
+                              "lint_blocked": 0, "warehouse_error": 0}
+
+
+def test_the_sql_and_the_error_never_reach_the_event(warehouse):
+    """Asserted over the WHOLE serialized event, not one field: the point is
+    that there is no path, not that this field happens to be clean."""
+    import json
+
+    from semlayer import telemetry_schema as ts
+    s = sess.Session()
+    s.start_infer(warehouse, wait_seconds=60, use_llm=False)
+    s.run_query(s.doc, "select secret_column from no_such_table_at_all")
+    s.run_query(s.doc, "delete from customers_private")
+    event = json.dumps(ts.serialize({"event": "mcp",
+                                     "run_sql": s.query_counts}))
+    for leak in ("secret_column", "no_such_table_at_all", "customers_private",
+                 "select", "delete", "Error", "Exception"):
+        assert leak not in event, f"{leak!r} reached the event"

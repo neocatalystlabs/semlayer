@@ -1,5 +1,45 @@
 # Changelog
 
+## Unreleased
+
+### Whether the answer step worked is now a measurement
+
+The session event recorded which MCP tools were called and could not say
+whether any of them produced an answer. `tools` says `run_sql` was called;
+it cannot say whether rows came back, whether the statement was refused,
+whether `check_sql` stopped it, or whether the warehouse rejected it. A
+session refused four times and a session that answered four questions were
+the same row.
+
+`run_sql` on `mcp` events is four integer counts — `ran`, `refused`,
+`lint_blocked`, `warehouse_error` — all four always present, each capped at
+999. **Never the SQL, never the error text, never a table name, never a
+per-call timestamp**, and a test asserts that over the whole serialized
+event rather than over the one field.
+
+Counted where each outcome happens rather than classified afterwards,
+because one of them cannot be recognised after the fact: the refusal while
+an inference holds the connection returns the same shape as a warehouse
+rejection, so anything reading the result would file "we made you wait"
+under "your warehouse is failing".
+
+This is the measurement the keyless default was argued on — whether a layer
+built with no model key actually answers questions — and it did not exist
+when that decision was made. `schema` is 5.
+
+### A field can no longer ship undocumented
+
+`host`, `event_id`, `tools`, `via` and `requested_connector` all reached
+users with `docs/telemetry.md` updated by hand and the internal field spec
+untouched, for two weeks, with every check green. The spec claimed a unit
+test asserted the whitelist was complete; that test only proved the
+serializer *drops* unknown keys, which is a different property, and nothing
+tied the shipped field list to any document.
+
+Every key the serializer can write must now appear in `docs/telemetry.md`
+or the suite fails naming it. The public page is the promise that has to be
+right, so that is what the test reads.
+
 ## v0.7.0-beta.1 (2026-11-03)
 
 ### Say "yes" and it is recorded — review, save and export from the chat
