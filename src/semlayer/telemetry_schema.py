@@ -21,7 +21,7 @@ parks the rest rather than rejecting a batch it does not fully understand.
 
 from __future__ import annotations
 
-SCHEMA = 4
+SCHEMA = 5
 
 # (lower_bound, label), highest first. A value is labelled by the first bound
 # it reaches.
@@ -241,6 +241,53 @@ def _tools(v: object) -> list[str] | None:
     return out or None
 
 
+# How a `run_sql` call ended, counted per session. Not an enum over a field's
+# value: this is the KEY SET of one object field, and a tuple because every
+# event carries all four, in this order, so a zero is a measurement rather
+# than a gap.
+#
+# This is the only thing that says whether the ANSWER step worked. `tools`
+# already records that `run_sql` was called; it cannot say whether anything
+# came back. Without the split, a session refused four times and a session
+# that answered four questions are the same row -- and "do people get answers
+# from a layer built with no model key" is exactly the difference between
+# them. That question is what the keyless default was argued on, and it had
+# no measurement until this field.
+RUN_SQL_KEYS = ("ran", "refused", "lint_blocked", "warehouse_error")
+
+# An agent in a repair loop calls `run_sql` as often as it likes, so these
+# counts are unbounded in principle. A field whose size grows with how badly
+# a session went is a field that grows exactly when it is least wanted.
+_RUN_SQL_CAP = 999
+
+
+def _run_sql(v: object) -> dict[str, int] | None:
+    """Per-session counts of how `run_sql` calls ended: four ints, nothing else.
+
+    Always all four keys. "Nothing was refused" and "we stopped counting
+    refusals" must not look alike in a query, and a missing key makes them
+    identical.
+
+    Unknown keys are DROPPED rather than parked in misc, which is the same
+    stance as `tools`: these names are our own vocabulary, so a key we did
+    not declare could only come from our own bookkeeping drifting, and
+    sending it would turn a bug of ours into a column of theirs.
+
+    Never the SQL, never an error message, never a table name, never a
+    timestamp per call. Four integers is the whole field.
+    """
+    if not isinstance(v, dict):
+        return None
+    out: dict[str, int] = {}
+    for k in RUN_SQL_KEYS:
+        x = v.get(k, 0)
+        # bool is an int in Python and True would read as 1 silently.
+        if isinstance(x, bool) or not isinstance(x, int) or x < 0:
+            x = 0
+        out[k] = min(x, _RUN_SQL_CAP)
+    return out
+
+
 def _stage_times(v: object) -> dict[str, int] | None:
     """Stage name -> whole seconds.
 
@@ -306,6 +353,7 @@ FIELDS = {
     "requested_connector": _requested,
     "host":        _host,
     "tools":       _tools,
+    "run_sql":     _run_sql,
     "stages":      _stage_times,
     "probe":       _probe,
     "tables":      lambda v: _bucket(_TABLE_BUCKETS, v),

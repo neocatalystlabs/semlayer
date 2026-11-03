@@ -336,6 +336,70 @@ def test_tools_and_event_id_arrived_with_a_schema_bump():
     assert ts.SCHEMA >= 3
 
 
+def test_every_field_is_documented():
+    """A field cannot reach users undocumented. This is the forcing function.
+
+    Five fields (`host`, `event_id`, `tools`, `via`,
+    `requested_connector`) arrived over three schema bumps, and this page
+    was kept in step by hand each time. Nothing checked it. The existing
+    whitelist test proves unknown keys are DROPPED, which is a different
+    property -- it says what cannot get out, not that what does get out is
+    described anywhere.
+
+    So the gap was invisible: a field could be serialized, sent, stored and
+    queried while the page promising what we send did not mention it, and
+    every check stayed green. Reading the page from the test is what closes
+    it, because the page is the promise.
+    """
+    doc = (pathlib.Path(__file__).parent.parent
+           / "docs" / "telemetry.md").read_text()
+    undocumented = sorted(f for f in (set(ts.FIELDS) | ts.RESERVED)
+                          if f"`{f}`" not in doc)
+    assert not undocumented, (
+        "these fields are sent but not described in docs/telemetry.md: "
+        f"{undocumented}. The doc is the promise; add a row before shipping.")
+
+
+# --- run_sql: how the answer step ended -------------------------------
+
+def test_run_sql_keeps_the_four_keys_and_fills_what_is_missing():
+    """All four always present, so a zero is a measurement and not a gap."""
+    out = ts.serialize({"event": "mcp", "run_sql": {"ran": 3, "refused": 1}})
+    assert out["run_sql"] == {"ran": 3, "refused": 1,
+                              "lint_blocked": 0, "warehouse_error": 0}
+
+
+def test_run_sql_drops_keys_we_did_not_declare():
+    """Our own vocabulary, like `tools` -- an undeclared key could only be
+    our bookkeeping drifting, and sending it makes that a column of theirs."""
+    out = ts.serialize({"run_sql": {"ran": 1, "sql": "select 1",
+                                    "table": "customers", "ms": 1234}})
+    assert set(out["run_sql"]) == set(ts.RUN_SQL_KEYS)
+
+
+def test_run_sql_caps_a_runaway_loop():
+    out = ts.serialize({"run_sql": {"ran": 10**9, "refused": 1000}})
+    assert out["run_sql"]["ran"] == 999
+    assert out["run_sql"]["refused"] == 999
+
+
+@pytest.mark.parametrize("bad", [True, False, 1.5, "3", None, [3], {"n": 3}])
+def test_run_sql_counts_that_are_not_counts_become_zero(bad):
+    """bool is an int in Python, so True would otherwise read as 1."""
+    out = ts.serialize({"run_sql": {"ran": bad}})
+    assert out["run_sql"]["ran"] == 0
+
+
+def test_run_sql_rejects_anything_that_is_not_a_dict():
+    for v in (3, "ran", ["ran"], None, True):
+        assert ts.serialize({"event": "mcp", "run_sql": v}) == {"event": "mcp"}
+
+
+def test_run_sql_arrived_with_a_schema_bump():
+    assert "run_sql" in ts.FIELDS
+    assert ts.SCHEMA >= 5
+
+
 def test_event_id_is_reserved_rather_than_a_field():
     """Set by `record()`, so a caller cannot supply or forge one -- the same
     treatment as anon and t."""

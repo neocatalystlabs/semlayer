@@ -755,6 +755,10 @@ def agent_run(doc: dict, sql: str, session: Session) -> dict:
     try:
         return session.run_query(doc, sql)
     except Exception as e:
+        # The connection could not be opened at all, so `run_query` never
+        # reached a result to classify. Counted here because this is the
+        # only outcome that happens outside it.
+        session.count_query("warehouse_error")
         return {"ran": False, "sql": sql,
                 "error": f"{type(e).__name__}: {str(e)[:300]}",
                 "next": ("No warehouse connection is open for this session. "

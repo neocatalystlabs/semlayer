@@ -36,6 +36,29 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from semlayer import env_file
+from semlayer.telemetry_schema import RUN_SQL_KEYS
+
+
+def _query_outcome(out: dict) -> str:
+    """Which of RUN_SQL_KEYS a completed `agent_query.run` result represents.
+
+    Read off the keys the result already carries rather than re-parsed from
+    the SQL: the decision of what a statement was has been made once, by
+    sqlglot, and making it twice is how two answers to the same question
+    appear. Order matters -- a refused statement is never linted, and a
+    linted one is never executed.
+
+    The busy refusal cannot be recognised here, because it looks exactly
+    like a warehouse error; it is counted at its own branch instead.
+    """
+    if out.get("ran"):
+        return "ran"
+    if "refused" in out:
+        return "refused"
+    if (out.get("lint") or {}).get("errors"):
+        return "lint_blocked"
+    return "warehouse_error"
+
 
 # Credentials, by whatever name a URL spells them. Stripped before the cache
 # key is hashed, so the same warehouse reached with and without a password in
@@ -1219,6 +1242,13 @@ class Session:
         # never read as a precondition.
         self.answered_once = False
         self.told_about_key = False
+        # How this session's `run_sql` calls ended, by outcome. The session
+        # event says which tools were called; it could not say whether the
+        # answer step worked, which is the measurement the keyless default
+        # was argued on. Counted here rather than derived later because one
+        # of the four outcomes is indistinguishable after the fact -- see
+        # `count_query`.
+        self.query_counts = dict.fromkeys(RUN_SQL_KEYS, 0)
         # Who is signing verdicts this session. Git's user.name where the
         # layer lives, or what the person said when asked once -- never
         # invented, and never the MCP client's name: "claude-desktop" is not
@@ -1625,6 +1655,12 @@ class Session:
             out["error"] = ("the warehouse connection is busy with the "
                             "inference that is running, and semlayer will not "
                             "share one connection between the two")
+            # Counted HERE, and this is the branch that forces counting at
+            # the source: the dict it returns is shape-identical to a
+            # warehouse error (`ran: False` plus `error`), so no inspection
+            # of the result can tell the two apart afterwards. Ours is a
+            # refusal -- nothing was sent to the warehouse.
+            self.count_query("refused")
             out["next"] = ("Tell the user the query has to wait for the run to "
                            "finish, say roughly where the run is, and call "
                            "run_sql again when status says `ready`.")
@@ -1635,12 +1671,34 @@ class Session:
             out = agent_query.run(doc, source, sql, dialect=dialect)
         finally:
             self._in_use.release()
+        self.count_query(_query_outcome(out))
         if out.get("ran"):
             self.answered_once = True
             note = self._model_key_note(doc)
             if note:
                 out["next"] = f"{out['next']} {note}"
         return out
+
+    def count_query(self, outcome: str) -> None:
+        """Record one `run_sql` outcome on the session's telemetry event.
+
+        `telemetry.note` is process-scoped and last-write-wins, which is
+        exactly what this field wants: the session event written at exit
+        carries the final totals, and no per-call event is ever sent. That
+        is the opposite of `_note_infer`, which must bypass `note` because
+        one session can infer more than once.
+
+        Telemetry may never break a query, so an unknown outcome is dropped
+        rather than raised on.
+        """
+        if outcome not in self.query_counts:
+            return
+        self.query_counts[outcome] += 1
+        try:
+            from semlayer import telemetry
+            telemetry.note(run_sql=dict(self.query_counts))
+        except Exception:
+            pass
 
     def _model_key_note(self, doc: dict) -> str | None:
         """The one sentence about what a model key would add, said once.
