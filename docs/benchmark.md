@@ -17,6 +17,19 @@ its prompts, so the numbers are re-measured at a release, not per change
 new row with its own ID and date. Rows are never silently overwritten: when a
 row's number changes, the section at the end of this page says why.
 
+**Not re-measured for release 0.7.0b1 (2026-11-03), deliberately.** The table
+below still describes 0.6.0b1, and 0.7.0b1 does not restate it. The engine has
+since moved in a way that reaches the prompts: metrics are now kept on every
+rollup, which puts one more `METRIC` line into the context for 8 of
+messy_mart's 38 questions, and the cassette key is a hash of the prompt — so
+the recordings for those 8 no longer replay, and the Sonnet row's were never
+committed at all. The release workflow still runs the replay step and prints
+its result, but at this release it does not block the publish: holding the
+whole MCP-first phase off PyPI over a claim about the *previous* release would
+be the wrong trade. What that owes, before any number here can carry 0.7.0b1:
+record the ~100 invalidated answers, re-measure this table, and make the step
+blocking again in the same change. Until then, read every row as 0.6.0b1.
+
 | Fixture | CQs | Answerer | schema_only | semantic | semantic+lint | semantic+ontology |
 |---|---|---|---|---|---|---|
 | fan_trap | 8 | claude-haiku-4-5 | 0.88 | 0.75 | 0.88 | 0.75 |
