@@ -238,8 +238,21 @@ def list_metrics(doc: dict) -> list[dict]:
 
 
 def routing(doc: dict, intent: str | None = None) -> list[dict]:
-    """Which tables to use (and avoid) for an analytical intent; ranked by token overlap."""
-    routes = doc["semantic_layer"].get("repo_knowledge", {}).get("routing", [])
+    """Which tables to use (and avoid) for an analytical intent; ranked by token overlap.
+
+    `repo_knowledge.routing[].use` is the producer's pointer list: the fact,
+    then every aggregate that reconciled against it. SPEC 2.7 is the
+    consumer's rule for that second part, and this function applies it,
+    because an agent handed `use` has no reason to look further. An
+    aggregate whose routing `status` is `verified` stays in `use`. An
+    `advisory` one -- which is every `mapping_source: heuristic` aggregate
+    the engine emits -- moves to `aggregates`, with its grain and the caveat
+    2.7 asks for, so it is offered and never instructed. A deprecated or
+    orphaned aggregate appears in neither, since 2.1 rules it out anyway.
+    The document is not modified; the split is made on copies.
+    """
+    sl = doc["semantic_layer"]
+    routes = sl.get("repo_knowledge", {}).get("routing", [])
     if intent:
         toks = set(re.split(r"\W+", intent.lower()))
 
@@ -247,7 +260,41 @@ def routing(doc: dict, intent: str | None = None) -> list[dict]:
             return -len(toks & set(re.split(r"\W+", r["intent"].lower())))
 
         routes = sorted(routes, key=_overlap)
-    return routes[:5]
+    aggs = {a["table"]: a for a in sl.get("aggregate_tables", []) or []}
+    return [_split_use(r, aggs) for r in routes[:5]]
+
+
+def _split_use(route: dict, aggs: dict[str, dict]) -> dict:
+    """One routing entry with its `use` list split per SPEC 2.7 (see `routing`)."""
+    out = dict(route)
+    use: list[str] = []
+    offered: list[dict] = []
+    for name in route.get("use") or []:
+        a = aggs.get(name)
+        if a is None:
+            use.append(name)
+            continue
+        if a.get("lifecycle") in ("deprecated", "orphaned"):
+            continue
+        status = (a.get("routing") or {}).get("status") or "advisory"
+        if status == "verified":
+            use.append(name)
+            continue
+        grain = [str(g) for g in (a.get("grain") or [])]
+        source = a.get("mapping_source") or "heuristic"
+        offered.append({
+            "table": name, "aggregates": a.get("aggregates"), "grain": grain,
+            "status": status, "mapping_source": source,
+            "consistency": (a.get("consistency") or {}).get("status"),
+            "caveat": (f"{status} routing over a {source} mapping: not for automatic "
+                       f"use (SPEC 2.7). Only for a question at or above grain "
+                       f"[{', '.join(grain)}], and say in the answer that a summary "
+                       f"table was used."),
+        })
+    out["use"] = use
+    if offered:
+        out["aggregates"] = offered
+    return out
 
 
 # ------------------------------------------------------------- MCP wiring --

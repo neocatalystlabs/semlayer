@@ -145,6 +145,9 @@ def _select_tables(doc: dict, question: str) -> tuple[list[str], list[dict]]:
     _add_all(_coverage_tables(doc, question, tables))
     for r in mcp_server.routing(doc, question)[:2]:
         _add_all(r.get("use", []))
+        # an offered summary is still disclosed in full: the agent needs its
+        # grain and filters to decide whether 2.7 lets it be used at all
+        _add_all([a["table"] for a in r.get("aggregates", [])])
     _add_all(_neighbors(doc, tables[:4]))
     detailed = tables[:8]
     # compact index of everything else so the agent knows what exists
@@ -251,16 +254,25 @@ def _render_sections(doc: dict, detailed: list[str], index: list[dict], question
         + (f"  [aka {', '.join(m['synonyms'][:2])}]" if m.get("synonyms") else "")
         for m in mcp_server.list_metrics(doc) if _relevant(m)
     ]
-    routing_lines = [
-        f"ROUTING '{r['intent']}': use {', '.join(r.get('use', []))}"
-        + ("; avoid " + ", ".join(a["table"] for a in r["avoid"]) if r.get("avoid") else "")
-        for r in mcp_server.routing(doc, question)[:4]
-    ]
+    routing_lines = [_routing_line(r) for r in mcp_server.routing(doc, question)[:4]]
     index_lines = [f"{i['name']} ({i['type']}) {i['description']}" for i in index]
     return ("\n\n".join(p for p in parts if p)
             + "\n\nMETRICS:\n" + "\n".join(metrics_lines)
             + "\nROUTING:\n" + "\n".join(routing_lines)
             + "\nOTHER TABLES:\n" + "\n".join(index_lines))
+
+
+def _routing_line(r: dict) -> str:
+    """One ROUTING line: `use` is an instruction, an offered summary is not (SPEC 2.7)."""
+    line = f"ROUTING '{r['intent']}': use {', '.join(r.get('use', []))}"
+    if r.get("avoid"):
+        line += "; avoid " + ", ".join(a["table"] for a in r["avoid"])
+    if r.get("aggregates"):
+        line += ("; summaries not auto-routed (SPEC 2.7), only if the grain covers "
+                 "the question: " + "; ".join(
+                     f"{a['table']} ({a['status']}, grain {', '.join(a['grain'])})"
+                     for a in r["aggregates"]))
+    return line
 
 
 def semantic_context(doc: dict, question: str) -> str:

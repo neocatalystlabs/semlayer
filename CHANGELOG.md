@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### `route_intent` no longer tells an agent to use a summary table it may not use
+
+Every aggregate the engine finds arrives as `mapping_source: heuristic` with
+`routing.status: advisory`, and SPEC 2.7 says such a table MUST NOT be
+routed to automatically. `route_intent` listed it under `use` anyway, next
+to the fact table, and the ROUTING line in `context_for_question` said
+"use ord_hdr, dly_sls_agg, mth_cust_agg". On any layer with a reconciled
+aggregate, every agent was handed the instruction the spec forbids.
+
+The document was never wrong: `repo_knowledge.routing[].use` is the
+producer's pointer list, and docs/metrics.md said a consumer must read the
+aggregate's grain and status before following it. The MCP tool is that
+consumer, so the rule now lives there. An aggregate stays in `use` only when
+its routing status is `verified`; otherwise it moves to `aggregates`, with
+its grain, mapping source, consistency and a one-sentence caveat. A
+deprecated or orphaned aggregate appears in neither. The ROUTING line
+renders the same split, and the offered table is still disclosed in full so
+the agent can see the grain it has to cover. The layer file is not modified
+by the read, and `semlayer review` rejecting a mapping still removes it from
+the producer's list as before.
+
+The agent context is part of the benchmark prompt, so the messy_mart answer
+cassettes miss after this change. They already missed before it (the
+release-gate note at 0.7.0-beta.1 records the re-record as owed), so no
+test that replayed yesterday skips today.
+
 ### Whether the answer step worked is now a measurement
 
 The session event recorded which MCP tools were called and could not say
