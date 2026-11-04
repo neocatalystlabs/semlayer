@@ -275,7 +275,7 @@ credentials, or it does not happen.
 | `get_tables` | what tables exist, their type, lifecycle, and `type_confidence` |
 | `table_detail` | columns, types, foreign keys, **required filters**, confidence per claim |
 | `get_metrics` | defined measures and how to aggregate them |
-| `route_intent` | *which* table to use for an intent, when several could answer |
+| `route_intent` | *which* table to use for an intent, when several could answer. Summary tables with an unverified mapping are offered under `aggregates` with their grain and a caveat, never listed under `use` (SPEC 2.7) |
 | `check_sql` | lint SQL against the layer: missing filters, fan-out, deprecated tables |
 | `compile_metric` | generate correct SQL for a metric, with the filters already applied |
 | `infer` | **build the layer**, from inside the conversation. Reads your warehouse; ask first |

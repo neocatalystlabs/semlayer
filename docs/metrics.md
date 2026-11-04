@@ -271,10 +271,15 @@ from", including pointing away from tables that are no longer the live ones:
   confidence: 0.6
 ```
 
-`use` is a pointer list, not a decision. Before routing to anything after the
-first entry a consumer reads that aggregate's own `grain` from
-`aggregate_tables[]` and checks the question is covered — which is what SPEC
-§2.7 requires anyway.
+In the document, `use` is the producer's pointer list, not a decision. The
+consumer's rule is SPEC §2.7, and `route_intent` applies it rather than
+leaving it to the agent: an aggregate stays in `use` only when its routing
+`status` is `verified`; an `advisory` one is moved to a separate
+`aggregates` list carrying its grain and a caveat, so the agent is offered
+the summary table and never instructed to use it. The ROUTING line in
+`context_for_question` renders the same split. Until 0.7.0-beta.2 the tool
+listed every reconciled aggregate under `use`, which told an agent to do the
+one thing §2.7 forbids for a heuristic mapping.
 
 ### Why it still will not swap the table for you
 

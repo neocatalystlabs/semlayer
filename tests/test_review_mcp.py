@@ -211,6 +211,73 @@ def test_mcp_routing_prefers_intent_match(doc):
     assert any(a["table"] == "ord_hdr_legacy" for a in routes[0].get("avoid", []))
 
 
+def _ord_hdr_aggregates(doc):
+    sl = doc["semantic_layer"]
+    names = {a["table"] for a in sl.get("aggregate_tables", []) if a["aggregates"] == "ord_hdr"}
+    assert names, "fixture lost its ord_hdr aggregates"
+    return names
+
+
+def test_mcp_routing_offers_a_heuristic_aggregate_and_never_instructs_it(doc):
+    """SPEC 2.7: a heuristic aggregate MUST NOT be routed to automatically.
+
+    The producer's `use` list names the fact and every reconciled aggregate.
+    `route_intent` is the consumer, so it is where the rule applies: the
+    aggregates move out of `use` into `aggregates`, each with its grain and
+    the caveat, and the document itself is left as written.
+    """
+    names = _ord_hdr_aggregates(doc)
+    r = mcp_server.routing(doc, "order analysis")[0]
+    assert "ord_hdr" in r["use"]
+    assert not names & set(r["use"])
+    offered = {a["table"]: a for a in r["aggregates"]}
+    assert set(offered) == names
+    for a in offered.values():
+        assert a["status"] == "advisory"
+        assert a["mapping_source"] == "heuristic"
+        assert a["grain"]
+        assert "2.7" in a["caveat"] and ", ".join(a["grain"]) in a["caveat"]
+    raw = next(x for x in doc["semantic_layer"]["repo_knowledge"]["routing"]
+               if x["intent"] == r["intent"])
+    assert names <= set(raw["use"]), "the document must not be rewritten by a read"
+
+
+def test_mcp_routing_keeps_a_verified_aggregate_in_use(doc):
+    import copy
+    d = copy.deepcopy(doc)
+    agg = next(a for a in d["semantic_layer"]["aggregate_tables"] if a["aggregates"] == "ord_hdr")
+    agg["mapping_source"] = "lineage"
+    agg["routing"]["status"] = "verified"
+    r = mcp_server.routing(d, "order analysis")[0]
+    assert agg["table"] in r["use"]
+    assert agg["table"] not in {a["table"] for a in r.get("aggregates", [])}
+
+
+def test_mcp_routing_drops_a_deprecated_aggregate_from_both_lists(doc):
+    """Drift can demote an aggregate without touching `repo_knowledge.routing`."""
+    import copy
+    d = copy.deepcopy(doc)
+    agg = next(a for a in d["semantic_layer"]["aggregate_tables"] if a["aggregates"] == "ord_hdr")
+    agg["lifecycle"] = "deprecated"
+    r = mcp_server.routing(d, "order analysis")[0]
+    assert agg["table"] not in r["use"]
+    assert agg["table"] not in {a["table"] for a in r.get("aggregates", [])}
+
+
+def test_agent_context_does_not_instruct_use_of_a_heuristic_aggregate(doc):
+    """The ROUTING line is what the benchmark agent reads; it must say the same thing."""
+    from semlayer.cq.answer import semantic_context
+    names = _ord_hdr_aggregates(doc)
+    ctx = semantic_context(doc, "total revenue by store and day")
+    line = next(ln for ln in ctx.splitlines() if ln.startswith("ROUTING 'analysis of ord hdr'"))
+    instruction = line.split(";")[0]
+    assert "ord_hdr" in instruction
+    assert not any(n in instruction for n in names)
+    assert "not auto-routed" in line and all(n in line for n in names)
+    # offered is not hidden: the summary is still disclosed in full
+    assert any(f"TABLE {n} " in ctx for n in names)
+
+
 def test_mcp_server_builds_with_tools(doc):
     srv = mcp_server.build_server(doc)
     import anyio
