@@ -56,6 +56,9 @@ warehouses = [
 ]
 dev = [
     "pytest>=8.0",
+    # CI only -- see the note in ci.yml. Do NOT reach for this on an 8GB
+    # dev box: workers page rather than parallelise and the suite gets slower.
+    "pytest-xdist>=3.6",
     "python-dotenv>=1.0",
     # Upper-bounded deliberately: CI installed ruff unpinned, so a minor
     # release that ADDS a rule (0.16 added PLR0917) turned a green local
