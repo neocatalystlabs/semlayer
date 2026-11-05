@@ -41,7 +41,23 @@ jobs:
       - name: Tests + eval floors (cassette replay, $0 LLM)
         # No API key in this job BY DESIGN: a cassette miss fails loudly
         # instead of silently spending money or producing unpinned outputs.
-        run: pytest tests/ -q --ignore=tests/test_snowflake_live.py --ignore=tests/test_bigquery_live.py
+        #
+        # `-n auto` is CI-only and the distinction matters. On the 8GB dev box
+        # xdist makes the suite SLOWER -- workers page instead of
+        # parallelising, and `-n 8` once drove load average to 21. A
+        # GitHub-hosted runner is 4 vCPU and 16GB with an SSD, where the
+        # reason that fails does not apply. 1,003 tests ran serially in ~6
+        # minutes and that was the whole of this job's wall clock; setup,
+        # lint, types and fixtures together are under 40 seconds.
+        #
+        # Safe to parallelise because conftest gives every test its own
+        # SEMLAYER_HOME under tmp_path and chdirs into a per-test directory,
+        # so there is no shared mutable state; `fixtures/build` is read-only
+        # by the time pytest starts, built by the step above.
+        #
+        # `--durations=15` stays on deliberately: if this job creeps back up,
+        # the next run says where the time went instead of needing a bisect.
+        run: pytest tests/ -q -n auto --durations=15 --ignore=tests/test_snowflake_live.py --ignore=tests/test_bigquery_live.py
 
   audit:
     runs-on: ubuntu-latest

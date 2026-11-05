@@ -72,3 +72,54 @@ jobs:
           python -m pytest tests/test_benchmark_replays.py -q
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Register the release with the official MCP Registry
+        # AFTER the PyPI publish, and it has to be: the registry validates
+        # that `packages[].identifier` at `packages[].version` actually
+        # exists on PyPI, and that the published description carries the
+        # `mcp-name: <server name>` marker. Both are only true once the
+        # upload above has succeeded.
+        #
+        # A red here means PyPI SHIPPED and the registry did not -- the
+        # release is out, the listing is stale. That is deliberately loud
+        # rather than continue-on-error, which is how the benchmark gate
+        # rotted for two releases. Fix by re-running this job; see the
+        # duplicate handling below for why that is safe.
+        #
+        # Versions are written from pyproject rather than from the tag: the
+        # tag is `v0.7.0-beta.2` and the package is `0.7.0b2`, and those two
+        # spellings have to agree with PyPI, not with each other. Patching
+        # both fields here means the committed server.json cannot drift from
+        # the release.
+        #
+        # Registry versions are IMMUTABLE. Re-running a successful release
+        # therefore fails with "duplicate version", which is success for our
+        # purposes -- the listing already describes this release -- so that
+        # one error is swallowed and everything else fails the job.
+        env:
+          MCP_PRIVATE_KEY: ${{ secrets.MCP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          VERSION="$(python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")"
+          python - "$VERSION" <<'PY'
+          import json, pathlib, sys
+          v = sys.argv[1]
+          p = pathlib.Path("server.json"); d = json.loads(p.read_text())
+          d["version"] = v
+          for pkg in d["packages"]:
+              pkg["version"] = v
+          p.write_text(json.dumps(d, indent=2) + "\n")
+          print(f"server.json pinned to {v}")
+          PY
+          curl -sSL -o publisher.tar.gz \
+            https://github.com/modelcontextprotocol/registry/releases/download/v1.8.7/mcp-publisher_linux_amd64.tar.gz
+          tar xzf publisher.tar.gz mcp-publisher
+          ./mcp-publisher login dns --domain semlayer.dev --private-key "$MCP_PRIVATE_KEY"
+          set +e
+          out="$(./mcp-publisher publish --file server.json 2>&1)"; rc=$?
+          set -e
+          echo "$out"
+          if [ $rc -ne 0 ]; then
+            echo "$out" | grep -q "duplicate version" || exit $rc
+            echo "already registered at this version -- nothing to do"
+          fi
