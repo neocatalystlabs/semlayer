@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### `llms-install.md`, and an icon on the registry entry
+
+Agent-driven installers read `README.md` and `llms-install.md` and nothing
+else. The MCP configuration lived in `docs/mcp.md`, one link away, so an
+agent asked to set semlayer up had to guess at it. `llms-install.md` now
+carries the config block inline, along with the three things such an agent
+otherwise gets wrong: that `--with semlayer[warehouses]` is load-bearing
+rather than decorative, that no API key is required so setup must not block
+on one, and that `status` is how you verify the install.
+
+The missing extra is worth naming because of how it fails. Without the
+warehouse drivers the server starts cleanly and *finds* a warehouse it
+cannot open, so the configuration looks correct until the first real
+request.
+
+`server.json` gains `icons`, pointing at the mark now served from
+semlayer.dev. Clients and directories render it; an entry without one looks
+abandoned beside entries that have one.
+
 ### A container image, and the version clients were shown was the SDK's
 
 `Dockerfile` and `.dockerignore` land in the repository. The image runs the
