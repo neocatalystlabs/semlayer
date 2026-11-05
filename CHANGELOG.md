@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+### Releases register themselves with the MCP Registry
+
+`server.json` now lives in the repository, and `release.yml` publishes it to
+the official MCP Registry after the PyPI upload. It has to run in that order:
+the registry checks that the named package exists at the named version on
+PyPI and that its published description carries the `mcp-name` marker, and
+neither is true until the upload succeeds.
+
+Both version fields in `server.json` are written from `pyproject.toml` at
+publish time rather than from the git tag, because the tag says
+`v0.7.0-beta.2` and the package says `0.7.0b2` -- it is PyPI the registry
+checks against, so PyPI is what the file is pinned to. The committed copy
+cannot drift from a release as a result.
+
+Registry versions are immutable, so re-running a successful release reports a
+duplicate version. That one error is treated as success -- the listing
+already describes the release -- and every other failure fails the job
+loudly rather than `continue-on-error`, which is how the benchmark gate
+rotted across two releases.
+
 ## v0.7.0-beta.2 (2026-11-05)
 
 ### The benchmark table is re-measured, and one headline number went down

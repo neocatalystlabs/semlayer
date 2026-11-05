@@ -1,0 +1,44 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "dev.semlayer/mcp",
+  "title": "semlayer",
+  "description": "Infers a semantic layer from your data warehouse and serves it to agents over MCP.",
+  "repository": {
+    "url": "https://github.com/semlayer-dev/semlayer",
+    "source": "github"
+  },
+  "version": "0.7.0b2",
+  "websiteUrl": "https://semlayer.dev",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "semlayer",
+      "version": "0.7.0b2",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "ANTHROPIC_API_KEY",
+          "description": "Optional. Descriptions and LLM-validated joins need it; statistics-only inference works without it.",
+          "isRequired": false,
+          "isSecret": true
+        }
+      ],
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "--with",
+          "value": "semlayer[warehouses]"
+        }
+      ]
+    }
+  ]
+}
