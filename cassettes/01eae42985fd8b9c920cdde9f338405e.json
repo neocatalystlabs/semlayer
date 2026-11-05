@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "4df9b8e6e218",
+ "response": "{\"action\": \"sql\", \"sql\": \"SELECT SUM(h.tot_amt) AS total_revenue_no_dedup FROM ord_hdr h WHERE h.sts_cd <> 'X' AND EXISTS (SELECT 1 FROM ord_ln l WHERE l.ord_id = h.ord_id);\", \"reason\": \"Avoided fan-out by using EXISTS instead of JOIN; applied required sts_cd<>'X' filter for amount aggregation per business rule.\"}",
+ "usage": {
+  "in": 7860,
+  "out": 456
+ }
+}
