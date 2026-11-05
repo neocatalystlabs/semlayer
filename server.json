@@ -40,5 +40,21 @@
         }
       ]
     }
+  ],
+  "icons": [
+    {
+      "src": "https://semlayer.dev/logo-400.png",
+      "mimeType": "image/png",
+      "sizes": [
+        "400x400"
+      ]
+    },
+    {
+      "src": "https://semlayer.dev/logo-512.png",
+      "mimeType": "image/png",
+      "sizes": [
+        "512x512"
+      ]
+    }
   ]
 }
