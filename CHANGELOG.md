@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### The repository moved to `github.com/semlayer-dev/semlayer`
+
+Same code, same maintainer, new home: the project now lives under an
+organisation named for the product rather than for the company that
+currently holds it. GitHub redirects the old path, so an existing clone,
+remote or bookmark keeps working and nothing needs to be re-cloned.
+
+What changed in this repository: `project.urls`, the CLA bot's document
+link, the telemetry docs link the CLI prints, the clone instruction
+`semlayer benchmark` gives when run from a wheel, and the beta-feedback
+link. Nightly's live job is gated on `github.repository_owner`, so that
+gate moved too -- left alone it would have stopped matching and the job
+would have gone quiet without ever failing.
+
+The security contact in SECURITY.md is now hello@semlayer.dev, on the
+domain the project actually publishes under. The package's `authors`
+field is now `semlayer`; the FSL copyright in LICENSE.md and the CLA's
+grant are unchanged, because those name the legal licensor and not the
+product.
+
+A `mcp-name: dev.semlayer/mcp` marker is now in this README. The official
+MCP Registry reads it off the published PyPI description to confirm that
+whoever claims the `dev.semlayer` namespace also controls the package.
+
 ### `route_intent` no longer tells an agent to use a summary table it may not use
 
 Every aggregate the engine finds arrives as `mapping_source: heuristic` with

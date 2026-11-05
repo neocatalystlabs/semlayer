@@ -1040,7 +1040,7 @@ started from the CLI or from an agent, and which MCP client connects and
 uses. Never names, SQL, or data.
   See exactly what is sent:  semlayer telemetry --show
   Turn it off permanently:   semlayer telemetry --off
-Details: https://github.com/neocatalystlabs/semlayer/blob/main/docs/telemetry.md
+Details: https://github.com/semlayer-dev/semlayer/blob/main/docs/telemetry.md
 """
 
 

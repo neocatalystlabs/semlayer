@@ -33,7 +33,7 @@ def run_fixture(fixture: str, answer_model: str | None = None,
                 return cand
         raise SystemExit(
             "benchmark needs the repo's fixtures/, which are not shipped in the "
-            "wheel: clone github.com/neocatalystlabs/semlayer and run this from "
+            "wheel: clone github.com/semlayer-dev/semlayer and run this from "
             "the clone root."
         )
 

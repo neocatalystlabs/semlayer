@@ -21,6 +21,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           path-to-signatures: ".github/cla-signatures.json"
-          path-to-document: "https://github.com/neocatalystlabs/semlayer/blob/main/CLA.md"
+          path-to-document: "https://github.com/semlayer-dev/semlayer/blob/main/CLA.md"
           branch: "cla-signatures"
           allowlist: "dependabot[bot],raj-devnath"
