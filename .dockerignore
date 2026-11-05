@@ -1,0 +1,22 @@
+# Allowlist, not a blocklist. The repository is ~5 GB -- fixtures alone are
+# 4.5 GB and the cassettes another 13 MB -- and every byte of it would
+# otherwise be streamed to the daemon as build context on every build. What
+# the wheel actually needs is ~2.7 MB.
+#
+# Docker evaluates the LAST matching pattern, so `*` excludes everything and
+# each `!` line below adds one thing back. Adding a build-time dependency
+# means adding it here too, or the build fails with a missing file rather
+# than with anything that names this file.
+*
+
+# pyproject declares `readme` and `license-files`; setuptools>=77 fails the
+# build if any of them are absent, so these are required, not documentation.
+!pyproject.toml
+!README.md
+!LICENSE.md
+!LICENSING.md
+!spec
+
+# The package itself. src/semlayer/spec/LICENSE and src/semlayer/export/LICENSE
+# are two more entries in `license-files` and live under here.
+!src

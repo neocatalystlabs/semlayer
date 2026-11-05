@@ -22,6 +22,7 @@ import re
 
 from mcp.server.fastmcp import Context
 
+from semlayer import __version__
 from semlayer.session import Session
 
 # ---------- pure query functions (unit-tested; MCP tools are thin wrappers) --
@@ -862,7 +863,15 @@ def build_server(layer: Session | dict):
     one and no connection -- `Session.of` normalises both.
     """
     session = Session.of(layer)
-    srv = _server_class()("semlayer", instructions=_INSTRUCTIONS)
+    srv = _server_class()("semlayer", instructions=_INSTRUCTIONS,
+                          website_url="https://semlayer.dev")
+    # FastMCP does not forward a version to the low-level server, and the SDK
+    # falls back to its OWN package version when that is None -- so every
+    # client was shown `serverInfo.version: 1.28.1`, the version of `mcp`,
+    # as if it were ours. Found when a container smoke-test asserted on the
+    # initialize response. Set through the private attribute because FastMCP
+    # exposes no other route; the low-level Server does take `version`.
+    srv._mcp_server.version = __version__
     _register_session_tools(srv, session)
     _register_answer_tools(srv, session)
     _register_review_tools(srv, session)

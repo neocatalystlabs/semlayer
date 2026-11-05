@@ -1,0 +1,59 @@
+name: docker
+
+# Deliberately NOT part of the required checks on every PR. Building the
+# image pulls pyarrow, the Snowflake connector and the BigQuery client, which
+# costs minutes, and the quality job is already the thing people wait on.
+# This runs only when something that can actually break the image changes.
+on:
+  pull_request:
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "pyproject.toml"
+      - ".github/workflows/docker.yml"
+  push:
+    branches: [main]
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "pyproject.toml"
+  workflow_dispatch: {}
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build
+        run: docker build -t semlayer:ci .
+
+      - name: The build context stayed small
+        # The repository is ~5 GB and the wheel needs ~2.7 MB of it. If
+        # .dockerignore stops doing its job the build still succeeds, just
+        # slowly and enormously -- so the failure has to be asserted, not
+        # noticed.
+        run: |
+          ctx=$(docker build --no-cache --progress=plain -t semlayer:ctx . 2>&1 \
+                | grep -oE 'transferring context: [0-9.]+[kMG]?B' | tail -1)
+          echo "context: $ctx"
+          case "$ctx" in
+            *GB*) echo "::error::build context is gigabytes -- .dockerignore is not working"; exit 1 ;;
+          esac
+
+      - name: It runs, and it is not root
+        # `--help`, not `--version`: the CLI has no --version flag, which the
+        # first draft of this workflow asserted on and would have failed.
+        run: |
+          docker run --rm semlayer:ci --help | grep -q "infer"
+          docker run --rm --entrypoint id semlayer:ci -un | grep -qx semlayer
+
+      - name: It speaks MCP over stdio
+        # The one thing worth asserting about an MCP image: that a client's
+        # initialize handshake gets a response on stdout. A container that
+        # starts and exits looks healthy to every other check here.
+        run: |
+          req='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}'
+          out=$(printf '%s\n' "$req" | timeout 60 docker run -i --rm semlayer:ci mcp 2>/dev/null | head -1)
+          echo "$out"
+          echo "$out" | grep -q '"result"' || { echo "::error::no initialize result on stdout"; exit 1; }
