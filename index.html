@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>semlayer — infer a semantic layer from your data warehouse</title>
-<meta name="description" content="semlayer is a command-line tool that reads your data warehouse and writes the semantic layer your AI agents need. On our messy-warehouse benchmark it took text-to-SQL accuracy from 42% to 87%. Fair Source; free for any internal use.">
+<meta name="description" content="semlayer is a command-line tool that reads your data warehouse and writes the semantic layer your AI agents need. On our messy-warehouse benchmark it took text-to-SQL accuracy from 42% to 82%. Fair Source; free for any internal use.">
 <meta name="theme-color" content="#ffffff">
 <link rel="canonical" href="https://semlayer.dev/">
 <meta property="og:type" content="website">
@@ -12,7 +12,7 @@
 <meta property="og:title" content="semlayer — infer a semantic layer from your data warehouse">
 <meta property="og:image" content="https://semlayer.dev/og-image.webp">
 <meta name="twitter:card" content="summary_large_image">
-<meta property="og:description" content="Your AI writes perfect SQL and returns the wrong number. semlayer infers the rules your engineers keep in their heads — 42% to 87% correct on our messy-warehouse benchmark.">
+<meta property="og:description" content="Your AI writes perfect SQL and returns the wrong number. semlayer infers the rules your engineers keep in their heads — 42% to 82% correct on our messy-warehouse benchmark.">
 <style>
   :root {
     --bg: #ffffff; --fg: #1a1a2e; --muted: #566; --accent: #6b47dc; --brand: #eb6834;
@@ -138,7 +138,7 @@
   <a href="#warehouses">Warehouses</a>
   <a href="#resources">Resources</a>
   <span class="social">
-  <a class="gh" href="https://github.com/neocatalystlabs/semlayer" aria-label="semlayer on GitHub"><svg viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg></a>
+  <a class="gh" href="https://github.com/semlayer-dev/semlayer" aria-label="semlayer on GitHub"><svg viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg></a>
   <a class="yt" href="https://www.youtube.com/@semlayer" aria-label="semlayer on YouTube"><svg viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg></a>
   <a class="md" href="https://medium.com/@rajdevnath" aria-label="semlayer on Medium"><svg viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false"><path d="M13.54 12a6.8 6.8 0 01-6.77 6.82A6.8 6.8 0 010 12a6.8 6.8 0 016.77-6.82A6.8 6.8 0 0113.54 12zM20.96 12c0 3.54-1.51 6.42-3.38 6.42-1.87 0-3.39-2.88-3.39-6.42s1.52-6.42 3.39-6.42 3.38 2.88 3.38 6.42M24 12c0 3.17-.53 5.75-1.19 5.75-.66 0-1.19-2.58-1.19-5.75s.53-5.75 1.19-5.75C23.47 6.25 24 8.83 24 12z"/></svg></a>
   </span>
@@ -189,15 +189,15 @@ metric, both do it correctly, and arrive at the same meeting with different numb
 decision down: which rows count, what the denominator is, and the evidence behind
 it. Trust is not only about getting a correct number. It is about the same question
 returning the same number, to everyone, every time.
-<a href="https://github.com/neocatalystlabs/semlayer/blob/main/docs/metrics.md">How
+<a href="https://github.com/semlayer-dev/semlayer/blob/main/docs/metrics.md">How
 metrics are defined &rarr;</a></p>
 
 <div class="stat">
 Same AI, same 38 business questions, same warehouse: <strong>42% answered
-correctly from the raw schema, 87% with the context semlayer inferred.</strong>
+correctly from the raw schema, 82% with the context semlayer inferred.</strong>
 The errors it fixes are the silent kind &mdash; raw-schema &ldquo;total revenue&rdquo;
 sums cancelled orders, reporting $16.3M where finance reports $14.6M.
-<a href="https://github.com/neocatalystlabs/semlayer/blob/main/docs/benchmark.md">Method,
+<a href="https://github.com/semlayer-dev/semlayer/blob/main/docs/benchmark.md">Method,
 questions and both results &rarr;</a>
 </div>
 
@@ -225,7 +225,7 @@ proposes the metrics those rules imply &mdash;
 verified against your own data, with <strong>confidence, provenance, and a review
 queue on every claim</strong>. Statistics alone never auto-accept a foreign key, and
 a doc that contradicts your data goes to review rather than being believed.
-<a href="https://github.com/neocatalystlabs/semlayer/blob/main/docs/calibration.md">What
+<a href="https://github.com/semlayer-dev/semlayer/blob/main/docs/calibration.md">What
 the confidence numbers mean &rarr;</a></p>
 
 <pre><code>pip install semlayer
@@ -236,15 +236,15 @@ semlayer mcp layer.yaml              <span class="c"># serve it to Claude, Curso
 
 <p class="quiet">The inference runs an LLM over your schema and statistics, not over
 your rows, and you bring your own key. A
-<a href="https://github.com/neocatalystlabs/semlayer/blob/main/docs/cost-model.md">measured
+<a href="https://github.com/semlayer-dev/semlayer/blob/main/docs/cost-model.md">measured
 cost model</a> and an
-<a href="https://github.com/neocatalystlabs/semlayer/blob/main/docs/mcp.md">MCP setup
+<a href="https://github.com/semlayer-dev/semlayer/blob/main/docs/mcp.md">MCP setup
 guide</a> are in the docs.</p>
 
 <h2 id="warehouses">Warehouses it reads</h2>
 
 <p><strong>Snowflake, BigQuery, PostgreSQL and DuckDB</strong>, plus Iceberg on S3
-through the <a href="https://github.com/neocatalystlabs/semlayer/blob/main/docs/iceberg-bridge.md">DuckDB
+through the <a href="https://github.com/semlayer-dev/semlayer/blob/main/docs/iceberg-bridge.md">DuckDB
 bridge</a>. The PostgreSQL connector also reaches Redshift and other
 Postgres-protocol engines, though their catalogs differ in places and we have not
 tested them &mdash; if you try one, we would like to hear what broke.</p>
@@ -258,15 +258,15 @@ Snowflake by a live suite you can run against your own account.</p>
 silent. Skip the quarter of hand-writing dbt YAML.</p>
 
 <p class="ctas">
-<a class="cta" href="https://github.com/neocatalystlabs/semlayer">GitHub &rarr;</a>
-<a class="cta alt" href="https://github.com/neocatalystlabs/semlayer/blob/main/docs/quickstart.md">Quickstart</a>
+<a class="cta" href="https://github.com/semlayer-dev/semlayer">GitHub &rarr;</a>
+<a class="cta alt" href="https://github.com/semlayer-dev/semlayer/blob/main/docs/quickstart.md">Quickstart</a>
 <a class="cta alt" href="https://www.youtube.com/@semlayer">Watch the series</a>
 </p>
 
 <ul>
-  <li><strong>Free for any internal use</strong>: the CLI runs in your own environment with your own keys &mdash; no caps, no signup, no licence key, in production and CI alike. It is <a href="https://github.com/neocatalystlabs/semlayer/blob/main/LICENSING.md">Fair Source</a> (FSL-1.1-ALv2), not open source: the only thing the licence prohibits is reselling semlayer or hosting it as a service that competes with it, and every release becomes Apache-2.0 two years after it ships. The format specification, its schemas and the exporters are Apache-2.0 and stay that way &mdash; a semantic layer nobody else can read is worth nothing. A paid hosted control plane (continuous re-inference, team review, dashboards) comes later; the CLI stays fully functional.</li>
+  <li><strong>Free for any internal use</strong>: the CLI runs in your own environment with your own keys &mdash; no caps, no signup, no licence key, in production and CI alike. It is <a href="https://github.com/semlayer-dev/semlayer/blob/main/LICENSING.md">Fair Source</a> (FSL-1.1-ALv2), not open source: the only thing the licence prohibits is reselling semlayer or hosting it as a service that competes with it, and every release becomes Apache-2.0 two years after it ships. The format specification, its schemas and the exporters are Apache-2.0 and stay that way &mdash; a semantic layer nobody else can read is worth nothing. A paid hosted control plane (continuous re-inference, team review, dashboards) comes later; the CLI stays fully functional.</li>
   <li><strong>Honest by construction</strong>: every claim carries its evidence, and the whole eval suite ships in the repo so you can check whether it helped on your data.</li>
-  <li><strong>Design partners wanted</strong>: got a messy warehouse and an AI initiative? <a href="mailto:hello@semlayer.dev">hello@semlayer.dev</a> &mdash; or file the <a href="https://github.com/neocatalystlabs/semlayer/issues/new/choose">beta feedback form</a>.</li>
+  <li><strong>Design partners wanted</strong>: got a messy warehouse and an AI initiative? <a href="mailto:hello@semlayer.dev">hello@semlayer.dev</a> &mdash; or file the <a href="https://github.com/semlayer-dev/semlayer/issues/new/choose">beta feedback form</a>.</li>
 </ul>
 
 <h2 id="resources">Resources</h2>
@@ -276,12 +276,12 @@ silent. Skip the quarter of hand-writing dbt YAML.</p>
   <div>
     <h3>Start</h3>
     <ul>
-      <li><a href="https://github.com/neocatalystlabs/semlayer/blob/main/docs/quickstart.md">Quickstart</a>
+      <li><a href="https://github.com/semlayer-dev/semlayer/blob/main/docs/quickstart.md">Quickstart</a>
         <span>Install it, point it at a warehouse, read what came out.</span></li>
-      <li><a href="https://github.com/neocatalystlabs/semlayer">Source on GitHub</a>
+      <li><a href="https://github.com/semlayer-dev/semlayer">Source on GitHub</a>
         <span>The engine, the fixtures and the whole eval suite.</span></li>
       <li><a href="https://pypi.org/project/semlayer/">semlayer on PyPI</a>
-        <span><code>pip install semlayer</code> &mdash; currently a 0.5 beta.</span></li>
+        <span><code>pip install semlayer</code> &mdash; currently a 0.7 beta.</span></li>
     </ul>
   </div>
 
@@ -292,7 +292,7 @@ silent. Skip the quarter of hand-writing dbt YAML.</p>
         <span>Why a valid query returns a wrong answer, and why nobody notices.</span></li>
       <li><a href="https://www.youtube.com/@semlayer">GenAI on your business data</a>
         <span>Short episodes: what goes wrong, what the layer adds, what it looks like running.</span></li>
-      <li><a href="https://github.com/neocatalystlabs/semlayer/blob/main/ARCHITECTURE.md">How the pipeline is built</a>
+      <li><a href="https://github.com/semlayer-dev/semlayer/blob/main/ARCHITECTURE.md">How the pipeline is built</a>
         <span>Profile, link, describe, enrich &mdash; and what each stage can and cannot know.</span></li>
     </ul>
   </div>
@@ -301,10 +301,10 @@ silent. Skip the quarter of hand-writing dbt YAML.</p>
     <h3>Check the claim</h3>
     <ul>
       <li><a href="https://medium.com/@rajdevnath/we-measured-what-a-semantic-layer-is-actually-worth-to-an-ai-agent-b5d7e62d9376">We measured what a semantic layer is worth</a>
-        <span>The write-up of the 42% to 87% result, including where it lost.</span></li>
-      <li><a href="https://github.com/neocatalystlabs/semlayer/blob/main/docs/benchmark.md">Benchmark report</a>
+        <span>The write-up of the 42% to 82% result, including where it lost.</span></li>
+      <li><a href="https://github.com/semlayer-dev/semlayer/blob/main/docs/benchmark.md">Benchmark report</a>
         <span>The 38 questions, both warehouses, and the result that went the wrong way.</span></li>
-      <li><a href="https://github.com/neocatalystlabs/semlayer/blob/main/docs/calibration.md">Calibration report</a>
+      <li><a href="https://github.com/semlayer-dev/semlayer/blob/main/docs/calibration.md">Calibration report</a>
         <span>Whether a confidence of 0.8 means anything &mdash; including the tiers still wrong.</span></li>
     </ul>
   </div>
@@ -312,15 +312,15 @@ silent. Skip the quarter of hand-writing dbt YAML.</p>
   <div>
     <h3>Reference</h3>
     <ul>
-      <li><a href="https://github.com/neocatalystlabs/semlayer/blob/main/spec/SPEC.md">Format specification</a>
+      <li><a href="https://github.com/semlayer-dev/semlayer/blob/main/spec/SPEC.md">Format specification</a>
         <span>What is in the output file. Apache-2.0, and it stays that way.</span></li>
-      <li><a href="https://github.com/neocatalystlabs/semlayer/blob/main/docs/mcp.md">MCP setup</a>
+      <li><a href="https://github.com/semlayer-dev/semlayer/blob/main/docs/mcp.md">MCP setup</a>
         <span>Serving the layer to Claude Desktop, Claude Code or any MCP client.</span></li>
-      <li><a href="https://github.com/neocatalystlabs/semlayer/blob/main/docs/warehouses.md">Warehouses and connectors</a>
+      <li><a href="https://github.com/semlayer-dev/semlayer/blob/main/docs/warehouses.md">Warehouses and connectors</a>
         <span>What we test against, and the grants each connector needs.</span></li>
-      <li><a href="https://github.com/neocatalystlabs/semlayer/blob/main/docs/scale.md">Scale</a>
+      <li><a href="https://github.com/semlayer-dev/semlayer/blob/main/docs/scale.md">Scale</a>
         <span>How big a warehouse it handles, and how to make a large run fast.</span></li>
-      <li><a href="https://github.com/neocatalystlabs/semlayer/blob/main/LICENSING.md">Licensing</a>
+      <li><a href="https://github.com/semlayer-dev/semlayer/blob/main/LICENSING.md">Licensing</a>
         <span>What Fair Source permits, path by path, and when each release turns Apache-2.0.</span></li>
     </ul>
   </div>
@@ -328,13 +328,13 @@ silent. Skip the quarter of hand-writing dbt YAML.</p>
 </div>
 
 <p class="footer">
-semlayer &middot; <a href="https://github.com/neocatalystlabs/semlayer/blob/main/LICENSING.md">Fair
+semlayer &middot; <a href="https://github.com/semlayer-dev/semlayer/blob/main/LICENSING.md">Fair
 Source (FSL-1.1-ALv2)</a>, format Apache-2.0 &middot; a Neocatalyst Labs project &middot;
 <a href="mailto:hello@semlayer.dev">hello@semlayer.dev</a>
 </p>
 
 <p class="social footer-social">
-  <a class="gh" href="https://github.com/neocatalystlabs/semlayer" aria-label="semlayer on GitHub"><svg viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg></a>
+  <a class="gh" href="https://github.com/semlayer-dev/semlayer" aria-label="semlayer on GitHub"><svg viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg></a>
   <a class="yt" href="https://www.youtube.com/@semlayer" aria-label="semlayer on YouTube"><svg viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg></a>
   <a class="md" href="https://medium.com/@rajdevnath" aria-label="semlayer on Medium"><svg viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false"><path d="M13.54 12a6.8 6.8 0 01-6.77 6.82A6.8 6.8 0 010 12a6.8 6.8 0 016.77-6.82A6.8 6.8 0 0113.54 12zM20.96 12c0 3.54-1.51 6.42-3.38 6.42-1.87 0-3.39-2.88-3.39-6.42s1.52-6.42 3.39-6.42 3.38 2.88 3.38 6.42M24 12c0 3.17-.53 5.75-1.19 5.75-.66 0-1.19-2.58-1.19-5.75s.53-5.75 1.19-5.75C23.47 6.25 24 8.83 24 12z"/></svg></a>
 </p>
@@ -350,9 +350,9 @@ Source (FSL-1.1-ALv2)</a>, format Apache-2.0 &middot; a Neocatalyst Labs project
       "operatingSystem": "macOS, Linux, Windows",
       "url": "https://semlayer.dev/",
       "downloadUrl": "https://pypi.org/project/semlayer/",
-      "codeRepository": "https://github.com/neocatalystlabs/semlayer",
+      "codeRepository": "https://github.com/semlayer-dev/semlayer",
       "softwareVersion": "0.5.0b1",
-      "license": "https://github.com/neocatalystlabs/semlayer/blob/main/LICENSING.md",
+      "license": "https://github.com/semlayer-dev/semlayer/blob/main/LICENSING.md",
       "description": "A command-line tool that reads a data warehouse and infers a semantic layer -- table and column meanings, undeclared foreign keys, mandatory filters and metric definitions -- as one open file served to AI agents over MCP.",
       "author": { "@type": "Organization", "name": "Neocatalyst Labs" },
       "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
@@ -381,7 +381,7 @@ Source (FSL-1.1-ALv2)</a>, format Apache-2.0 &middot; a Neocatalyst Labs project
           "name": "How much does a semantic layer improve AI text-to-SQL accuracy?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "On our messy-warehouse benchmark, the same model answered 42% of 38 business questions correctly from the raw schema and 87% with the semantic layer semlayer inferred. On a clean, well-documented warehouse the raw schema won instead: 67% without the layer, 58% with it. Both results are published."
+            "text": "On our messy-warehouse benchmark, the same model answered 42% of 38 business questions correctly from the raw schema and 82% with the semantic layer semlayer inferred. On a clean, well-documented warehouse the raw schema won instead: 67% without the layer, 58% with it. Both results are published."
           }
         },
         {
