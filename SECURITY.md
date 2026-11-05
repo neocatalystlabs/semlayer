@@ -2,7 +2,7 @@
 
 ## Reporting
 
-Email help@neocatalystlabs.com (or use GitHub private vulnerability
+Email hello@semlayer.dev (or use GitHub private vulnerability
 reporting on this repo). We aim to acknowledge within 72 hours. Please do not
 open public issues for vulnerabilities.
 

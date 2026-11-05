@@ -31,7 +31,7 @@ env:
 jobs:
   live:
     runs-on: ubuntu-latest
-    if: github.repository_owner == 'neocatalystlabs'
+    if: github.repository_owner == 'semlayer-dev'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7

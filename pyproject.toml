@@ -19,7 +19,7 @@ readme = "README.md"
 license = "FSL-1.1-ALv2"
 license-files = ["LICENSE.md", "LICENSING.md", "spec/LICENSE",
                  "src/semlayer/spec/LICENSE", "src/semlayer/export/LICENSE"]
-authors = [{name = "Neocatalyst Labs", email = "hello@semlayer.dev"}]
+authors = [{name = "semlayer", email = "hello@semlayer.dev"}]
 requires-python = ">=3.10"
 dependencies = [
     "pyyaml>=6.0",
@@ -73,8 +73,8 @@ dev = [
 
 [project.urls]
 Homepage = "https://semlayer.dev"
-Repository = "https://github.com/neocatalystlabs/semlayer"
-Changelog = "https://github.com/neocatalystlabs/semlayer/blob/main/CHANGELOG.md"
+Repository = "https://github.com/semlayer-dev/semlayer"
+Changelog = "https://github.com/semlayer-dev/semlayer/blob/main/CHANGELOG.md"
 
 [project.scripts]
 semlayer = "semlayer.cli:main"
