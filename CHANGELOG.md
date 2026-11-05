@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+### A container image, and the version clients were shown was the SDK's
+
+`Dockerfile` and `.dockerignore` land in the repository. The image runs the
+MCP server over stdio as an unprivileged user, carries the `warehouses`
+extra so a first connection can actually reach a warehouse, and is built
+from the source tree so it matches the commit rather than the last release.
+`ENTRYPOINT` is the binary and `CMD` is the subcommand, so `docker run ...
+infer` works without `--entrypoint`.
+
+`-i` is not optional when running it: the MCP stdio transport IS the
+container's stdin and stdout, and without it the server reads EOF and exits.
+
+The ignore file is an allowlist rather than a blocklist, which is not
+stylistic: the repository is about 5 GB, 4.5 GB of that fixtures, and the
+wheel needs 2.6 MB of it. Every build would otherwise stream all of it to
+the daemon. A build-time dependency added later has to be added there too.
+
+**Found while writing the image's smoke test: every client was being told
+`serverInfo.version: 1.28.1`, which is the version of the `mcp` SDK, not of
+semlayer.** FastMCP does not forward a version to the low-level server, and
+the SDK falls back to its own package version when that is None. Clients
+display it, and bug reports quote it, so the number people have been
+reporting was never ours. It now reports the real version, and the
+handshake also carries `websiteUrl`.
+
 ### Releases register themselves with the MCP Registry
 
 `server.json` now lives in the repository, and `release.yml` publishes it to
