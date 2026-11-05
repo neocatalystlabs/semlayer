@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "4df9b8e6e218",
+ "response": "{\"action\":\"sql\",\"sql\":\"SELECT COUNT(*) AS order_count\\nFROM ord_hdr o\\nJOIN cust_mstr c\\n  ON o.cust_id = c.cust_id\\n  AND o.ord_dt BETWEEN c.eff_start_dt AND COALESCE(c.eff_end_dt, DATE '9999-12-31')\\nWHERE c.seg_cd = 'ENT';\",\"reason\":\"Count orders using as-of SCD2 join on cust_mstr for segment at order date.\"}",
+ "usage": {
+  "in": 8267,
+  "out": 293
+ }
+}

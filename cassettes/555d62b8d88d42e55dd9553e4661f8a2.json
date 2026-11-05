@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "4df9b8e6e218",
+ "response": "{\"action\": \"refuse\", \"sql\": null, \"reason\": \"ord_hdr_legacy is deprecated/unusable; replacement ord_hdr only covers 2023-2025, no pre-2023 data exists.\"}",
+ "usage": {
+  "in": 7604,
+  "out": 398
+ }
+}

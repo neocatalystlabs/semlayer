@@ -1,6 +1,35 @@
 # Changelog
 
-## Unreleased
+## v0.7.0-beta.2 (2026-11-05)
+
+### The benchmark table is re-measured, and one headline number went down
+
+`docs/benchmark.md` claimed to describe 0.6.0b1 and said so at the top,
+because 0.7.0b1 shipped without re-recording the answers that had stopped
+replaying. That debt is paid: 190 answers re-recorded against the pinned
+models, every published row named explicitly rather than through the
+Haiku-only default command, and the replay step in `release.yml` is blocking
+again -- which was always the condition for having made it advisory.
+
+**messy_mart with a Haiku-class answerer: semantic 0.89 -> 0.82.** Three
+questions, two in `complex` and one in `simple`. That is beyond the ~1
+question of run-to-run variance the page documents, so it is reported as a
+real movement. The linter, which previously added a question on that fixture,
+now adds none there. Against that: the Sonnet row improved (0.87 -> 0.89, and
+0.89 -> 0.92 with lint), and the ontology column rose 0.79 -> 0.82 to sit
+exactly level with the flat layer rather than below it.
+
+The claim that the layer "equalises models" is weakened and has been
+rewritten rather than quietly kept. Haiku and Sonnet are now three questions
+apart with the layer where they were one; on raw schema they are five apart.
+The defensible statement is that the layer moves the cheap model from well
+behind to close behind.
+
+Every `schema_only` cell is unchanged on both models, and `fan_trap` and
+`tpcds_clean` replayed without re-recording at all, so the raw-schema
+baseline is the same measurement it was. The derived figures were recomputed
+rather than carried over: the untouched-30 arithmetic is 0.47 -> 0.80 (+70%
+relative), and the eight reworded questions pass 7/8 under the layer, not 8/8.
 
 ### The repository moved to `github.com/semlayer-dev/semlayer`
 

@@ -110,7 +110,8 @@ def test_the_sonnet_row_reproduces_too():
         + r.stderr[-1200:])
     # the row in docs/benchmark.md, as published
     assert "'schema_only': 21" in r.stdout, r.stdout
-    assert "'semantic': 33" in r.stdout, r.stdout
+    assert "'semantic': 34" in r.stdout, r.stdout
+    assert "'semantic+lint': 35" in r.stdout, r.stdout
     doc = (OSS / "docs" / "benchmark.md").read_text()
-    assert "| messy_mart | 38 | claude-sonnet-5 | 0.55 | 0.87 | 0.87 | — |" in doc, (
+    assert "| messy_mart | 38 | claude-sonnet-5 | 0.55 | 0.89 | 0.92 | — |" in doc, (
         "docs/benchmark.md's Sonnet row does not match what replays")

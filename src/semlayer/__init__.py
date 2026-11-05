@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """semlayer: open semantic layer format and inference engine."""
 
-__version__ = "0.7.0b1"
+__version__ = "0.7.0b2"
 
 from semlayer.validate import ValidationResult, validate_document, validate_file  # noqa: F401

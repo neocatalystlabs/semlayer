@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "4df9b8e6e218",
+ "response": "{\"action\": \"sql\", \"sql\": \"SELECT COUNT(DISTINCT cust_id) AS customer_count FROM cust_mstr WHERE is_curr_flg = 1;\", \"reason\": \"Count distinct current customers from SCD2 dimension using is_curr_flg=1 per rule.\"}",
+ "usage": {
+  "in": 8063,
+  "out": 161
+ }
+}

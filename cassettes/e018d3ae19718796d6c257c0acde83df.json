@@ -1,0 +1,9 @@
+{
+ "model": "claude-sonnet-5",
+ "system_sha": "4df9b8e6e218",
+ "response": "{\"action\": \"sql\", \"sql\": \"SELECT COUNT(*) AS store_count FROM store_dim\", \"reason\": \"Simple count of stores in store_dim.\"}",
+ "usage": {
+  "in": 6391,
+  "out": 58
+ }
+}
