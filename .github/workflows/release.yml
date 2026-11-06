@@ -10,6 +10,58 @@ env:
   SEMLAYER_TELEMETRY: "off"
 
 jobs:
+  vscode:
+    # The VS Code extension, published with trusted publishing: an OIDC token
+    # minted for this repo and this workflow, no PAT anywhere. Same reasoning
+    # as the PyPI job below -- there is no long-lived secret to leak, rotate
+    # or forget, and a policy on the marketplace side pins who may publish.
+    runs-on: ubuntu-latest
+    environment: vscode-marketplace
+    permissions:
+      id-token: write
+      contents: read
+    # Job level, not step level, and that distinction is the whole point:
+    # `secrets` is not an allowed context in a step's `if`, and a step cannot
+    # read its OWN `env` block there either. Lifting it here makes the value
+    # visible to the condition below. Getting this wrong does not fail the
+    # job -- it makes the workflow file unparseable, so GitHub reports a run
+    # with zero jobs and the next real release never starts.
+    env:
+      OVSX_PAT: ${{ secrets.OVSX_PAT }}
+    defaults:
+      run:
+        working-directory: extension
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+      - run: npm ci
+      - name: Types and tests
+        run: |
+          npm run typecheck
+          npm test
+      - name: Package
+        run: npm run package
+      - name: Publish to the VS Code Marketplace
+        # --skip-duplicate so re-running a release does not fail on a version
+        # that is already live; the marketplace refuses to replace one.
+        run: >
+          npx vsce publish --no-dependencies --azure-credential
+          --packagePath semlayer-*.vsix --skip-duplicate
+      - name: Publish to Open VSX (what Cursor reads)
+        # Open VSX has no OIDC, so this one does need a token. It is skipped
+        # rather than failed when the secret is absent, so the marketplace
+        # publish above is not held hostage to it.
+        if: ${{ env.OVSX_PAT != '' }}
+        run: npx ovsx publish semlayer-*.vsix --pat "$OVSX_PAT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix
+          path: extension/*.vsix
+
   pypi:
     runs-on: ubuntu-latest
     environment: pypi

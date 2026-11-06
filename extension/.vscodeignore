@@ -1,0 +1,12 @@
+# Ship the bundle and what the marketplace page needs; nothing else.
+**
+!dist/extension.js
+!media/**
+!package.json
+!README.md
+!CHANGELOG.md
+!LICENSE.md
+out/**
+test/**
+src/**
+tsconfig.json
