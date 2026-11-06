@@ -1,0 +1,240 @@
+{
+  "name": "semlayer",
+  "displayName": "semlayer",
+  "description": "Infer a semantic layer from your warehouse, then catch wrong SQL before it runs.",
+  "version": "0.1.0",
+  "publisher": "semlayer",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "icon": "media/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/semlayer-dev/semlayer.git",
+    "directory": "extension"
+  },
+  "homepage": "https://semlayer.dev",
+  "bugs": {
+    "url": "https://github.com/semlayer-dev/semlayer/issues"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Data Science",
+    "Linters",
+    "Other"
+  ],
+  "keywords": [
+    "sql",
+    "semantic layer",
+    "snowflake",
+    "bigquery",
+    "duckdb",
+    "dbt",
+    "mcp"
+  ],
+  "activationEvents": [
+    "onLanguage:sql",
+    "workspaceContains:**/*.yaml"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "semlayer",
+          "title": "semlayer",
+          "icon": "media/activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "semlayer": [
+        {
+          "id": "semlayer.panel",
+          "name": "semlayer",
+          "type": "webview"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "semlayer.createLayer",
+        "title": "semlayer: Create semantic layer"
+      },
+      {
+        "command": "semlayer.loadLayer",
+        "title": "semlayer: Load a semantic layer"
+      },
+      {
+        "command": "semlayer.review",
+        "title": "semlayer: Review findings"
+      },
+      {
+        "command": "semlayer.configureClient",
+        "title": "semlayer: Connect an MCP client"
+      },
+      {
+        "command": "semlayer.trySample",
+        "title": "semlayer: Try the sample warehouse"
+      },
+      {
+        "command": "semlayer.selectLayer",
+        "title": "semlayer: Select the active layer"
+      },
+      {
+        "command": "semlayer.showOutput",
+        "title": "semlayer: Show output"
+      },
+      {
+        "command": "semlayer.openWalkthrough",
+        "title": "semlayer: Get started"
+      }
+    ],
+    "configuration": {
+      "title": "semlayer",
+      "properties": {
+        "semlayer.cliPath": {
+          "type": "string",
+          "default": "semlayer",
+          "description": "Path to the semlayer executable. Leave as 'semlayer' to use the one on your PATH."
+        },
+        "semlayer.layerPath": {
+          "type": "string",
+          "default": "",
+          "description": "Semantic layer document to lint against. Empty means the first one found in the workspace."
+        },
+        "semlayer.dialect": {
+          "type": "string",
+          "default": "duckdb",
+          "enum": [
+            "athena",
+            "bigquery",
+            "clickhouse",
+            "databricks",
+            "dremio",
+            "drill",
+            "druid",
+            "duckdb",
+            "exasol",
+            "fabric",
+            "hive",
+            "materialize",
+            "mysql",
+            "oracle",
+            "postgres",
+            "presto",
+            "redshift",
+            "risingwave",
+            "snowflake",
+            "spark",
+            "sqlite",
+            "starrocks",
+            "teradata",
+            "trino",
+            "tsql"
+          ],
+          "description": "SQL dialect to parse with. Linting needs no warehouse connection, so any dialect works."
+        },
+        "semlayer.lint.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Check SQL files against the semantic layer."
+        },
+        "semlayer.lint.onType": {
+          "type": "boolean",
+          "default": true,
+          "description": "Check while you type, debounced. Incomplete-syntax errors are held back until you stop."
+        },
+        "semlayer.lint.debounceMs": {
+          "type": "number",
+          "default": 500,
+          "description": "How long to wait after the last keystroke before checking."
+        }
+      }
+    },
+    "walkthroughs": [
+      {
+        "id": "semlayer.setup",
+        "title": "Get started with semlayer",
+        "description": "Infer a semantic layer from your warehouse, then catch wrong SQL before it runs.",
+        "when": "true",
+        "steps": [
+          {
+            "id": "install",
+            "title": "Install the engine",
+            "description": "semlayer runs the `semlayer` CLI rather than carrying an engine of its own.\n[Show the semlayer panel](command:semlayer.panel.focus)",
+            "media": {
+              "markdown": "media/walkthrough/install.md"
+            },
+            "completionEvents": [
+              "onContext:semlayer.hasCli"
+            ]
+          },
+          {
+            "id": "layer",
+            "title": "Create or load a semantic layer",
+            "description": "Point it at a warehouse it can already reach. It only reads.\n[Create a semantic layer](command:semlayer.createLayer)",
+            "media": {
+              "markdown": "media/walkthrough/layer.md"
+            },
+            "completionEvents": [
+              "onContext:semlayer.hasLayer"
+            ]
+          },
+          {
+            "id": "lint",
+            "title": "Open a SQL file",
+            "description": "Checking is automatic: on open, on save, and as you type. There is no command to run.\n[Select the layer to check against](command:semlayer.selectLayer)",
+            "media": {
+              "markdown": "media/walkthrough/lint.md"
+            },
+            "completionEvents": [
+              "onLanguage:sql"
+            ]
+          },
+          {
+            "id": "serve",
+            "title": "Connect an MCP client",
+            "description": "Writes the client config for you, so the agent in your editor can read the layer.\n[Connect an MCP client](command:semlayer.configureClient)",
+            "media": {
+              "markdown": "media/walkthrough/mcp.md"
+            },
+            "completionEvents": [
+              "onCommand:semlayer.configureClient"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --target=node18",
+    "watch": "npm run compile -- --sourcemap --watch",
+    "package": "npm run compile -- --minify && vsce package --no-dependencies",
+    "typecheck": "tsc --noEmit",
+    "build:test": "tsc --outDir out --module es2022 --moduleResolution bundler --sourceMap false",
+    "test": "npm run build:test && node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.2.1",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.0"
+  },
+  "galleryBanner": {
+    "color": "#1f1f1f",
+    "theme": "dark"
+  },
+  "qna": "https://github.com/semlayer-dev/semlayer/discussions",
+  "badges": [
+    {
+      "url": "https://img.shields.io/badge/licence-FSL--1.1--ALv2-blue",
+      "href": "https://github.com/semlayer-dev/semlayer/blob/main/LICENSING.md",
+      "description": "FSL-1.1-ALv2, converting to Apache-2.0"
+    }
+  ],
+  "extensionKind": [
+    "workspace"
+  ]
+}

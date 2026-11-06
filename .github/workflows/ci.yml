@@ -59,6 +59,36 @@ jobs:
         # the next run says where the time went instead of needing a bisect.
         run: pytest tests/ -q -n auto --durations=15 --ignore=tests/test_snowflake_live.py --ignore=tests/test_bigquery_live.py
 
+  extension:
+    # The VS Code extension is a separate toolchain in the same repo. It is
+    # cheap -- no Python, no fixtures, no warehouse -- so it runs as its own
+    # job rather than lengthening `quality`.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: extension
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+      - run: npm ci
+      - name: Types (zero errors)
+        run: npm run typecheck
+      - name: Tests
+        # Source positions are reconstructed here, not reported by the engine.
+        # These guard that reconstruction: a lookbehind that excluded `.` once
+        # made every qualified column underline its table instead.
+        run: npm test
+      - name: Package
+        run: npm run package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix
+          path: extension/*.vsix
+
   audit:
     runs-on: ubuntu-latest
     steps:

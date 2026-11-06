@@ -25,6 +25,8 @@ Desktop, Claude Code or Cursor and ask it what it can see — it discovers the
 warehouses configured on your machine and says what to do next, with no layer
 built yet. See [docs/mcp.md](docs/mcp.md).
 
+In VS Code and Cursor, the same layer underlines the fan-out joins and missing required filters as you type — [docs/vscode.md](docs/vscode.md).
+
 From a checkout (to develop on semlayer itself): `pip install -e ".[warehouses]"`.
 
 ## Why
